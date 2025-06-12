@@ -1,0 +1,126 @@
+set DAYTYPE := 
+  1
+  ;
+
+set DAILYTIMEBRACKET :=
+  1
+;
+set SEASON :=
+  1 # Invierno
+;
+# load "Conversionld.csv" : [TIMESLICE,DAYTYPE] Conversionld=VALUE;
+# load "Conversionlh.csv" : [TIMESLICE,DAILYTIMEBRACKET] Conversionlh=VALUE;
+# load "Conversionls.csv" : [TIMESLICE,SEASON] Conversionls=VALUE;
+
+
+
+load "EMISSION.csv"  format=set: EMISSION;
+load "FUEL.csv"  format=set: FUEL;
+load "TIMESLICE.csv"  format=set: TIMESLICE;
+load "MODE_OF_OPERATION.csv"  format=set: MODE_OF_OPERATION;
+load "TECHNOLOGY.csv"  format=set: TECHNOLOGY;
+load "YEAR.csv"  format=set: YEAR;
+
+#Global and set of regions
+load "DiscountRate.csv" : REGION=[REGION] DiscountRate=VALUE;
+load "DepreciationMethod.csv" : REGION=[REGION] DepreciationMethod=VALUE;
+load "ModelPeriodEmissionLimit.csv" : [REGION,EMISSION] ModelPeriodEmissionLimit=VALUE;
+
+# param ModelPeriodExogenousEmission := 0
+# ;
+
+
+############# STORAGE ###########
+# load "STORAGE.csv"  format=set: STORAGE;
+# param DiscountRateStorage := 0.05
+# ;
+# param OperationalLifeStorage := 1
+# ;
+# param StorageLevelStart := 0
+# ;
+# param StorageMaxChargeRate := 99
+# ;
+# param StorageMaxDischargeRate := 99 
+# ;
+# load "TechnologyFromStorage.csv" :[REGION,TECHNOLOGY,STORAGE,MODE_OF_OPERATION] TechnologyFromStorage=VALUE;
+# load "TechnologyToStorage.csv" :[REGION,TECHNOLOGY,STORAGE,MODE_OF_OPERATION] TechnologyToStorage=VALUE;
+#############  ###########
+
+load "CapacityToActivityUnit.csv" : [REGION,TECHNOLOGY] CapacityToActivityUnit=VALUE;
+load "OperationalLife.csv" : [REGION,TECHNOLOGY] OperationalLife=VALUE;
+
+
+load "AnnualExogenousEmission.csv" :[REGION,EMISSION,YEAR] AnnualExogenousEmission=VALUE;
+load "AnnualEmissionLimit.csv" :[REGION,EMISSION,YEAR] AnnualEmissionLimit=VALUE;
+# load "RETagTechnology.csv" :[REGION,TECHNOLOGY,YEAR] RETagTechnology=VALUE;   ##Por defecto 0 
+
+
+
+# param CapacityOfOneTechnologyUnit  := 0
+# ;
+# param CapitalCostStorage  := 0
+# ;
+# param DaysInDayType :=
+# ;
+# param DaySplit  :=
+# ;
+# param MinStorageCharge  :=
+# ;
+# param REMinProductionTarget :=
+# ;
+# param ResidualStorageCapacity  :=
+# ;
+# param RETagFuel  :=
+# ;
+
+load "TotalAnnualMaxCapacityInvestment.csv" :[REGION,TECHNOLOGY,YEAR] TotalAnnualMaxCapacityInvestment=VALUE;
+load "TotalAnnualMinCapacityInvestment.csv" :[REGION,TECHNOLOGY,YEAR] TotalAnnualMinCapacityInvestment=VALUE;
+load "TotalTechnologyAnnualActivityLowerLimit.csv" :[REGION,TECHNOLOGY,YEAR] TotalTechnologyAnnualActivityLowerLimit=VALUE;
+load "TotalTechnologyAnnualActivityUpperLimit.csv" :[REGION,TECHNOLOGY,YEAR] TotalTechnologyAnnualActivityUpperLimit=VALUE;
+load "TotalTechnologyModelPeriodActivityLowerLimit.csv" : [REGION,TECHNOLOGY] TotalTechnologyModelPeriodActivityLowerLimit=VALUE;
+load "TotalTechnologyModelPeriodActivityUpperLimit.csv" : [REGION,TECHNOLOGY] TotalTechnologyModelPeriodActivityUpperLimit=VALUE;
+
+
+# param TradeRoute :=
+# ; 
+
+
+load "AccumulatedAnnualDemand.csv" :[REGION,FUEL,YEAR] AccumulatedAnnualDemand=VALUE;
+load "CapacityFactor.csv" :[REGION,TECHNOLOGY,TIMESLICE,YEAR] CapacityFactor=VALUE;  # si se comenta está en el valor por defecto=1
+
+load "AvailabilityFactor.csv" :[REGION,TECHNOLOGY,YEAR] AvailabilityFactor=VALUE; 
+
+
+load "CapitalCost.csv" :[REGION,TECHNOLOGY,YEAR] CapitalCost=VALUE;
+
+load "EmissionActivityRatio.csv" :[REGION,TECHNOLOGY,EMISSION,MODE_OF_OPERATION,YEAR] EmissionActivityRatio=VALUE;
+
+load "EmissionsPenalty.csv" :[REGION,EMISSION,YEAR] EmissionsPenalty=VALUE;
+
+load "FixedCost.csv" :[REGION,TECHNOLOGY,YEAR] FixedCost=VALUE;
+
+load "InputActivityRatio.csv" :[REGION,TECHNOLOGY,FUEL,MODE_OF_OPERATION,YEAR] InputActivityRatio=VALUE;
+
+load "OutputActivityRatio.csv" :[REGION,TECHNOLOGY,FUEL,MODE_OF_OPERATION,YEAR] OutputActivityRatio=VALUE;
+
+
+load "ReserveMarginTagFuel.csv" :[REGION,FUEL,YEAR] ReserveMarginTagFuel=VALUE;
+load "ReserveMarginTagTechnology.csv" :[REGION,TECHNOLOGY,YEAR] ReserveMarginTagTechnology=VALUE;
+load "ReserveMargin.csv" :[REGION,YEAR] ReserveMargin=VALUE;
+
+load "ResidualCapacity.csv" :[REGION,TECHNOLOGY,YEAR] ResidualCapacity=VALUE;
+
+load "SpecifiedAnnualDemand.csv" :[REGION,FUEL,YEAR] SpecifiedAnnualDemand=VALUE;
+
+load "SpecifiedDemandProfile.csv" :[REGION,FUEL,TIMESLICE,YEAR] SpecifiedDemandProfile=VALUE;
+
+load "TotalAnnualMaxCapacity.csv" :[REGION,TECHNOLOGY,YEAR] TotalAnnualMaxCapacity=VALUE;
+
+load "TotalAnnualMinCapacity.csv" :[REGION,TECHNOLOGY,YEAR] TotalAnnualMinCapacity=VALUE;  # Todo es cero
+
+
+load "VariableCost.csv" :[REGION,TECHNOLOGY,MODE_OF_OPERATION,YEAR] VariableCost=VALUE;
+
+load "YearSplit.csv" :[TIMESLICE,YEAR] YearSplit=VALUE;
+
+# end;
