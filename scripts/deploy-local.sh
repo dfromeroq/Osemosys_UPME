@@ -344,6 +344,16 @@ capture_previous_images
 log "Levantando stack con Docker Compose (build + up, workers=${SIM_WORKER_REPLICAS})"
 docker compose up -d --build --scale "simulation-worker=${SIM_WORKER_REPLICAS}"
 
+# Forzar recreación de simulation-worker para evitar mounts stale del bind
+# secrets/gurobi.lic. Si el contenedor anterior arrancó cuando ese path era
+# un directorio fantasma (autocreado por Docker), `compose up` no recrearía
+# el contenedor porque el yaml no cambió y compose no audita el tipo del
+# source. Esto garantiza que el mount de la licencia siempre refleje el
+# estado actual del host.
+log "Forzando recreación de simulation-worker para refrescar bind mounts"
+docker compose up -d --force-recreate --no-deps \
+  --scale "simulation-worker=${SIM_WORKER_REPLICAS}" simulation-worker
+
 log "Esperando a que API esté disponible (/api/v1/health)"
 if ! wait_http_ok "http://127.0.0.1:${API_PORT}/api/v1/health" 60 2; then
   echo "La API no respondió en el tiempo esperado." >&2
