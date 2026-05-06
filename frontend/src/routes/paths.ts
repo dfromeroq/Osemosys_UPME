@@ -11,6 +11,7 @@ export const paths = {
   scenarios: "/app/scenarios",
   scenarioDetail: (id: string | number) => `/app/scenarios/${id}`,
   scenarioTagsAdmin: "/app/scenario-tags-admin",
+  systemSettingsAdmin: "/app/system-settings",
   changeRequests: "/app/change-requests",
   catalogs: "/app/catalogs",
   officialImport: "/app/official-import",

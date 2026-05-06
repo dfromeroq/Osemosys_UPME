@@ -67,6 +67,7 @@ class SimulationRepository:
         input_name: str | None = None,
         input_ref: str | None = None,
         run_iis_analysis: bool = False,
+        generate_lp: bool = False,
         simulation_type: str = "NATIONAL",
         parallel_weight: int = 1,
         display_name: str | None = None,
@@ -77,6 +78,8 @@ class SimulationRepository:
         el pipeline debe correr automáticamente el análisis enriquecido
         (IIS + mapeo a parámetros). Por defecto ``False``: el diagnóstico queda
         disponible on-demand vía POST /simulations/{id}/diagnose-infeasibility.
+        ``generate_lp`` solicita escribir el modelo a ``.lp`` en
+        ``tmp/lp-files/`` para inspección o reproducción externa.
         """
         job = SimulationJob(
             user_id=user_id,
@@ -91,6 +94,7 @@ class SimulationRepository:
             status="QUEUED",
             progress=0.0,
             run_iis_analysis=run_iis_analysis,
+            generate_lp=generate_lp,
         )
         db.add(job)
         return job

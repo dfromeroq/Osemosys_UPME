@@ -109,6 +109,7 @@ services:
       OMP_NUM_THREADS: ${OMP_NUM_THREADS:-4}
       OPENBLAS_NUM_THREADS: ${OPENBLAS_NUM_THREADS:-4}
       MKL_NUM_THREADS: ${MKL_NUM_THREADS:-4}
+      GRB_LICENSE_FILE: /opt/gurobi/gurobi.lic
     command: >
       celery -A app.simulation.celery_app:celery_app worker
       --loglevel=INFO
@@ -123,6 +124,7 @@ services:
         condition: service_healthy
     volumes:
       - simulation_artifacts:/app/tmp
+      - ./secrets/gurobi.lic:/opt/gurobi/gurobi.lic:ro
     healthcheck:
       test:
         [

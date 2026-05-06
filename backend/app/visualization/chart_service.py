@@ -80,6 +80,7 @@ from app.visualization.configs import (
     CONFIGS,
     TITULOS_VARIABLES_CAPACIDAD,
     NOMBRES_COMBUSTIBLES,
+    _map_h2_verde_azul_gris,
 )
 from app.visualization.configs_comparacion import CONFIGS_COMPARACION
 from app.visualization.catalog_reader import (
@@ -506,7 +507,7 @@ def _asignar_categoria(
     if agrupacion == "TECNOLOGIA":
         df["CATEGORIA"] = df["TECHNOLOGY"]
 
-    elif agrupacion == "COMBUSTIBLE":
+    elif agrupacion in ("COMBUSTIBLE", "FUEL"):
         if "FUEL" in df.columns:
             df["_TECH_FUEL"] = (
                 df["TECHNOLOGY"].astype(str) + "_" + df["FUEL"].astype(str)
@@ -571,7 +572,7 @@ def _color_map_comparison(
 
     Port de ``graficas_comparacion._color_map``.
     """
-    if agrupacion == "COMBUSTIBLE":
+    if agrupacion in ("COMBUSTIBLE", "FUEL"):
         palette = get_colores_grupos()
         return {c: palette.get(c, "#999999") for c in categorias_unicas}
 
@@ -788,6 +789,8 @@ def build_chart_data(
         df["COLOR"] = _sector_labels(df["TECHNOLOGY"])
     elif agrupar_col == "EMISION":
         df["COLOR"] = df["FUEL"] if "FUEL" in df.columns else "?"
+    elif agrupar_col == "H2_PRODUCCION":
+        df["COLOR"] = df["TECHNOLOGY"].apply(_map_h2_verde_azul_gris)
     elif agrupar_col == "YEAR":
         # emisiones_total: solo agrupa por año
         df["COLOR"] = "Total"
@@ -963,13 +966,19 @@ def build_comparison_data(
         label_agrupacion = {
             "TECNOLOGIA": "Tecnologías",
             "COMBUSTIBLE": "Combustibles",
+            "FUEL": "Combustibles",
             "SECTOR": "Sectores",
         }.get(agrupacion_usar, agrupacion_usar)
         title_base = f"{cfg['titulo_base']} por {label_agrupacion}"
     else:
         usa_historico = False
         año_historico = years_to_plot[0] if years_to_plot else 2024
-        agrupacion_usar = "TECNOLOGIA"  # Fallback a agrupar por tecnología para cualquier otra gráfica
+        # agrupacion_usar = "TECNOLOGIA"  # Fallback a agrupar por tecnología para cualquier otra gráfica
+        agrupacion_usar = (
+            agrupacion
+            if agrupacion is not None
+            else cfg.get("agrupar_por", "TECNOLOGIA")
+        )
         title_base = cfg.get("titulo", cfg.get("titulo_base", tipo)) + " (Comparación)"
 
     title = title_base
@@ -1050,7 +1059,13 @@ def build_comparison_data(
             )
         else:
             df = _procesar_bloque_single(
-                df_var, cfg, sub_filtro, loc, años_a_procesar, un
+                df_var,
+                cfg,
+                sub_filtro,
+                loc,
+                años_a_procesar,
+                un,
+                agrupacion_override=agrupacion_usar,
             )
 
         if df is None or df.empty:
@@ -1071,15 +1086,27 @@ def build_comparison_data(
         ].transform("sum")
         df_final["VALUE"] = df_final["VALUE"] / total_por_año_escenario * 100.0
 
-    # ── Colores ──────────────────────────────────────────────────────────
+    # ── Colores ──────────────────────────────────────────────────
     categorias_unicas = sorted(df_final["CATEGORIA"].dropna().unique())
     if not es_generico:
         mapa_colores = _color_map_comparison(agrupacion_usar, categorias_unicas)
     else:
-        # Reutilizar el sistema de colores original de la gráfica base
-        color_fn = cfg.get("color_fn")
+        # Para gráficas genéricas: usar color_fn según la agrupación REAL
+        if agrupacion_usar != cfg.get("agrupar_por"):
+            # Hubo override → usar función de color según agrupacion_usar
+            if agrupacion_usar == "FUEL":
+                color_fn = _color_por_grupo_fijo
+            elif agrupacion_usar == "SECTOR":
+                color_fn = _color_por_sector
+            elif agrupacion_usar == "EMISION":
+                color_fn = _color_por_emision
+            else:
+                color_fn = cfg.get("color_fn") or generar_colores_tecnologias
+        else:
+            # Sin override → usar color_fn original del config
+            color_fn = cfg.get("color_fn")
+
         if color_fn is not None:
-            # Fake dataframe for generic coloring
             df_tmp = pd.DataFrame({"COLOR": list(categorias_unicas)})
             colores_lista, orden_lista = color_fn(df_tmp, "COLOR")
             mapa_colores = dict(zip(orden_lista, colores_lista))
@@ -1373,6 +1400,7 @@ def _procesar_bloque_single(
     loc: str | None,
     años: list[int],
     un: str,
+    agrupacion_override: str | None = None,
 ) -> pd.DataFrame | None:
     """Procesador genérico que emula la agrupación de build_chart_data para comparación."""
     if df_var is None or df_var.empty:
@@ -1394,7 +1422,7 @@ def _procesar_bloque_single(
     if df.empty:
         return None
 
-    agrupar_col = cfg["agrupar_por"]
+    agrupar_col = agrupacion_override if agrupacion_override is not None else cfg["agrupar_por"]
 
     if agrupar_col == "TECNOLOGIA":
         df["CATEGORIA"] = df["TECHNOLOGY"]
@@ -2260,17 +2288,29 @@ def render_chart_visualization_bytes(
     title = chart.title
     if view_mode == "line":
         buf = _render_line_chart(
-            chart, title, fmt=fmt, y_axis_min=y_axis_min, y_axis_max=y_axis_max,
+            chart,
+            title,
+            fmt=fmt,
+            y_axis_min=y_axis_min,
+            y_axis_max=y_axis_max,
         )
     elif view_mode == "area":
         buf = _render_stacked_area(
-            chart, title, fmt=fmt, y_axis_min=y_axis_min, y_axis_max=y_axis_max,
+            chart,
+            title,
+            fmt=fmt,
+            y_axis_min=y_axis_min,
+            y_axis_max=y_axis_max,
         )
     elif view_mode == "table":
         buf = _render_table_image(chart, title, fmt=fmt)
     else:
         buf = _render_stacked_bar(
-            chart, title, fmt=fmt, y_axis_min=y_axis_min, y_axis_max=y_axis_max,
+            chart,
+            title,
+            fmt=fmt,
+            y_axis_min=y_axis_min,
+            y_axis_max=y_axis_max,
         )
     return buf.getvalue()
 
@@ -2513,7 +2553,10 @@ def _render_stacked_area(
         rev_series = list(reversed(chart.series))
         ys = [
             np.nan_to_num(
-                np.array(s.data, dtype=float), nan=0.0, posinf=0.0, neginf=0.0,
+                np.array(s.data, dtype=float),
+                nan=0.0,
+                posinf=0.0,
+                neginf=0.0,
             )
             for s in rev_series
         ]
@@ -3060,9 +3103,7 @@ def render_comparison_facet_figure_bytes(
 
     for ax, bottom in zip(row_axes, stack_tops):
         ax.set_ylim(effective_y_lo, effective_y_hi)
-        ax.yaxis.set_major_formatter(
-            FuncFormatter(lambda v, _p: format_axis_3sig(v))
-        )
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _p: format_axis_3sig(v)))
         ax.yaxis.set_major_locator(
             MaxNLocator(nbins=7, min_n_ticks=5, steps=[1, 2, 2.5, 5, 10]),
         )
@@ -3475,3 +3516,181 @@ def export_results_csv_zip(
 
     buffer.seek(0)
     return buffer
+
+
+def build_comparison_data_by_year_alt(
+    db: Session,
+    job_ids: list[int],
+    tipo: str,
+    un: str = "PJ",
+    years_to_plot: list[int] | None = None,
+    agrupacion: str | None = None,
+    sub_filtro: str | None = None,
+    loc: str | None = None,
+    job_display_overrides: dict[int, str] | None = None,
+    es_porcentaje_override: bool = False,
+) -> CompareChartResponse:
+    """Construye respuesta agrupada por ESCENARIO (no por año).
+
+    Lógica:
+    - Cada subplot = un escenario
+    - categories = años seleccionados
+    - series = una por cada categoría/tecnología (según agrupación)
+    """
+    # Mapeo de tabla normal a comparación si aplica
+    MAPEO_COMPARACION = {
+        "tra_total": "tra_comparacion",
+        "ind_total": "ind_comparacion",
+        "res_total": "res_comparacion",
+        "ter_total": "ter_comparacion",
+    }
+
+    es_generico = False
+    if tipo in MAPEO_COMPARACION:
+        tipo = MAPEO_COMPARACION[tipo]
+
+    if tipo not in CONFIGS_COMPARACION and tipo not in CONFIGS:
+        raise ValueError(f"tipo='{tipo}' no encontrado")
+
+    if years_to_plot is None:
+        years_to_plot = [2024, 2030, 2050]
+
+    # Resolver configuración
+    if tipo in CONFIGS_COMPARACION:
+        cfg = CONFIGS_COMPARACION[tipo]
+        prefijo = cfg["prefijo"]
+        agrupacion_fija = cfg.get("agrupacion_fija")
+        if agrupacion_fija is not None:
+            agrupacion_usar = agrupacion_fija
+        elif agrupacion is not None:
+            agrupacion_usar = agrupacion
+        else:
+            agrupacion_usar = cfg["agrupacion_default"]
+        variable_name = cfg["variable_default"]
+    else:
+        es_generico = True
+        cfg = CONFIGS[tipo]
+        variable_name = cfg["variable_default"]
+        agrupacion_usar = (
+            agrupacion
+            if agrupacion is not None
+            else cfg.get("agrupar_por", "TECNOLOGIA")
+        )
+
+    # Cargar nombres de escenarios
+    scenario_names: dict[int, str] = {}
+    for jid in job_ids:
+        job = db.query(SimulationJob).filter(SimulationJob.id == jid).first()
+        if job:
+            from app.models import Scenario
+            scenario = (
+                db.query(Scenario).filter(Scenario.id == job.scenario_id).first()
+                if job.scenario_id
+                else None
+            )
+            base = scenario.name if scenario else (job.input_name or f"Job {jid}")
+            disp = (getattr(job, "display_name", None) or "").strip()
+            scenario_names[jid] = disp if disp else base
+        else:
+            scenario_names[jid] = f"Job {jid}"
+        ov = (job_display_overrides or {}).get(jid)
+        if isinstance(ov, str) and ov.strip():
+            scenario_names[jid] = ov.strip()
+
+    # Procesar datos para cada escenario
+    all_data: list[pd.DataFrame] = []
+    for jid in job_ids:
+        df_var = _load_variable_data(db, jid, variable_name)
+        if df_var.empty:
+            continue
+
+        if not es_generico:
+            df = _procesar_bloque_comparacion(
+                df_var, prefijo, sub_filtro, loc,
+                agrupacion_usar, years_to_plot, un,
+            )
+        else:
+            df = _procesar_bloque_single(
+                df_var, cfg, sub_filtro, loc,
+                years_to_plot, un,
+                agrupacion_override=agrupacion_usar,
+            )
+
+        if df is None or df.empty:
+            continue
+
+        df["ESCENARIO"] = scenario_names.get(jid, f"Job {jid}")
+        df["JOB_ID"] = jid
+        all_data.append(df)
+
+    if not all_data:
+        title_base = cfg.get("titulo_base", cfg.get("titulo", tipo))
+        return CompareChartResponse(
+            title=f"{title_base} (Comparación Alternativa)",
+            subplots=[],
+            yAxisLabel=un,
+        )
+
+    df_final = pd.concat(all_data, ignore_index=True)
+
+    # Aplicar porcentaje si corresponde
+    if es_porcentaje_override:
+        total_por_escenario_año = df_final.groupby(["JOB_ID", "YEAR"])["VALUE"].transform("sum")
+        df_final["VALUE"] = df_final["VALUE"] / total_por_escenario_año * 100.0
+
+    # Colores
+    categorias_unicas = sorted(df_final["CATEGORIA"].dropna().unique())
+    mapa_colores = _color_map_comparison(agrupacion_usar, categorias_unicas)
+
+    # Construir subplots por escenario
+    subplots: list[SubplotData] = []
+    for jid in job_ids:
+        df_escenario = df_final[df_final["JOB_ID"] == jid]
+        if df_escenario.empty:
+            continue
+
+        escenario_nombre = scenario_names.get(jid, f"Job {jid}")
+
+        series: list[ChartSeries] = []
+        for categoria in categorias_unicas:
+            df_cat = df_escenario[df_escenario["CATEGORIA"] == categoria]
+            if df_cat.empty:
+                continue
+
+            valor_por_año = {
+                int(row["YEAR"]): row["VALUE"]
+                for _, row in df_cat.iterrows()
+            }
+            data = [round(valor_por_año.get(a, 0.0), 6) for a in years_to_plot]
+
+            series.append(
+                ChartSeries(
+                    name=get_label(str(categoria)),
+                    data=data,
+                    color=mapa_colores.get(categoria, "#999999"),
+                    stack="default",
+                )
+            )
+
+        subplots.append(
+            SubplotData(
+                year=jid,
+                scenario_name=escenario_nombre,
+                categories=[str(a) for a in years_to_plot],
+                series=series,
+            )
+        )
+
+    title_base = cfg.get("titulo_base", cfg.get("titulo", tipo))
+    title = f"{title_base} — Por Años (Alternativo)"
+    if sub_filtro:
+        title += f" — {NOMBRES_COMBUSTIBLES.get(sub_filtro, sub_filtro)}"
+    if loc:
+        title += f" ({loc})"
+    title += f" ({un})"
+
+    return CompareChartResponse(
+        title=title,
+        subplots=subplots,
+        yAxisLabel="%" if es_porcentaje_override else un,
+    )

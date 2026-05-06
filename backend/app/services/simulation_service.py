@@ -43,8 +43,8 @@ class SimulationService:
 
     @staticmethod
     def _validate_solver_name(solver_name: str) -> str:
-        if solver_name not in {"highs", "glpk"}:
-            raise ConflictError("Solver invalido. Usa 'highs' o 'glpk'.")
+        if solver_name not in {"highs", "glpk", "gurobi"}:
+            raise ConflictError("Solver invalido. Usa 'highs', 'glpk' o 'gurobi'.")
         return solver_name
 
     @staticmethod
@@ -253,6 +253,7 @@ class SimulationService:
             "user_id": str(job.user_id),
             "username": username,
             "solver_name": job.solver_name,
+            "solver_threads_used": getattr(job, "solver_threads_used", None),
             "input_mode": getattr(job, "input_mode", "SCENARIO"),
             "input_name": getattr(job, "input_name", None),
             "simulation_type": getattr(job, "simulation_type", "NATIONAL"),
@@ -266,6 +267,8 @@ class SimulationService:
             "started_at": job.started_at,
             "finished_at": job.finished_at,
             "run_iis_analysis": bool(getattr(job, "run_iis_analysis", False)),
+            "generate_lp": bool(getattr(job, "generate_lp", False)),
+            "has_lp_file": bool(getattr(job, "lp_path", None)),
             "is_public": bool(getattr(job, "is_public", True)),
             "is_favorite": bool(is_favorite),
             "is_infeasible_result": SimulationService._is_infeasible_succeeded_job(job),
@@ -344,12 +347,14 @@ class SimulationService:
         scenario_id: int,
         solver_name: str = "highs",
         run_iis_analysis: bool = False,
+        generate_lp: bool = False,
         display_name: str | None = None,
     ) -> dict:
         """Encola una nueva simulacion para un escenario autorizado.
 
         ``run_iis_analysis`` habilita el análisis enriquecido automático
         (IIS + mapeo a parámetros) cuando el modelo resulta infactible.
+        ``generate_lp`` solicita escribir el modelo a ``.lp`` antes de resolver.
         """
         from app.services.scenario_service import ScenarioService
 
@@ -376,6 +381,7 @@ class SimulationService:
             solver_name=solver_name,
             input_mode="SCENARIO",
             run_iis_analysis=run_iis_analysis,
+            generate_lp=generate_lp,
             simulation_type=simulation_type,
             parallel_weight=parallel_weight,
             display_name=job_display,
@@ -419,6 +425,7 @@ class SimulationService:
         input_name: str,
         input_ref: str,
         run_iis_analysis: bool = False,
+        generate_lp: bool = False,
         simulation_type: str = "NATIONAL",
         display_name: str | None = None,
     ) -> dict:
@@ -426,6 +433,7 @@ class SimulationService:
 
         ``run_iis_analysis`` habilita el análisis enriquecido automático
         (IIS + mapeo a parámetros) cuando el modelo resulta infactible.
+        ``generate_lp`` solicita escribir el modelo a ``.lp`` antes de resolver.
         """
         active_jobs = SimulationRepository.count_user_active_jobs(db, user_id=current_user.id)
         settings = get_settings()
@@ -439,8 +447,6 @@ class SimulationService:
                 f"Ya alcanzaste el maximo de simulaciones activas ({settings.sim_user_active_limit})."
             )
 
-        if solver_name not in {"highs", "glpk"}:
-            raise ConflictError("Solver invalido. Usa 'highs' o 'glpk'.")
         SimulationService._validate_solver_name(solver_name)
         normalized_type = SimulationService._normalize_simulation_type(simulation_type)
         parallel_weight = SimulationService._parallel_weight_for_type(normalized_type)
@@ -456,6 +462,7 @@ class SimulationService:
             input_name=input_name,
             input_ref=input_ref,
             run_iis_analysis=run_iis_analysis,
+            generate_lp=generate_lp,
             simulation_type=normalized_type,
             parallel_weight=parallel_weight,
             display_name=job_display,
@@ -676,10 +683,11 @@ class SimulationService:
             )
 
         solver = str(getattr(job, "solver_name", "") or "").lower()
-        if solver not in {"highs", "glpk"}:
+        if solver not in {"highs", "gurobi", "glpk"}:
             raise ConflictError(
-                "El diagnóstico de infactibilidad está disponible para HiGHS (IIS) y GLPK "
-                f"(análisis heurístico --nopresol). Solver actual: {solver or '(desconocido)'}."
+                "El diagnóstico de infactibilidad está disponible para HiGHS (IIS), "
+                "Gurobi (computeIIS) y GLPK (análisis heurístico --nopresol). "
+                f"Solver actual: {solver or '(desconocido)'}."
             )
 
         current_status, _ = SimulationService._diagnostic_status_for(job)
@@ -1029,6 +1037,7 @@ class SimulationService:
             "job_id": job.id,
             "scenario_id": job.scenario_id,
             "solver_name": job.solver_name,
+            "solver_threads_used": getattr(job, "solver_threads_used", None),
             "records_used": job.records_used or 0,
             "osemosys_param_records": job.osemosys_param_records or 0,
             "objective_value": job.objective_value or 0.0,

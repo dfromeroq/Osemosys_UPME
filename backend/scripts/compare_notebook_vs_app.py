@@ -404,13 +404,14 @@ def generate_notebook_csvs(excel_path: str, csv_dir: str, div: int = 1) -> None:
             path_csv,
         )
 
-    print("  Generando UDC...")
-    crear_csv_UDC(["UDC_Margin"], path_csv)
-    for mtype in ["TotalCapacity", "NewCapacity", "Activity"]:
-        crear_UDCMultiplier(path_csv, mtype, valor_default=0)
-    crear_UDC_parametros(path_csv, valor_constant_default=0.0, valor_tag_default=2.0)
-    actualizar_UDCMultiplier("TotalCapacity", path_csv, UDC_RESERVE_MARGIN_DICT)
-    actualizar_UDCTag(0, path_csv)
+    ## UDC de margen de reserva desactivada 
+    # print("  Generando UDC...")
+    # crear_csv_UDC(["UDC_Margin"], path_csv)
+    # for mtype in ["TotalCapacity", "NewCapacity", "Activity"]:
+    #     crear_UDCMultiplier(path_csv, mtype, valor_default=0)
+    # crear_UDC_parametros(path_csv, valor_constant_default=0.0, valor_tag_default=2.0)
+    # actualizar_UDCMultiplier("TotalCapacity", path_csv, UDC_RESERVE_MARGIN_DICT)
+    # actualizar_UDCTag(0, path_csv)
 
     csv_files = [f for f in os.listdir(csv_dir) if f.endswith('.csv')]
     print(f"  Total CSVs generados: {len(csv_files)}")

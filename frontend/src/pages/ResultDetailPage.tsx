@@ -787,6 +787,30 @@ export function ResultDetailPage() {
         })
         .catch((err: unknown) => console.error('Error loading compare data', err))
         .finally(() => setLoadingChart(false));
+    } else if (isCompare && chartCompareMode === 'by-year-alt') {
+      const params: Record<string, string> = {
+        job_ids: chartJobIds.join(','),
+        tipo: chartSelection.tipo,
+        un: chartSelection.un,
+        years_to_plot: chartYearsToPlot.join(','),
+        group_by: 'scenario',
+      };
+      if (chartSelection.sub_filtro) params.sub_filtro = chartSelection.sub_filtro;
+      if (chartSelection.loc) params.loc = chartSelection.loc;
+      if (chartSelection.agrupar_por) params.agrupacion = chartSelection.agrupar_por;
+      if (esPorcentaje) params.es_porcentaje = 'true';
+
+      simulationApi
+        .getCompareData(params as Parameters<typeof simulationApi.getCompareData>[0])
+        .then((data: CompareChartResponse) => {
+          setCompareChartData(data);
+          setCompareFacetData(null);
+          setSingleChartData(null);
+          setCompareLineData(null);
+          setParetoData(null);
+        })
+        .catch((err: unknown) => console.error('Error loading compare alt data', err))
+        .finally(() => setLoadingChart(false));
     } else if (isCompare && chartCompareMode === 'line-total') {
       const params: Record<string, string> = {
         job_ids: chartJobIds.join(','),
@@ -1810,6 +1834,14 @@ export function ResultDetailPage() {
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
               />
+            ) : chartCompareMode === 'by-year-alt' && chartJobIds.length > 1 && compareChartData ? (
+              <CompareChart
+                data={reorderByYearSeries(compareChartData, customSeriesOrder)}
+                barOrientation={chartBarOrientation}
+                yAxisMin={yAxisMin}
+                yAxisMax={yAxisMax}
+                sharedYAxis={true}
+              />
             ) : chartCompareMode === 'line-total' && chartJobIds.length > 1 && compareLineData ? (
               <LineChart
                 data={reorderChartSeries(compareLineData, customSeriesOrder)}
@@ -1915,7 +1947,7 @@ export function ResultDetailPage() {
         selection={chartSelection}
         compareMode={chartJobIds.length > 1 ? chartCompareMode : 'off'}
         numScenarios={chartJobIds.length > 1 ? chartJobIds.length : 1}
-        yearsToPlot={chartCompareMode === 'by-year' ? chartYearsToPlot : null}
+        yearsToPlot={chartCompareMode === 'by-year' || chartCompareMode === 'by-year-alt' ? chartYearsToPlot : null}
         syntheticSeries={syntheticSeries.length > 0 ? syntheticSeries : null}
         barOrientation={chartBarOrientation}
         facetPlacement={chartFacetPlacement}

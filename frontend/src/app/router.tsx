@@ -11,6 +11,7 @@ import { AuthLayout } from "@/layouts/AuthLayout";
 import { RequireAuth } from "@/routes/RequireAuth";
 import { RequireCatalogManager } from "@/routes/RequireCatalogManager";
 import { RequireOfficialDataImporter } from "@/routes/RequireOfficialDataImporter";
+import { RequireSystemSettingsManager } from "@/routes/RequireSystemSettingsManager";
 import { RequireUserManager } from "@/routes/RequireUserManager";
 import { paths } from "@/routes/paths";
 import { LoginPage } from "@/pages/LoginPage";
@@ -34,6 +35,7 @@ const ReportsPage = lazy(() => import("@/pages/ReportsPage").then((m) => ({ defa
 const ReportDashboardPage = lazy(() => import("@/pages/ReportDashboardPage").then((m) => ({ default: m.ReportDashboardPage })));
 const HistoryPage = lazy(() => import("@/pages/HistoryPage").then((m) => ({ default: m.HistoryPage })));
 const ScenarioTagsAdminPage = lazy(() => import("@/pages/ScenarioTagsAdminPage").then((m) => ({ default: m.ScenarioTagsAdminPage })));
+const SystemSettingsAdminPage = lazy(() => import("@/pages/SystemSettingsAdminPage").then((m) => ({ default: m.SystemSettingsAdminPage })));
 const ChartViewerPage = lazy(() => import("@/pages/ChartViewerPage").then((m) => ({ default: m.ChartViewerPage })));
 
 /** Placeholder mínimo mientras se carga una página lazy (sin artefactos visuales). */
@@ -109,6 +111,10 @@ export const router = createBrowserRouter([
               {
                 element: <RequireUserManager />,
                 children: [{ path: "users-admin", element: <SuspenseWrapper><UsersAdminPage /></SuspenseWrapper> }],
+              },
+              {
+                element: <RequireSystemSettingsManager />,
+                children: [{ path: "system-settings", element: <SuspenseWrapper><SystemSettingsAdminPage /></SuspenseWrapper> }],
               },
               {
                 element: <RequireCatalogManager />,

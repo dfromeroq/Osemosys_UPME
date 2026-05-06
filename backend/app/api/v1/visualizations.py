@@ -97,6 +97,7 @@ def get_comparison_data(
     sub_filtro: str | None = Query(None),
     loc: str | None = Query(None),
     es_porcentaje: bool = Query(False, description="Si true, normaliza cada año/escenario a 100%"),
+    group_by: str = Query("year", description="Agrupación: 'year' (default) o 'scenario' para modo alternativo"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -106,19 +107,19 @@ def get_comparison_data(
         job_id_list = [int(x.strip()) for x in job_ids.split(",") if x.strip()]
     except ValueError:
         raise HTTPException(status_code=400, detail="job_ids inválidos")
-
+    
     if not job_id_list:
         raise HTTPException(status_code=400, detail="Debe proveer al menos un job_id")
     
     if len(job_id_list) > 10:
         raise HTTPException(status_code=400, detail="Máximo 10 jobs para comparar")
-
+    
     year_list = []
     try:
         year_list = [int(x.strip()) for x in years_to_plot.split(",") if x.strip()]
     except ValueError:
         raise HTTPException(status_code=400, detail="years_to_plot inválidos")
-
+    
     # Validar acceso a todos los jobs
     for jid in job_id_list:
         try:
@@ -129,19 +130,32 @@ def get_comparison_data(
                 )
         except NotFoundError:
             raise HTTPException(status_code=404, detail=f"Job {jid} no encontrado o sin acceso")
-
+    
     try:
-        return chart_service.build_comparison_data(
-            db=db,
-            job_ids=job_id_list,
-            tipo=tipo,
-            un=un,
-            years_to_plot=year_list,
-            agrupacion=agrupacion,
-            sub_filtro=sub_filtro,
-            loc=loc,
-            es_porcentaje_override=es_porcentaje,
-        )
+        if group_by == "scenario":
+            return chart_service.build_comparison_data_by_year_alt(
+                db=db,
+                job_ids=job_id_list,
+                tipo=tipo,
+                un=un,
+                years_to_plot=year_list,
+                agrupacion=agrupacion,
+                sub_filtro=sub_filtro,
+                loc=loc,
+                es_porcentaje_override=es_porcentaje,
+            )
+        else:
+            return chart_service.build_comparison_data(
+                db=db,
+                job_ids=job_id_list,
+                tipo=tipo,
+                un=un,
+                years_to_plot=year_list,
+                agrupacion=agrupacion,
+                sub_filtro=sub_filtro,
+                loc=loc,
+                es_porcentaje_override=es_porcentaje,
+            )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

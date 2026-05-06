@@ -396,6 +396,7 @@ def run_infeasibility_diagnostic_job(self, job_id: int) -> None:
                     solution_seed,
                     instance=instance,
                     csv_dir=str(csv_dir),
+                    job_id=job_id,
                 )
                 enriched = solution_seed["infeasibility_diagnostics"]
             else:
@@ -433,6 +434,7 @@ def run_infeasibility_diagnostic_job(self, job_id: int) -> None:
                         solution_seed,
                         instance=instance,
                         csv_dir=tmp_csv,
+                        job_id=job_id,
                     )
                     enriched = solution_seed["infeasibility_diagnostics"]
     except _DiagnosticCancelled as exc:

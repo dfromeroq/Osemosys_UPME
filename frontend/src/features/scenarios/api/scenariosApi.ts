@@ -7,6 +7,7 @@ import type { PaginatedResponse } from "@/shared/api/pagination";
 import type {
   ChangeRequest,
   ChangeRequestStatus,
+  DataQualityReport,
   ParameterValue,
   Scenario,
   ScenarioEditPolicy,
@@ -409,11 +410,47 @@ function extractTagAssignmentConflict(
   return null;
 }
 
+export type ScenarioDataQualityResponse = {
+  scenario_id: number;
+  data_quality_warnings: DataQualityReport | Record<string, never>;
+};
+
+export type FixNumericPrecisionResponse = {
+  scenario_id: number;
+  fixed_n_tuples: number;
+  before: { n_real_conflict: number; n_numeric_precision: number };
+  after: { n_real_conflict: number; n_numeric_precision: number };
+  data_quality_warnings: DataQualityReport;
+};
+
+
 export const scenariosApi = {
   listScenarios,
   listScenarioFacets,
   listScenarioTags,
   listScenarioTagCategories,
+
+  /** GET /scenarios/{id}/data-quality — reporte persistido. */
+  getDataQuality: (scenarioId: number) =>
+    httpClient
+      .get<ScenarioDataQualityResponse>(`/scenarios/${scenarioId}/data-quality`)
+      .then((r) => r.data),
+
+  /** POST /scenarios/{id}/data-quality/refresh — re-detecta y persiste. */
+  refreshDataQuality: (scenarioId: number) =>
+    httpClient
+      .post<ScenarioDataQualityResponse>(
+        `/scenarios/${scenarioId}/data-quality/refresh`,
+      )
+      .then((r) => r.data),
+
+  /** POST /scenarios/{id}/data-quality/fix-numeric-precision — auto-fix decimal. */
+  fixNumericPrecisionConflicts: (scenarioId: number) =>
+    httpClient
+      .post<FixNumericPrecisionResponse>(
+        `/scenarios/${scenarioId}/data-quality/fix-numeric-precision`,
+      )
+      .then((r) => r.data),
 
   createScenarioTag: (input: {
     category_id: number;

@@ -56,9 +56,14 @@ class ChartDataResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class SubplotData(BaseModel):
-    """Un subplot correspondiente a un año específico en comparación."""
+    """Un subplot en comparación. 
+    
+    Para modo 'by-year': year = año, categories = escenarios.
+    Para modo 'by-year-alt': year = job_id, scenario_name = nombre, categories = años.
+    """
 
     year: int
+    scenario_name: str | None = None
     categories: list[str]
     series: list[ChartSeries]
 

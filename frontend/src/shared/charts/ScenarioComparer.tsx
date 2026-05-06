@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type CompareViewMode = 'facet' | 'by-year' | 'line-total';
+export type CompareViewMode = 'facet' | 'by-year' | 'by-year-alt' | 'line-total';
 
 interface ScenarioComparerProps {
   /** Cantidad de escenarios seleccionados en la tabla superior (incluye el actual). */
@@ -84,12 +84,26 @@ export const ScenarioComparer: React.FC<ScenarioComparerProps> = ({
             />
             <span className="text-sm text-slate-300">Líneas totales</span>
           </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="compareView"
+              checked={compareViewMode === 'by-year-alt'}
+              onChange={() => onChangeViewMode('by-year-alt')}
+              className="w-4 h-4 border-2 border-slate-500 text-blue-500 focus:ring-blue-500 focus:ring-offset-0 focus:ring-offset-[#1e293b] bg-[#0f172b]"
+            />
+            <span className="text-sm text-slate-300">Por años seleccionados - Alternativo</span>
+          </label>
         </div>
       </div>
 
-      {active && compareViewMode === 'by-year' && (
+      {active && (compareViewMode === 'by-year' || compareViewMode === 'by-year-alt') && (
         <div className="bg-[#1e293b] p-4 rounded-xl border border-slate-700/50">
-          <h3 className="text-sm font-bold text-slate-300 mb-3">Años a graficar</h3>
+          <h3 className="text-sm font-bold text-slate-300 mb-3">
+            {compareViewMode === 'by-year'
+              ? 'Años a graficar (un grupo de barras por año)'
+              : 'Años a graficar (barras dentro de cada escenario)'}
+          </h3>
           <div className="flex flex-wrap gap-2 content-start">
             {AVAILABLE_YEARS.map((year) => {
               const isSelected = selectedYears.includes(year);

@@ -27,6 +27,7 @@ import { ColumnFilterPopover } from "@/shared/components/ColumnFilterPopover";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { ScenarioTagChip } from "@/shared/components/ScenarioTagChip";
 import { ScenarioTagsPanel } from "@/shared/components/ScenarioTagsPanel";
+import { DataQualityModal } from "@/features/scenarios/components/DataQualityModal";
 import type {
   Scenario,
   ScenarioEditPolicy,
@@ -171,6 +172,8 @@ export function ScenariosPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(25);
+  // Modal de calidad de datos: escenario activo (o null si cerrado).
+  const [dataQualityScenario, setDataQualityScenario] = useState<Scenario | null>(null);
   const [loadingRows, setLoadingRows] = useState(false);
   const [search, setSearch] = useState("");
   // Filtros multiselect inline en cabecera (patrón del detalle de escenario)
@@ -1184,6 +1187,9 @@ export function ScenariosPage() {
                 </span>
               </th>
               <th style={{ textAlign: "left", fontSize: 13, padding: "10px 12px", color: "var(--muted)" }}>
+                Calidad
+              </th>
+              <th style={{ textAlign: "left", fontSize: 13, padding: "10px 12px", color: "var(--muted)" }}>
                 Creado
               </th>
               <th style={{ textAlign: "left", fontSize: 13, padding: "10px 12px", color: "var(--muted)" }}>
@@ -1195,13 +1201,13 @@ export function ScenariosPage() {
           <tbody>
             {loadingRows ? (
               <tr>
-                <td colSpan={9} style={{ padding: 14, opacity: 0.75 }}>
+                <td colSpan={10} style={{ padding: 14, opacity: 0.75 }}>
                   Cargando escenarios...
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={9} style={{ padding: 14, opacity: 0.75 }}>
+                <td colSpan={10} style={{ padding: 14, opacity: 0.75 }}>
                   Sin registros.
                 </td>
               </tr>
@@ -1311,6 +1317,12 @@ export function ScenariosPage() {
                     <Badge variant="neutral">
                       {simulationTypeLabel[row.simulation_type] ?? row.simulation_type}
                     </Badge>
+                  </td>
+                  <td style={{ padding: "10px 12px" }}>
+                    <DataQualityBadge
+                      scenario={row}
+                      onOpen={() => setDataQualityScenario(row)}
+                    />
                   </td>
                   <td style={{ padding: "10px 12px" }}>{new Date(row.created_at).toLocaleString()}</td>
                   <td style={{ padding: "10px 12px" }}>
@@ -2216,6 +2228,115 @@ export function ScenariosPage() {
         onConfirm={() => void confirmRemoveRowTag()}
         onCancel={() => (rowTagRemoving ? undefined : setRowTagToRemove(null))}
       />
+
+      {dataQualityScenario && (
+        <DataQualityModal
+          open
+          scenarioId={dataQualityScenario.id}
+          scenarioName={dataQualityScenario.name}
+          onClose={() => setDataQualityScenario(null)}
+          onChanged={() => void fetchScenarios()}
+        />
+      )}
     </section>
+  );
+}
+
+
+/**
+ * Mini-badge que muestra el estado de calidad del escenario.
+ * - sin datos: muestra '—' silencioso (escenarios pre-refactor sin validar).
+ * - con conflicts reales: badge danger con icono ⚠.
+ * - con precision/exclusions pero sin reales: badge warning con icono.
+ * - todo OK: badge success.
+ *
+ * Click abre el modal con el detalle.
+ */
+function DataQualityBadge({
+  scenario,
+  onOpen,
+}: {
+  scenario: Scenario;
+  onOpen: () => void;
+}) {
+  const s = scenario.data_quality_summary;
+  if (!s) {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        title="Calidad de datos no validada aún. Click para ejecutar la validación."
+        style={{
+          background: "transparent",
+          border: "1px dashed rgba(148,163,184,0.35)",
+          borderRadius: 6,
+          padding: "2px 8px",
+          fontSize: 11,
+          color: "var(--muted, #94a3b8)",
+          cursor: "pointer",
+        }}
+      >
+        sin validar
+      </button>
+    );
+  }
+  const nReal = s.n_bound_real_conflict;
+  const nPrec = s.n_bound_numeric_precision;
+  const nYr = s.n_year_exclusions;
+  const total = nReal + nPrec + nYr;
+  if (total === 0) {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        title="Sin conflictos detectados"
+        style={{
+          background: "rgba(34,197,94,0.10)",
+          border: "1px solid rgba(34,197,94,0.30)",
+          borderRadius: 6,
+          padding: "2px 8px",
+          fontSize: 11,
+          color: "var(--success, #4ade80)",
+          cursor: "pointer",
+        }}
+      >
+        ✓ OK
+      </button>
+    );
+  }
+  const isReal = nReal > 0;
+  const titleParts: string[] = [];
+  if (nReal > 0) titleParts.push(`${nReal} conflicto(s) real(es)`);
+  if (nPrec > 0) titleParts.push(`${nPrec} de precisión decimal`);
+  if (nYr > 0) titleParts.push(`${nYr} año(s) excluido(s)`);
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title={titleParts.join(" · ") + " — click para ver detalle"}
+      style={{
+        background: isReal ? "rgba(239,68,68,0.14)" : "rgba(245,158,11,0.14)",
+        border: isReal
+          ? "1px solid rgba(239,68,68,0.34)"
+          : "1px solid rgba(245,158,11,0.34)",
+        borderRadius: 6,
+        padding: "2px 8px",
+        fontSize: 11,
+        color: isReal ? "var(--danger, #f87171)" : "var(--warning, #fbbf24)",
+        cursor: "pointer",
+        display: "inline-flex",
+        gap: 4,
+        alignItems: "center",
+      }}
+    >
+      <span aria-hidden>⚠</span>
+      <span>
+        {nReal > 0 && <strong>{nReal}</strong>}
+        {nReal > 0 && nPrec > 0 && " · "}
+        {nPrec > 0 && <span>{nPrec}d</span>}
+        {(nReal > 0 || nPrec > 0) && nYr > 0 && " · "}
+        {nYr > 0 && <span>{nYr}y</span>}
+      </span>
+    </button>
   );
 }

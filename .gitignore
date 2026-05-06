@@ -76,6 +76,8 @@ frontend/dist/
 .env
 .env.local
 .env.*.local
+secrets/
+*.lic
 
 # ──────────────────────────────────────────────
 # Docker (volumes locales)

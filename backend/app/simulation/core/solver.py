@@ -24,8 +24,12 @@ from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Alias usado en solve_model -> nombre del factory Pyomo (appsi_highs, glpk).
-SOLVER_FACTORIES: dict[str, str] = {"highs": "appsi_highs", "glpk": "glpk"}
+# Alias usado en solve_model -> nombre del factory Pyomo (appsi_highs, glpk, gurobi).
+SOLVER_FACTORIES: dict[str, str] = {
+    "highs": "appsi_highs",
+    "glpk": "glpk",
+    "gurobi": "gurobi",
+}
 
 
 def normalize_solver_status_display(status: str) -> str:
@@ -40,10 +44,36 @@ def normalize_solver_status_display(status: str) -> str:
     return re.sub("infeasible", "infactible", s, flags=re.IGNORECASE)
 
 
+def _gurobi_lightweight_available() -> bool:
+    """Chequea si gurobipy está instalado SIN consumir licencia.
+
+    `pyo.SolverFactory("gurobi").available()` crea un `gurobipy.Model()` para
+    probar la licencia, lo cual con licencias **Single-Use** cuenta como una
+    sesión activa. Cuando el api (3 uvicorn workers) y el simulation-worker
+    arrancan en paralelo y todos llaman a `get_solver_availability()` se
+    producen colisiones tipo "Single-use license. Another Gurobi process
+    running.". Aquí solo verificamos que el módulo se pueda importar; la
+    licencia se valida al hacer el `solve()` real.
+    """
+    try:
+        import gurobipy  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
 def get_solver_availability() -> dict[str, bool]:
-    """Comprueba para cada solver si está disponible (instalado y usable)."""
+    """Comprueba para cada solver si está disponible (instalado y usable).
+
+    Para Gurobi se hace un chequeo *liviano* basado solo en si `gurobipy`
+    es importable, para no consumir una sesión de licencia Single-Use sólo
+    para probar disponibilidad.
+    """
     availability: dict[str, bool] = {}
     for solver_alias, solver_factory in SOLVER_FACTORIES.items():
+        if solver_alias == "gurobi":
+            availability[solver_alias] = _gurobi_lightweight_available()
+            continue
         solver = pyo.SolverFactory(solver_factory)
         availability[solver_alias] = bool(
             solver is not None and solver.available(exception_flag=False)
@@ -72,27 +102,156 @@ def write_lp_file(
     return lp_path
 
 
-def _apply_solver_runtime_options(solver: object, *, candidate: str, settings: object) -> None:
-    """Aplica opciones runtime no invasivas al solver seleccionado.
+def _release_solver(solver: object) -> None:
+    """Libera recursos del solver inmediatamente tras el solve.
 
-    Por ahora solo configura `threads` para HiGHS cuando el deployment define
-    `SIM_SOLVER_THREADS > 0`. GLPK se mantiene sin cambios porque no soporta
-    paralelismo multihilo equivalente en este flujo.
+    Para Gurobi (`gurobi_direct` / `gurobi_persistent`) el objeto Pyomo guarda
+    una referencia al ``gurobipy.Env`` y al ``gurobipy.Model``, manteniendo
+    activa la sesión de licencia hasta que el GC los libere. Con licencia
+    Single-Use eso impide cualquier otro solve concurrente.
+
+    Estrategia:
+      1. Llamar ``solver.close()`` / ``release()`` si lo expone.
+      2. Cerrar ``_solver_model`` y ``_solver_env`` con ``dispose()``.
+      3. Forzar ``gc.collect()`` para que cualquier referencia residual
+         (e.g. capturada por results) se libere de inmediato.
     """
-    solver_threads = int(getattr(settings, "sim_solver_threads", 0) or 0)
-    if candidate != "highs" or solver_threads <= 0:
-        return
+    import gc
 
-    highs_options = getattr(solver, "highs_options", None)
-    if isinstance(highs_options, dict):
-        highs_options["threads"] = solver_threads
-        logger.info("Configurando HiGHS con threads=%s", solver_threads)
-        return
+    closed = False
+    for attr in ("close", "release", "_release_solver"):
+        fn = getattr(solver, attr, None)
+        if callable(fn):
+            try:
+                fn()
+                closed = True
+                break
+            except Exception:  # pragma: no cover
+                logger.debug("Error cerrando solver vía %s", attr, exc_info=True)
+    if not closed:
+        # gurobi_direct/persistent: cerrar el solver_model y env explícitamente.
+        solver_model = getattr(solver, "_solver_model", None)
+        if solver_model is not None:
+            for closer in ("dispose", "close"):
+                fn = getattr(solver_model, closer, None)
+                if callable(fn):
+                    try:
+                        fn()
+                    except Exception:  # pragma: no cover
+                        logger.debug(
+                            "Error cerrando solver_model vía %s",
+                            closer,
+                            exc_info=True,
+                        )
+                    break
+        env = getattr(solver, "_solver_env", None)
+        if env is not None:
+            for closer in ("dispose", "close"):
+                fn = getattr(env, closer, None)
+                if callable(fn):
+                    try:
+                        fn()
+                    except Exception:  # pragma: no cover
+                        logger.debug(
+                            "Error cerrando solver_env vía %s",
+                            closer,
+                            exc_info=True,
+                        )
+                    break
 
-    logger.warning(
-        "No fue posible aplicar threads=%s a HiGHS: el solver no expone highs_options",
-        solver_threads,
-    )
+    # Limpiar referencias residuales (results, plugin) que pueden retener el
+    # Env de gurobipy. gc.collect() acelera la liberación de la licencia.
+    gc.collect()
+    # gurobipy expone `disposeDefaultEnv()` para destruir el Env implícito
+    # creado al usar `Model()` sin pasar Env explícito. Sin esto, en algunas
+    # versiones la licencia queda tomada hasta que el proceso muera.
+    try:
+        import gurobipy as gp
+
+        dispose_default = getattr(gp, "disposeDefaultEnv", None)
+        if callable(dispose_default):
+            dispose_default()
+    except Exception:  # pragma: no cover - gurobipy no instalado
+        pass
+
+
+def _resolve_solver_threads(settings: object) -> int:
+    """Devuelve los hilos a entregar al solver.
+
+    Prioridad: ``core.system_setting['solver.threads']`` (configurable desde la
+    UI admin) → ``SIM_SOLVER_THREADS`` (env var del despliegue). Si BD no está
+    accesible (ej. tests sin DB), cae al env var.
+    """
+    fallback = int(getattr(settings, "sim_solver_threads", 0) or 0)
+    try:
+        from app.db.session import SessionLocal
+        from app.services.system_settings_service import SystemSettingsService
+    except Exception:  # pragma: no cover - import defensivo
+        return fallback
+    try:
+        with SessionLocal() as db:
+            return SystemSettingsService.get_solver_threads(db, fallback=fallback)
+    except Exception:
+        logger.exception(
+            "No fue posible leer solver.threads desde BD; usando fallback=%s",
+            fallback,
+        )
+        return fallback
+
+
+def _apply_solver_runtime_options(
+    solver: object, *, candidate: str, settings: object
+) -> int | None:
+    """Aplica opciones runtime al solver y devuelve los hilos efectivos.
+
+    Configura `threads` para HiGHS y Gurobi cuando hay un valor configurado
+    (BD o env var). GLPK se mantiene sin cambios.
+
+    Retorna:
+      - El número efectivo de hilos leído del propio objeto solver tras
+        configurarlo (no el parámetro de entrada). Permite reportar al usuario
+        qué decidió finalmente el optimizador.
+      - ``None`` si el solver es single-thread (GLPK) o si no se pudo leer.
+    """
+    solver_threads = _resolve_solver_threads(settings)
+
+    if candidate == "highs":
+        highs_options = getattr(solver, "highs_options", None)
+        if not isinstance(highs_options, dict):
+            logger.warning(
+                "HiGHS no expone highs_options; no se puede leer/escribir threads",
+            )
+            return None
+        if solver_threads > 0:
+            highs_options["threads"] = solver_threads
+            logger.info("Configurando HiGHS con threads=%s", solver_threads)
+        effective = highs_options.get("threads")
+        try:
+            return int(effective) if effective is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    if candidate == "gurobi":
+        gurobi_options = getattr(solver, "options", None)
+        if gurobi_options is None:
+            return None
+        if solver_threads > 0:
+            try:
+                gurobi_options["Threads"] = solver_threads
+                logger.info("Configurando Gurobi con Threads=%s", solver_threads)
+            except Exception:  # pragma: no cover - depende de la versión de pyomo
+                logger.warning(
+                    "No fue posible aplicar Threads=%s a Gurobi vía solver.options",
+                    solver_threads,
+                )
+        try:
+            effective = gurobi_options["Threads"]
+            return int(effective) if effective is not None else None
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    # GLPK u otros solvers single-thread.
+    return None
 
 
 def _run_infeasibility_diagnostics(instance: pyo.ConcreteModel) -> None:
@@ -249,7 +408,9 @@ def solve_model(
 
         logger.info("Resolviendo con %s (SolverFactory('%s'))...", candidate, factory_name)
         solver = pyo.SolverFactory(factory_name)
-        _apply_solver_runtime_options(solver, candidate=candidate, settings=settings)
+        threads_used = _apply_solver_runtime_options(
+            solver, candidate=candidate, settings=settings
+        )
         results = solver.solve(
             instance,
             tee=settings.sim_solver_tee,
@@ -285,6 +446,7 @@ def solve_model(
             "solver_name": candidate,
             "solver_status": status_display,
             "objective_value": obj,
+            "solver_threads_used": threads_used,
             "infeasibility_diagnostics": diagnostics,
         }
 
@@ -293,6 +455,12 @@ def solve_model(
                 on_solver_finished(instance, solver, results, solution_dict)
             except Exception:  # pragma: no cover - el hook es best-effort
                 logger.exception("on_solver_finished falló; se ignora y se continúa.")
+
+        # Libera la licencia del solver tan pronto se termina. Crítico para
+        # Gurobi con licencia Single-Use: si el objeto solver queda vivo (por
+        # referencias en post-procesamiento), el environment de gurobipy
+        # mantiene la sesión tomada y bloquea cualquier otro solve.
+        _release_solver(solver)
 
         return solution_dict
 

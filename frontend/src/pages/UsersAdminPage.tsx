@@ -27,7 +27,8 @@ type PermKey =
   | "can_import_official_data"
   | "can_manage_users"
   | "can_manage_scenarios"
-  | "is_admin_reports";
+  | "is_admin_reports"
+  | "can_manage_system_settings";
 
 type PermState = Record<PermKey, boolean>;
 
@@ -79,6 +80,13 @@ const PERMS: {
     description:
       "Puede subir archivos Excel/XLSM como datos oficiales del modelo (reemplaza la BD).",
   },
+  {
+    key: "can_manage_system_settings",
+    label: "Admin Configuración",
+    badge: "Config sistema",
+    description:
+      "Puede modificar la configuración runtime del sistema (ej. número de hilos del solver) desde el panel admin.",
+  },
 ];
 
 function permStateFrom(u: User): PermState {
@@ -89,6 +97,7 @@ function permStateFrom(u: User): PermState {
     can_manage_users: u.can_manage_users,
     can_manage_scenarios: u.can_manage_scenarios ?? false,
     is_admin_reports: u.is_admin_reports ?? false,
+    can_manage_system_settings: u.can_manage_system_settings ?? false,
   };
 }
 
@@ -123,6 +132,7 @@ export function UsersAdminPage() {
     can_manage_users: false,
     can_manage_scenarios: false,
     is_admin_reports: false,
+    can_manage_system_settings: false,
   });
 
   const refresh = useCallback(async () => {
@@ -156,6 +166,7 @@ export function UsersAdminPage() {
         can_manage_users: form.can_manage_users,
         can_manage_scenarios: form.can_manage_scenarios,
         is_admin_reports: form.is_admin_reports,
+        can_manage_system_settings: form.can_manage_system_settings,
       });
       setOpenCreate(false);
       setForm({
@@ -168,6 +179,7 @@ export function UsersAdminPage() {
         can_manage_users: false,
         can_manage_scenarios: false,
         is_admin_reports: false,
+        can_manage_system_settings: false,
       });
       await refresh();
       push("Usuario creado.", "success");

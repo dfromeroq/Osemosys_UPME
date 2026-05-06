@@ -25,6 +25,7 @@ from app.api.v1 import (
     scenarios,
     simulations,
     solvers,
+    system_settings,
     technologies,
     users,
     visualizations,
@@ -55,6 +56,7 @@ router.include_router(saved_chart_templates.router, tags=["saved_chart_templates
 router.include_router(saved_chart_templates.reports_router, tags=["saved_reports"])
 router.include_router(simulations.router, tags=["simulations"])
 router.include_router(deletion_log.router, tags=["deletion_log"])
+router.include_router(system_settings.router, tags=["system_settings"])
 
 
 # ============================================================================

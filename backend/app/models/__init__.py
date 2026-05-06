@@ -41,6 +41,7 @@ from .timeslice import Timeslice
 from .technology import Technology
 from .udc_set import UdcSet
 from .core.document_type import DocumentType
+from .core.system_setting import SystemSetting
 from .core.user import User
 
 __all__ = [
@@ -81,6 +82,7 @@ __all__ = [
     "SimulationBenchmark",
     "RelationCategorie",
     "DocumentType",
+    "SystemSetting",
     "User",
     "SavedChartTemplate",
     "SavedChartTemplateFavorite",

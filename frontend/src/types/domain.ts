@@ -8,7 +8,7 @@ export type ChangeRequestStatus = "PENDING" | "APPROVED" | "REJECTED";
 export type ScenarioPermissionScope = "mine" | "readable" | "editable" | "readonly";
 
 export type RunStatus = "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
-export type SimulationSolver = "highs" | "glpk";
+export type SimulationSolver = "highs" | "glpk" | "gurobi";
 export type SimulationInputMode = "SCENARIO" | "CSV_UPLOAD";
 
 export type CatalogEntity =
@@ -36,6 +36,9 @@ export type User = {
    * reportes públicos ajenos, marcar/desmarcar oficiales y ver reportes
    * privados ajenos. */
   is_admin_reports?: boolean;
+  /** Admin de configuración del sistema — puede modificar runtime settings
+   * (ej. hilos del solver) desde el panel admin. */
+  can_manage_system_settings?: boolean;
 };
 
 /** Categoría jerárquica de etiquetas de escenario. */
@@ -94,6 +97,44 @@ export type Scenario = {
     can_propose: boolean;
     can_manage_values: boolean;
   } | null;
+  /** Resumen de warnings de calidad de datos. null si nunca se corrió la
+   * validación (ej. escenarios creados antes del refactor). */
+  data_quality_summary?: DataQualitySummary | null;
+};
+
+/** Conteos del reporte de calidad de datos (ver backend `data_validation`). */
+export type DataQualitySummary = {
+  n_bound_conflicts: number;
+  n_bound_real_conflict: number;
+  n_bound_numeric_precision: number;
+  n_year_exclusions: number;
+};
+
+/** Detalle completo del reporte (devuelto por GET /scenarios/{id}/data-quality). */
+export type DataQualityReport = {
+  bound_conflicts: BoundConflict[];
+  year_exclusions: YearExclusion[];
+  detected_at: string;
+  detected_during: string;
+  summary: DataQualitySummary;
+};
+
+export type BoundConflict = {
+  lower: string;
+  upper: string;
+  key: { REGION?: string; TECHNOLOGY?: string; YEAR?: number; [k: string]: unknown };
+  value_lower: number;
+  value_upper: number;
+  gap: number;
+  /** "real_conflict" si gap >= 1e-4, "numeric_precision" en otro caso */
+  severity: "real_conflict" | "numeric_precision";
+};
+
+export type YearExclusion = {
+  year: number;
+  reason: string;
+  n_timeslices_zero: number;
+  n_timeslices_total: number;
 };
 
 export type ScenarioPermission = {
@@ -149,6 +190,10 @@ export type SimulationRun = {
   user_id: string;
   username?: string | null;
   solver_name: SimulationSolver;
+  /** Hilos efectivamente entregados al solver (leídos del propio optimizador
+   * tras configurarlo). null si el solver es single-thread o si la lectura
+   * falló. */
+  solver_threads_used?: number | null;
   input_mode: SimulationInputMode;
   input_name?: string | null;
   simulation_type: SimulationType;
@@ -165,6 +210,11 @@ export type SimulationRun = {
   is_infeasible_result?: boolean;
   /** True si la simulación se encoló con "correr diagnóstico de infactibilidad automático". */
   run_iis_analysis?: boolean;
+  /** True si la simulación se encoló con "guardar archivo .lp". */
+  generate_lp?: boolean;
+  /** True si el archivo .lp ya está escrito y disponible para descarga vía
+   * `GET /simulations/{id}/lp-file`. */
+  has_lp_file?: boolean;
   /** Estado del análisis enriquecido de infactibilidad (opcional, on-demand). */
   diagnostic_status?: "NONE" | "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED";
   diagnostic_error?: string | null;
@@ -201,11 +251,24 @@ export type VarBoundConflict = {
   gap: number;
 };
 
+export type IISBoundConflict = {
+  /** Nombre de la variable cuyo bound entra en el IIS. */
+  name: string;
+  /** Cota que conflictúa: `LB` (lower bound) o `UB` (upper bound). */
+  side: "LB" | "UB";
+};
+
 export type IISReport = {
   available: boolean;
   method: string | null;
   constraint_names: string[];
   variable_names: string[];
+  /** Conflictos por cota que reporta Gurobi (`IISLB` / `IISUB`). HiGHS no
+   * expone esta distinción, así que la lista queda vacía con ese solver. */
+  bound_conflicts?: IISBoundConflict[];
+  /** Path absoluto en el servidor del archivo `.ilp` generado por Gurobi.
+   * Se descarga vía `GET /simulations/{id}/iis-ilp`. */
+  ilp_path?: string | null;
   unavailable_reason: string | null;
 };
 
@@ -265,6 +328,7 @@ export type RunResult = {
   job_id: number;
   scenario_id: number | null;
   solver_name: SimulationSolver;
+  solver_threads_used?: number | null;
   records_used: number;
   osemosys_param_records: number;
   objective_value: number;
@@ -418,6 +482,7 @@ export type ChartDataResponse = {
 
 export type SubplotData = {
   year: number;
+  scenario_name?: string | null;
   categories: string[];
   series: ChartSeries[];
 };
@@ -428,7 +493,7 @@ export type CompareChartResponse = {
   yAxisLabel: string;
 };
 
-export type CompareMode = "off" | "facet" | "by-year" | "line-total";
+export type CompareMode = "off" | "facet" | "by-year" | "by-year-alt" | "line-total";
 
 /** Modo del nombre de archivo al exportar comparación por facetas (PNG/SVG). */
 export type CompareFacetExportFilenameMode = "result" | "tags";
@@ -537,7 +602,7 @@ export type SavedChartTemplate = {
   variable: string | null;
   agrupar_por: string | null;
   view_mode: "column" | "line" | "area" | "pareto" | "porcentaje" | "table" | null;
-  compare_mode: "off" | "facet" | "by-year" | "line-total";
+  compare_mode: "off" | "facet" | "by-year" | "by-year-alt" | "line-total";
   /** Años a graficar cuando `compare_mode === "by-year"`. Null en otros modos. */
   years_to_plot: number[] | null;
   /** Series manuales overlay (línea). */

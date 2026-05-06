@@ -351,4 +351,22 @@ class CsvScenarioImportService:
             CsvScenarioImportService._cleanup_failed_scenario(db, scenario_id=scenario_id)
             raise
 
+        # Validación de calidad de datos post-import: detecta bound conflicts
+        # y dead years, aplica la exclusión de años muertos y persiste los
+        # warnings en scenario.data_quality_warnings.
+        try:
+            from app.simulation.core import data_validation as dv
+            dv.validate_and_persist(
+                db,
+                scenario_id=scenario_id,
+                detected_during="import",
+                apply_dead_years=True,
+            )
+        except Exception:  # pragma: no cover - defensive
+            db.rollback()
+            import logging
+            logging.getLogger(__name__).warning(
+                "data_validation post-import (CSV) fallo", exc_info=True,
+            )
+
         return ScenarioService.get_public(db, scenario_id=scenario_id, current_user=current_user)

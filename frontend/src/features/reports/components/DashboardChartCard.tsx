@@ -341,15 +341,40 @@ export function DashboardChartCard({
       if (template.loc) params.loc = template.loc;
       if (template.agrupar_por) params.agrupacion = template.agrupar_por;
       if (esPorcentaje) params.es_porcentaje = "true";
-      if (filteredYears.length === 0) {
-        setError(
-          "El rango de años seleccionado no incluye ninguno de los años de esta plantilla.",
-        );
-        setLoading(false);
-        return () => {
-          cancelled = true;
-        };
-      }
+
+      simulationApi
+        .getCompareData(
+          params as Parameters<typeof simulationApi.getCompareData>[0],
+        )
+        .then((data) => {
+          if (cancelled) return;
+          setByYear(applyTitle(applyByYearAliases(data)));
+          setSingle(null);
+          setFacet(null);
+          setLineTotal(null);
+        })
+    } else if (template.compare_mode === "by-year-alt") {
+      // Recortar la lista de años explícita al rango si está activo.
+      const allYears = template.years_to_plot ?? [];
+      const filteredYears = (yearFrom != null || yearTo != null)
+        ? allYears.filter(
+            (y) =>
+              (yearFrom == null || y >= yearFrom) &&
+              (yearTo == null || y <= yearTo),
+          )
+        : allYears;
+      const params: Record<string, string> = {
+        job_ids: jobIds.join(","),
+        tipo: template.tipo,
+        un: template.un,
+        years_to_plot: filteredYears.join(","),
+        group_by: "scenario",
+      };
+      if (template.sub_filtro) params.sub_filtro = template.sub_filtro;
+      if (template.loc) params.loc = template.loc;
+      if (template.agrupar_por) params.agrupacion = template.agrupar_por;
+      if (esPorcentaje) params.es_porcentaje = "true";
+
       simulationApi
         .getCompareData(
           params as Parameters<typeof simulationApi.getCompareData>[0],
@@ -526,7 +551,7 @@ export function DashboardChartCard({
             yAxisMin={template.y_axis_min ?? null}
             yAxisMax={template.y_axis_max ?? null}
           />
-        ) : template.compare_mode === "by-year" && byYear ? (
+        ) : (template.compare_mode === "by-year" || template.compare_mode === "by-year-alt") && byYear ? (
           <CompareChart
             data={reorderByYearSeries(byYear, template.custom_series_order ?? null)}
             barOrientation={

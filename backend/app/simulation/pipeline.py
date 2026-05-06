@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import csv
 import logging
+import re
+from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Final
@@ -25,11 +27,45 @@ from typing import Any, Final
 from sqlalchemy import func, insert
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.models import OsemosysParamValue, OsemosysOutputParamValue, SimulationJob
 from app.repositories.simulation_repository import SimulationRepository
 from app.simulation.core.data_processing import PARAM_INDEX
 from app.simulation.core.results_processing import VARIABLE_INDEX_NAMES
 from app.simulation.osemosys_core import run_osemosys_from_csv_dir, run_osemosys_from_db
+
+
+def _safe_slug(text: str | None, *, max_len: int = 60) -> str:
+    """Devuelve un fragmento seguro para nombre de archivo. Vacío → 'sim'."""
+    if not text:
+        return "sim"
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "_", str(text)).strip("._-")
+    return (slug or "sim")[:max_len]
+
+
+def _lp_dir_for_jobs() -> Path:
+    """Carpeta donde se persisten los .lp de simulaciones."""
+    settings = get_settings()
+    base = Path(getattr(settings, "simulation_artifacts_dir", "/app/tmp"))
+    out = base / "lp-files"
+    out.mkdir(parents=True, exist_ok=True)
+    return out
+
+
+def _lp_basename_for_job(job: SimulationJob, *, scenario_name: str | None = None) -> str:
+    """``sim_<id>_<nombre>_<YYYYMMDDTHHMMSSZ>`` — nombre del .lp generado."""
+    name_source = (
+        getattr(job, "display_name", None)
+        or scenario_name
+        or getattr(job, "input_name", None)
+        or "sim"
+    )
+    ts_attr = getattr(job, "queued_at", None) or datetime.now(timezone.utc)
+    if isinstance(ts_attr, datetime):
+        ts = ts_attr.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    else:
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"sim_{job.id}_{_safe_slug(name_source)}_{ts}"
 
 logger = logging.getLogger(__name__)
 
@@ -290,6 +326,7 @@ def _persist_solution(
 ) -> int:
     """Persiste resumen y filas de salida para cualquier tipo de job."""
     job.objective_value = solution.get("objective_value")
+    job.solver_threads_used = solution.get("solver_threads_used")
     job.coverage_ratio = solution.get("coverage_ratio")
     job.total_demand = solution.get("total_demand")
     job.total_dispatch = solution.get("total_dispatch")
@@ -451,13 +488,31 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
         db.commit()
         _check_cancel_requested(db, job_id=job_id)
 
+    _gen_lp = bool(getattr(job, "generate_lp", False))
+    _scenario_name = getattr(getattr(job, "scenario", None), "name", None)
+    _lp_dir_eff = _lp_dir_for_jobs() if _gen_lp else None
+    _lp_basename_eff = (
+        _lp_basename_for_job(job, scenario_name=_scenario_name) if _gen_lp else None
+    )
     solution = run_osemosys_from_db(
         db,
         scenario_id=job.scenario_id,
         solver_name=job.solver_name,
         on_stage=_on_stage,
         run_iis_analysis=bool(getattr(job, "run_iis_analysis", False)),
+        generate_lp=_gen_lp,
+        lp_dir=str(_lp_dir_eff) if _lp_dir_eff else None,
+        lp_basename=_lp_basename_eff,
+        job_id=job_id,
     )
+
+    # Persistimos la ruta del .lp si se generó: habilita descarga vía
+    # GET /simulations/{id}/lp-file. El path queda estable aunque después
+    # se renombre el job (`display_name`).
+    if _gen_lp and _lp_dir_eff and _lp_basename_eff:
+        candidate = _lp_dir_eff / f"{_lp_basename_eff}.lp"
+        if candidate.is_file():
+            job.lp_path = str(candidate)
 
     job.progress = 85.0
     SimulationRepository.add_event(
@@ -610,12 +665,24 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
         db.commit()
         _check_cancel_requested(db, job_id=job_id)
 
+    _gen_lp = bool(getattr(job, "generate_lp", False))
+    _lp_dir_eff = _lp_dir_for_jobs() if _gen_lp else None
+    _lp_basename_eff = _lp_basename_for_job(job) if _gen_lp else "osemosys"
     solution = run_osemosys_from_csv_dir(
         csv_root,
         solver_name=job.solver_name,
         on_stage=_on_stage,
         run_iis_analysis=bool(getattr(job, "run_iis_analysis", False)),
+        generate_lp=_gen_lp,
+        lp_dir=str(_lp_dir_eff) if _lp_dir_eff else None,
+        lp_basename=_lp_basename_eff,
+        job_id=job_id,
     )
+
+    if _gen_lp and _lp_dir_eff:
+        candidate = _lp_dir_eff / f"{_lp_basename_eff}.lp"
+        if candidate.is_file():
+            job.lp_path = str(candidate)
 
     job.progress = 85.0
     SimulationRepository.add_event(

@@ -264,6 +264,11 @@ class ScenarioService:
         tags: list[ScenarioTag] | None = None,
     ) -> dict:
         tag_dicts = ScenarioService._tags_for_scenario(db, scenario, tags=tags)
+        # Solo devolvemos el `summary` del data_quality_warnings (no el detalle
+        # completo que puede ser pesado). El detalle se consulta aparte vía
+        # GET /scenarios/{id}/data-quality.
+        dqw = getattr(scenario, "data_quality_warnings", None) or {}
+        data_quality_summary = dqw.get("summary") if isinstance(dqw, dict) else None
         return {
             "id": int(scenario.id),
             "name": scenario.name,
@@ -281,6 +286,7 @@ class ScenarioService:
             "effective_access": ScenarioService._effective_access(
                 db, scenario=scenario, current_user=current_user
             ),
+            "data_quality_summary": data_quality_summary,
         }
 
     @staticmethod

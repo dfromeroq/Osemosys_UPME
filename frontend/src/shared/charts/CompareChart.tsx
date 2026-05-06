@@ -20,6 +20,8 @@ interface CompareChartProps {
   /** Override del eje Y para todos los subplots. ``null``/undefined = auto. */
   yAxisMin?: number | null;
   yAxisMax?: number | null;
+  /** Force all subplots to share the same Y-axis maximum */
+  sharedYAxis?: boolean;
 }
 
 export const CompareChart: React.FC<CompareChartProps> = ({
@@ -27,6 +29,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
   barOrientation = 'vertical',
   yAxisMin,
   yAxisMax,
+  sharedYAxis = false,
 }) => {
   const inverted = barOrientation === 'horizontal';
   const legendDblclickStateRef = useRef(createLegendDblclickState());
@@ -36,6 +39,22 @@ export const CompareChart: React.FC<CompareChartProps> = ({
     data.subplots.forEach((sp) => sp.series.forEach((s) => names.add(s.name)));
     return Array.from(names);
   }, [data.subplots]);
+
+  const sharedYAxisMax = useMemo(() => {
+    if (!sharedYAxis) return 0;
+    let globalMax = 0;
+    data.subplots.forEach((subplot) => {
+      const categoryCount = subplot.categories.length;
+      for (let i = 0; i < categoryCount; i += 1) {
+        const stackTotal = subplot.series.reduce((acc, serie) => {
+          const point = serie.data[i];
+          return acc + (typeof point === 'number' ? point : 0);
+        }, 0);
+        if (stackTotal > globalMax) globalMax = stackTotal;
+      }
+    });
+    return globalMax;
+  }, [data.subplots, sharedYAxis]);
 
   const [hiddenNames, setHiddenNames] = useState<Set<string>>(() => new Set());
   const dataSignature = allSeriesNames.join('|');
@@ -83,7 +102,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         id: `x-${idx}`,
         categories: subplot.categories,
         title: {
-          text: subplot.year.toString(),
+          text: subplot.scenario_name || subplot.year.toString(),
           style: { color: '#94a3b8', fontWeight: 'bold' },
         },
         width: widthStr,
@@ -111,9 +130,23 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         top: '0%',
         height: '86%',
         min: typeof yAxisMin === 'number' ? yAxisMin : 0,
-        ...(typeof yAxisMax === 'number' ? { max: yAxisMax } : null),
+        // Use shared maximum if enabled, otherwise use individual yAxisMax
+        max: typeof yAxisMax === 'number' 
+          ? yAxisMax 
+          : (sharedYAxis && sharedYAxisMax > 0 ? sharedYAxisMax : null),
+        // Grid lines always visible on all charts for visual reference
         gridLineColor: '#334155',
+        gridLineWidth: 1,
+        // Only show ticks on first subplot when Y-axis is shared
+        tickWidth: (!sharedYAxis || idx === 0) ? 1 : 0,
+        tickLength: (!sharedYAxis || idx === 0) ? 6 : 0,
+        tickColor: (!sharedYAxis || idx === 0) ? '#64748b' : 'transparent',
+        // Y-axis line always visible (provides chart boundaries between scenarios)
+        lineWidth: 1,
+        lineColor: '#64748b',
         labels: {
+          // Only show labels on first subplot when Y-axis is shared
+          enabled: !sharedYAxis || idx === 0,
           style: { color: '#94a3b8', fontSize: '13px' },
           formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
             return formatAxis3Sig(this.value as number);
@@ -146,7 +179,10 @@ export const CompareChart: React.FC<CompareChartProps> = ({
           borderWidth: 0,
           showInLegend: idx === 0,
           visible: !hiddenNames.has(s.name),
-          custom: { subplotYear: subplot.year },
+          custom: { 
+            subplotYear: subplot.year,
+            scenarioName: subplot.scenario_name || null,
+          },
         });
       });
     });
@@ -171,8 +207,15 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       tooltip: buildStackedSinglePointTooltipOptions({
         unitLabel: data.yAxisLabel,
         headerPrefix: (ctx) => {
-          const year = (ctx.series.userOptions as { custom?: { subplotYear?: number | string } })
-            .custom?.subplotYear;
+          const userOptions = ctx.series.userOptions as { 
+            custom?: { subplotYear?: number | string;
+                       scenarioName?: string }
+          };
+          // Para modo alternativo, mostrar nombre del escenario
+          if (userOptions.custom?.scenarioName) {
+            return userOptions.custom.scenarioName;
+          }
+          const year = userOptions.custom?.subplotYear;
           return year != null ? String(year) : null;
         },
       }),
@@ -216,7 +259,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, inverted, hiddenNames, yAxisMin, yAxisMax]);
+  }, [data, inverted, hiddenNames, yAxisMin, yAxisMax, sharedYAxisMax]);
 
   return (
     <div style={{ width: '100%' }}>

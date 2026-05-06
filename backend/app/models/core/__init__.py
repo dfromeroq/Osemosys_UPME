@@ -1,9 +1,10 @@
 """Modelos ORM del esquema `core`."""
 
 from .document_type import DocumentType
+from .system_setting import SystemSetting
 from .user import User
 
-__all__ = ["DocumentType", "User"]
+__all__ = ["DocumentType", "SystemSetting", "User"]
 
 
 # ============================================================================

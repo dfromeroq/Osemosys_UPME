@@ -50,6 +50,17 @@ _PREFIJOS_LIQUIDOS_PROD_IMPORT = (
     + ("EXPDSL", "EXPGSL", "EXPLPG", "EXPJET")
 )
 
+_PREFIJOS_EXP_LIQUIDOS = ("EXPDSL", "EXPGSL", "EXPJET", "EXPLPG")
+
+_PREFIJOS_IMP_LIQUIDOS_ALL = (
+    "IMPDSL",
+    "IMPGSL",
+    "IMPJET",
+    "IMPLNG",
+    "IMPLPG",
+    "IMPOIL",
+)
+
 
 # ════════════════════════════════════════════════════════════════════════
 # MAPEO DE VARIABLES → TÍTULOS (para capacidad)
@@ -103,6 +114,28 @@ def _filtro_pwr(df, **kw):
     return df[df["TECHNOLOGY"].str.startswith("PWR")]
 
 
+def _filtro_pwr_liquidos(df, **kw):
+    """Generación eléctrica con combustibles líquidos (PWRDSL, PWRFOL, PWRGSL, PWRJET, PWRLPG).
+
+    Filtra por prefijo de TECHNOLOGY porque el campo FUEL en ProductionByTechnology
+    contiene el combustible de salida (ELC), no el de entrada.
+    """
+    return df[
+        df["TECHNOLOGY"].str.startswith(
+            ("PWRDSL", "PWRFOL", "PWRGSL", "PWRJET", "PWRLPG")
+        )
+    ]
+
+
+def _filtro_pwr_termica(df, **kw):
+    """Generación eléctrica con combustibles térmicos (PWRNGS, PWRBGS, PWRCOA).
+
+    Filtra por prefijo de TECHNOLOGY porque el campo FUEL en ProductionByTechnology
+    contiene el combustible de salida (ELC), no el de entrada.
+    """
+    return df[df["TECHNOLOGY"].str.startswith(("PWRNGS", "PWRBGS", "PWRCOA"))]
+
+
 def _filtro_gas_consumo(df, **kw):
     """Tecnologías que usan gas natural (contienen NGS)."""
     return df[df["TECHNOLOGY"].str.contains("NGS")]
@@ -131,9 +164,63 @@ def _filtro_ref_barrancabermeja(df, **kw):
     return df[df["TECHNOLOGY"].str.startswith("UPSREF_BAR")]
 
 
+def _filtro_ref_ambas(df, sub_filtro=None, **kw):
+    """Refinerías Cartagena + Barrancabermeja (UseByTechnology).
+
+    sub_filtro:
+      - None/'con_crudo': FUEL IN (DSL,GSL,JET,LPG,NGS,ELC,OIL,OIL_1LIV,OIL_2MID,OIL_3PES)
+      - 'sin_crudo':     FUEL IN (DSL,GSL,JET,LPG,NGS,ELC,OIL) [excluye OIL_*]
+    """
+    mask_tech = df["TECHNOLOGY"].str.startswith(("UPSREF_CAR", "UPSREF_BAR"))
+
+    if sub_filtro == "sin_crudo":
+        # Solo productos refinados (sin crudos)
+        mask_fuel = df["FUEL"].isin({"DSL", "GSL", "JET", "LPG", "NGS", "ELC", "OIL"})
+        # Excluir crudos (OIL_1LIV, OIL_2MID, OIL_3PES)
+        mask_excluir = ~df["FUEL"].str.startswith("OIL_", na=False)
+        return df[mask_tech & mask_fuel & mask_excluir]
+
+    # Default: con crudo (incluye todos los combustibles)
+    return df[mask_tech]
+
+
 def _filtro_liquidos_produccion_importacion(df, **kw):
     """Líquidos: importaciones (DSL, GSL, JET, LPG) + refinerías (CAR, BAR)."""
     return df[df["TECHNOLOGY"].str.startswith(_PREFIJOS_LIQUIDOS_PROD_IMPORT)]
+
+
+def _filtro_export_liquidos(df, **kw):
+    """Exportaciones de líquidos (EXPDSL, EXPGSL, EXPJET, EXPLPG)."""
+    return df[df["TECHNOLOGY"].str.startswith(_PREFIJOS_EXP_LIQUIDOS)]
+
+
+def _filtro_import_liquidos(df, **kw):
+    """Importaciones de líquidos (IMPDSL, IMPGSL, IMPJET, IMPLNG, IMPLPG, IMPOIL)."""
+    return df[df["TECHNOLOGY"].str.startswith(_PREFIJOS_IMP_LIQUIDOS_ALL)]
+
+
+def _filtro_demanda_exportaciones_liquidos(df, **kw):
+    """Sectores de demanda + exportaciones de líquidos.
+
+    Sectores de demanda: DEMRES, DEMIND, DEMTRA, DEMTER, DEMCON, DEMAGF, DEMCOQ
+    Exportaciones: EXPDSL, EXPGSL, EXPJET, EXPLPG
+    Combustibles: DSL, FOL, GSL, JET, LPG
+    """
+    if "TECHNOLOGY" not in df.columns:
+        return df.iloc[0:0]
+
+    demanda_mask = df["TECHNOLOGY"].str.startswith(
+        ("DEMRES", "DEMIND", "DEMTRA", "DEMTER", "DEMCON", "DEMAGF", "DEMCOQ")
+    )
+    export_mask = df["TECHNOLOGY"].str.startswith(
+        ("EXPDSL", "EXPGSL", "EXPJET", "EXPLPG")
+    )
+
+    df = df[demanda_mask | export_mask]
+
+    if "FUEL" not in df.columns:
+        return df.iloc[0:0]
+    return df[df["FUEL"].isin({"DSL", "FOL", "GSL", "JET", "LPG"})]
 
 
 def _filtro_ref_import(df, **kw):
@@ -286,6 +373,41 @@ def _filtro_electrolisis_verde(df, **kw):
     ]
 
 
+def _map_h2_verde_azul_gris(tech):
+    """Map technology to H2 verde/azul/gris label."""
+    t = str(tech)
+    if t.startswith("UPSPEM") or t.startswith("UPSALK"):
+        return "Hidrógeno verde"
+    elif t.startswith("UPSSMRCCS"):
+        return "Hidrógeno azul"
+    elif t.startswith("UPSSMR"):
+        return "Hidrógeno gris"
+    return t
+
+
+def _filtro_h2_verde_azul_gris(df, **kw):
+    """Producción de H2: UPSSMR, UPSSMRCCS, UPSPEM, UPSALK."""
+    return df[
+        df["TECHNOLOGY"].str.startswith("UPSSMR")
+        | df["TECHNOLOGY"].str.startswith("UPSPEM")
+        | df["TECHNOLOGY"].str.startswith("UPSALK")
+    ]
+
+
+def _color_h2_verde_azul_gris(df, color_col):
+    """Verde → H2 verde, Azul → H2 azul, Gris → H2 gris."""
+    palette = {
+        "Hidrógeno verde": "#10b981",
+        "Hidrógeno azul": "#3b82f6",
+        "Hidrógeno gris": "#6b7280",
+    }
+    colors, order = [], []
+    for cat in sorted(df[color_col].unique()):
+        order.append(cat)
+        colors.append(palette.get(cat, "#999999"))
+    return colors, order
+
+
 def _filtro_min_hidrocarburos(df, **kw):
     """Minería petróleo y gas (MINOIL, MINNGS)."""
     return df[
@@ -318,6 +440,7 @@ def _filtro_saf_produccion(df, **kw):
     return df[
         df["TECHNOLOGY"].str.startswith("UPSSAF")
         | df["TECHNOLOGY"].str.startswith("UPSBJS")
+        | df["TECHNOLOGY"].str.startswith("UPSATJ")
     ]
 
 
@@ -341,30 +464,6 @@ def _filtro_consumo_liquidos(df, **kw):
     )
 
     df = df[demanda_mask]
-
-    if "FUEL" not in df.columns:
-        return df.iloc[0:0]
-    return df[df["FUEL"].isin({"DSL", "FOL", "GSL", "JET", "LPG"})]
-
-
-def _filtro_demanda_exportaciones_liquidos(df, **kw):
-    """Sectores de demanda + exportaciones de líquidos.
-
-    Sectores de demanda: DEMRES, DEMIND, DEMTRA, DEMTER, DEMCON, DEMAGF, DEMCOQ
-    Exportaciones: EXPDSL, EXPGSL, EXPJET, EXPLPG
-    Combustibles: DSL, FOL, GSL, JET, LPG
-    """
-    if "TECHNOLOGY" not in df.columns:
-        return df.iloc[0:0]
-
-    demanda_mask = df["TECHNOLOGY"].str.startswith(
-        ("DEMRES", "DEMIND", "DEMTRA", "DEMTER", "DEMCON", "DEMAGF", "DEMCOQ")
-    )
-    export_mask = df["TECHNOLOGY"].str.startswith(
-        ("EXPDSL", "EXPGSL", "EXPJET", "EXPLPG")
-    )
-
-    df = df[demanda_mask | export_mask]
 
     if "FUEL" not in df.columns:
         return df.iloc[0:0]
@@ -513,6 +612,21 @@ CONFIGS = {
         "color_fn": _color_por_grupo_fijo,
         "variable_default": "UseByTechnology",
     },
+    "ref_ambas": {
+        "titulo": "Refinerías (Cartagena + Barrancabermeja) - UseByTechnology",
+        "figura": "Figura REF-AMB",
+        "filename": "Fig_Ref_Ambas",
+        "print": "REFINERÍAS (CARTAGENA + BARRANCABERMEJA)",
+        "filtro": _filtro_ref_ambas,
+        "msg_sin_datos": "Sin tecnologías de refinería (UPSREF_CAR / UPSREF_BAR)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": generar_colores_tecnologias,
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
+        "variable_default": "UseByTechnology",
+        "has_sub": True,
+        "sub_filtro_label": "Crudo",
+        "sub_filtros": ["con_crudo", "sin_crudo"],
+    },
     "liquidos_prod_import": {
         "titulo": "Líquidos - Producción + Importación - ProductionByTechnology",
         "figura": "Figura LIQ-PROD",
@@ -523,6 +637,34 @@ CONFIGS = {
         "agrupar_por": "TECNOLOGIA",
         "color_fn": _color_liquidos_import,
         "variable_default": "ProductionByTechnology",
+    },
+    "exp_liquidos": {
+        "titulo": "Líquidos - Exportación - ProductionByTechnology",
+        "figura": "Figura LIQ-EXP",
+        "filename": "Fig_Liquidos_Export",
+        "print": "LÍQUIDOS: EXPORTACIÓN",
+        "filtro": _filtro_export_liquidos,
+        "msg_sin_datos": "Sin exportaciones de líquidos (EXPDSL/EXPGSL/EXPJET/EXPLPG)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_liquidos_import,
+        "variable_default": "ProductionByTechnology",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
+        "soportaPareto": True,
+        "soportaPorcentaje": True,
+    },
+    "imp_liquidos": {
+        "titulo": "Líquidos - Importación - ProductionByTechnology",
+        "figura": "Figura LIQ-IMP",
+        "filename": "Fig_Liquidos_Import",
+        "print": "LÍQUIDOS: IMPORTACIÓN",
+        "filtro": _filtro_import_liquidos,
+        "msg_sin_datos": "Sin importaciones de líquidos (IMPDSL/IMPGSL/IMPJET/IMPLNG/IMPLPG/IMPOIL)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_liquidos_import,
+        "variable_default": "ProductionByTechnology",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
+        "soportaPareto": True,
+        "soportaPorcentaje": True,
     },
     # ═══════════════════════════════════════════════════════════════════
     # RESIDENCIAL
@@ -535,6 +677,7 @@ CONFIGS = {
         "filtro": _filtro_residencial,
         "msg_sin_datos": "Sin tecnologías residenciales (DEMRES)",
         "agrupar_por": "TECNOLOGIA",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
         "color_fn": generar_colores_tecnologias,
         "variable_default": "UseByTechnology",
     },
@@ -560,6 +703,7 @@ CONFIGS = {
         "filtro": _filtro_industrial,
         "msg_sin_datos": "Sin tecnologías industriales (DEMIND)",
         "agrupar_por": "TECNOLOGIA",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
         "color_fn": generar_colores_tecnologias,
         "variable_default": "UseByTechnology",
     },
@@ -585,6 +729,7 @@ CONFIGS = {
         "filtro": _filtro_transporte,
         "msg_sin_datos": "Sin tecnologías de transporte (DEMTRA)",
         "agrupar_por": "TECNOLOGIA",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
         "color_fn": generar_colores_tecnologias,
         "variable_default": "UseByTechnology",
     },
@@ -610,6 +755,7 @@ CONFIGS = {
         "filtro": _filtro_terciario,
         "msg_sin_datos": "Sin tecnologías terciarias (DEMTER)",
         "agrupar_por": "TECNOLOGIA",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
         "color_fn": generar_colores_tecnologias,
         "variable_default": "UseByTechnology",
     },
@@ -728,13 +874,89 @@ CONFIGS = {
         "variable_default": "ProductionByTechnology",
     },
     "factor_planta": {
-        "titulo_base": "Factor de Planta - Generación Eléctrica",
+        "titulo": "Factor de Planta - Generación Eléctrica",
         "figura": "FAC-PLT",
         "filename": "Factor_Planta",
         "print": "FACTOR DE PLANTA",
         "es_factor_planta": True,
         "filtro": _filtro_pwr,
         "msg_sin_datos": "Sin datos de capacidad o producción eléctrica (PWR)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_electricidad,
+        "variable_default": "TotalCapacityAnnual",
+    },
+    "elec_produccion_liquidos": {
+        "titulo": "Generación Líquidos - ProductionByTechnology",
+        "figura": "Figura ELEC-LIQ",
+        "filename": "Fig_Elec_Liquidos",
+        "print": "GENERACIÓN LÍQUIDOS",
+        "filtro": _filtro_pwr_liquidos,
+        "msg_sin_datos": "Sin generación eléctrica con combustibles líquidos (DSL/FOL/GSL/JET/LPG)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_electricidad,
+        "variable_default": "ProductionByTechnology",
+        "soportaPareto": True,
+        "soportaPorcentaje": True,
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
+    },
+    "elec_cap_liquidos": {
+        "titulo_base": "Matriz Líquidos (Capacidad) - TotalCapacityAnnual",
+        "figura_base": "CAP-ELEC-LIQ",
+        "filename_base": "Cap_Elec_Liquidos",
+        "print_base": "CAPACIDAD - LÍQUIDOS",
+        "filtro": _filtro_pwr_liquidos,
+        "msg_sin_datos": "Sin generación eléctrica con combustibles líquidos (DSL/FOL/GSL/JET/LPG)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_electricidad,
+        "es_capacidad": True,
+        "variable_default": "TotalCapacityAnnual",
+    },
+    "elec_fp_liquidos": {
+        "titulo": "Factor de Planta - Líquidos",
+        "figura": "FAC-PLT-LIQ",
+        "filename": "Factor_Planta_Liquidos",
+        "print": "FACTOR DE PLANTA - LÍQUIDOS",
+        "es_factor_planta": True,
+        "filtro": _filtro_pwr_liquidos,
+        "msg_sin_datos": "Sin datos de capacidad o producción para líquidos (PWR + DSL/FOL/GSL/JET/LPG)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_electricidad,
+        "variable_default": "TotalCapacityAnnual",
+    },
+    "elec_produccion_termica": {
+        "titulo": "Generación Térmica - ProductionByTechnology",
+        "figura": "Figura ELEC-TER",
+        "filename": "Fig_Elec_Termica",
+        "print": "GENERACIÓN TÉRMICA",
+        "filtro": _filtro_pwr_termica,
+        "msg_sin_datos": "Sin generación eléctrica con combustibles térmicos (NGS/BGS/COA)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_electricidad,
+        "variable_default": "ProductionByTechnology",
+        "soportaPareto": True,
+        "soportaPorcentaje": True,
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
+    },
+    "elec_cap_termica": {
+        "titulo_base": "Matriz Térmica (Capacidad) - TotalCapacityAnnual",
+        "figura_base": "CAP-ELEC-TER",
+        "filename_base": "Cap_Elec_Termica",
+        "print_base": "CAPACIDAD - TÉRMICA",
+        "filtro": _filtro_pwr_termica,
+        "msg_sin_datos": "Sin generación eléctrica con combustibles térmicos (NGS/BGS/COA)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_electricidad,
+        "es_capacidad": True,
+        "variable_default": "TotalCapacityAnnual",
+    },
+    "elec_fp_termica": {
+        "titulo": "Factor de Planta - Térmica",
+        "figura": "FAC-PLT-TER",
+        "filename": "Factor_Planta_Termica",
+        "print": "FACTOR DE PLANTA - TÉRMICA",
+        "es_factor_planta": True,
+        "filtro": _filtro_pwr_termica,
+        "msg_sin_datos": "Sin datos de capacidad o producción para térmica (PWR + NGS/BGS/COA)",
         "agrupar_por": "TECNOLOGIA",
         "color_fn": _color_electricidad,
         "variable_default": "TotalCapacityAnnual",
@@ -886,6 +1108,17 @@ CONFIGS = {
         "color_fn": _color_h2_consumo,
         "variable_default": "UseByTechnology",
     },
+    "h2_produccion_verde": {
+        "titulo": "Hidrógeno Producción (Verde/Azul/Gris) - ProductionByTechnology",
+        "figura": "Figura H2-V1",
+        "filename": "Fig_H2_Produccion_Verde",
+        "print": "PRODUCCIÓN DE HIDRÓGENO (VERDE/AZUL/GRIS)",
+        "filtro": _filtro_h2_verde_azul_gris,
+        "msg_sin_datos": "Sin tecnologías UPSSMR/UPSSMRCCS/UPSPEM/UPSALK",
+        "agrupar_por": "H2_PRODUCCION",
+        "color_fn": _color_h2_verde_azul_gris,
+        "variable_default": "ProductionByTechnology",
+    },
     "ups_refinacion": {
         "titulo": "Upstream Refinación - ProductionByTechnology",
         "figura": "Figura 48",
@@ -1011,7 +1244,7 @@ CONFIGS = {
         "variable_default": "UseByTechnology",
     },
     "dem_consumo_liquidos": {
-        "titulo": "Consumo de Líquidos",
+        "titulo": "Consumo de Líquidos - Sectores de Demanda",
         "figura": "Figura LIQ-DEM",
         "filename": "DEM_Liquidos",
         "print": "CONSUMO DE LÍQUIDOS",
@@ -1022,23 +1255,12 @@ CONFIGS = {
         "variable_default": "UseByTechnology",
     },
     "dem_consumo_liquidos_total": {
-        "titulo": "Consumo de Líquidos (Todos los Sectores)",
+        "titulo": "Consumo de Líquidos - Sectores de Demanda + Sector Eléctrico",
         "figura": "Figura LIQ-TOTAL",
         "filename": "DEM_Liquidos_Total",
         "print": "CONSUMO DE LÍQUIDOS — TODOS LOS SECTORES",
         "filtro": _filtro_liquidos_total,
         "msg_sin_datos": "Sin consumo de líquidos en demanda o generación eléctrica",
-        "agrupar_por": "FUEL",
-        "color_fn": _color_por_grupo_fijo,
-        "variable_default": "UseByTechnology",
-    },
-    "dem_consumo_liquidos_exp_use": {
-        "titulo": "Consumo de Líquidos — Demanda y Exportaciones",
-        "figura": "Figura LIQ-DEM-EXP",
-        "filename": "DEM_Liquidos_Demanda_Export",
-        "print": "CONSUMO DE LÍQUIDOS — DEMANDA Y EXPORTACIONES",
-        "filtro": _filtro_demanda_exportaciones_liquidos,
-        "msg_sin_datos": "Sin consumo de líquidos en demanda o exportaciones",
         "agrupar_por": "FUEL",
         "color_fn": _color_por_grupo_fijo,
         "variable_default": "UseByTechnology",
@@ -1053,5 +1275,16 @@ CONFIGS = {
         "agrupar_por": "FUEL",
         "color_fn": _color_por_grupo_fijo,
         "variable_default": "ProductionByTechnology",
+    },
+    "dem_consumo_liquidos_exp_use": {
+        "titulo": "Consumo de Líquidos — Demanda y Exportaciones",
+        "figura": "Figura LIQ-DEM-EXP",
+        "filename": "DEM_Liquidos_Demanda_Export",
+        "print": "CONSUMO DE LÍQUIDOS — DEMANDA Y EXPORTACIONES",
+        "filtro": _filtro_demanda_exportaciones_liquidos,
+        "msg_sin_datos": "Sin consumo de líquidos en demanda o exportaciones",
+        "agrupar_por": "FUEL",
+        "color_fn": _color_por_grupo_fijo,
+        "variable_default": "UseByTechnology",
     },
 }

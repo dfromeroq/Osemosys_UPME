@@ -2818,6 +2818,25 @@ class OfficialImportService:
                 notebook_preprocess_error = str(e)
 
         db.commit()
+
+        # Validación de calidad de datos post-import: detecta bound conflicts
+        # y dead years en el escenario recién cargado, aplica la exclusión de
+        # años muertos y persiste los warnings en scenario.data_quality_warnings.
+        data_quality: dict | None = None
+        if fallback_scenario is not None:
+            try:
+                from app.simulation.core import data_validation as dv
+                report = dv.validate_and_persist(
+                    db,
+                    scenario_id=int(fallback_scenario.id),
+                    detected_during="import",
+                    apply_dead_years=True,
+                )
+                data_quality = report.to_dict()
+            except Exception as e:  # pragma: no cover - defensive
+                db.rollback()
+                logger.warning("data_validation post-import fallo: %s", e)
+
         return {
             "filename": filename,
             "imported_at": datetime.now(timezone.utc).isoformat(),
@@ -2830,6 +2849,7 @@ class OfficialImportService:
             "notebook_preprocess": notebook_preprocess,
             "notebook_preprocess_error": notebook_preprocess_error,
             "collapse_timeslices": collapse_timeslices,
+            "data_quality": data_quality,
         }
 
     @staticmethod

@@ -226,6 +226,11 @@ class ScenarioPublic(BaseModel):
     tag: ScenarioTagPublic | None = None
     tags: list[ScenarioTagPublic] = Field(default_factory=list)
     effective_access: ScenarioAccessPublic | None = None
+    # Resumen del reporte de calidad de datos. Solo el dict `summary`
+    # (n_bound_conflicts, n_bound_real_conflict, n_bound_numeric_precision,
+    # n_year_exclusions). El detalle completo se obtiene vía
+    # GET /scenarios/{id}/data-quality.
+    data_quality_summary: dict | None = None
 
 
 class ScenarioDeleteChildPublic(BaseModel):

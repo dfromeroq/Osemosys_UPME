@@ -597,6 +597,132 @@ def get_scenario(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
 
 
+@router.get("/{scenario_id}/data-quality")
+def get_scenario_data_quality(
+    scenario_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Devuelve el reporte de calidad de datos persistido para el escenario.
+
+    El campo `scenario.data_quality_warnings` lo populan los servicios de
+    importación al cargar Excel/CSV (vía `data_validation.validate_and_persist`).
+    Si el escenario fue creado antes del refactor, devuelve un reporte vacío
+    o `null`.
+    """
+    try:
+        # Aprovechamos get_public para validar permisos de visibilidad.
+        ScenarioService.get_public(
+            db, scenario_id=scenario_id, current_user=current_user
+        )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+
+    scenario = db.get(Scenario, scenario_id)
+    return {
+        "scenario_id": scenario_id,
+        "data_quality_warnings": (scenario.data_quality_warnings if scenario else None) or {},
+    }
+
+
+@router.post("/{scenario_id}/data-quality/refresh")
+def refresh_scenario_data_quality(
+    scenario_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Re-ejecuta la detección sobre la BD y reescribe el reporte persistido.
+
+    Útil cuando los datos del escenario cambiaron por edición manual y se
+    quiere recalcular los warnings sin volver a importar.
+
+    **Aplica automáticamente la exclusión de dead_years** (DELETE de filas con
+    YearSplit=0 en todos los timeslices), igual que el flujo de import.
+    """
+    try:
+        ScenarioService.get_public(
+            db, scenario_id=scenario_id, current_user=current_user
+        )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+
+    from app.simulation.core import data_validation as dv
+
+    report = dv.validate_and_persist(
+        db,
+        scenario_id=scenario_id,
+        detected_during="manual",
+        apply_dead_years=True,
+    )
+    return {"scenario_id": scenario_id, "data_quality_warnings": report.to_dict()}
+
+
+@router.post("/{scenario_id}/data-quality/fix-numeric-precision")
+def fix_numeric_precision_conflicts(
+    scenario_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Corrige automáticamente los bound conflicts clasificados como
+    `numeric_precision` (gap < 1e-4) en el escenario.
+
+    Estrategia: el `lower` toma el valor del `upper` (mantiene el mayor de los
+    dos). Los conflicts `real_conflict` NUNCA se tocan — requieren
+    intervención del usuario.
+
+    Después del fix, recalcula y persiste el reporte de calidad.
+    """
+    try:
+        ScenarioService.get_public(
+            db, scenario_id=scenario_id, current_user=current_user
+        )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+
+    from app.simulation.core import data_validation as dv
+
+    # 1) Detectar conflictos actuales.
+    pre = dv.build_report_db(
+        db, scenario_id=scenario_id, detected_during="manual"
+    )
+    n_precision = pre.n_numeric_precision()
+    n_real = pre.n_real_conflicts()
+
+    # 2) Aplicar fix sólo a numeric_precision.
+    n_fixed = dv.apply_bound_fix_numeric_precision_db(
+        db, scenario_id=scenario_id, conflicts=pre.bound_conflicts
+    )
+    db.commit()
+
+    # 3) Re-detectar y persistir reporte final.
+    post = dv.validate_and_persist(
+        db,
+        scenario_id=scenario_id,
+        detected_during="manual_post_autofix",
+        apply_dead_years=False,
+    )
+
+    return {
+        "scenario_id": scenario_id,
+        "fixed_n_tuples": n_fixed,
+        "before": {
+            "n_real_conflict": n_real,
+            "n_numeric_precision": n_precision,
+        },
+        "after": {
+            "n_real_conflict": post.n_real_conflicts(),
+            "n_numeric_precision": post.n_numeric_precision(),
+        },
+        "data_quality_warnings": post.to_dict(),
+    }
+
+
 @router.get("/{scenario_id}/export-excel")
 def export_scenario_excel(
     scenario_id: int,

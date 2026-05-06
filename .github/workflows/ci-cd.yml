@@ -95,14 +95,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          clean: true
+          clean: false
           persist-credentials: false
 
       - name: Enforce Clean Deploy Revision
         run: |
           git fetch --force --prune --tags origin
           git checkout --force "${GITHUB_SHA}"
-          git clean -ffdx
+          git clean -ffdx -e secrets/
 
           ACTUAL_SHA="$(git rev-parse HEAD)"
           if [ "${ACTUAL_SHA}" != "${GITHUB_SHA}" ]; then
@@ -112,6 +112,24 @@ jobs:
 
           echo "Deploying commit ${ACTUAL_SHA}"
           git status --short
+
+      - name: Restore Gurobi License From Persistent Storage
+        run: |
+          PERSISTENT_LIC="${HOME}/actions-runner-upme-backend/persistent-secrets/gurobi.lic"
+          if [ ! -f "${PERSISTENT_LIC}" ]; then
+            echo "::error::Falta la licencia persistente en ${PERSISTENT_LIC}. Cargala una vez en el runner self-hosted (mkdir -p ese directorio y poné ahí gurobi.lic con chmod 600 y chown procesa01)."
+            exit 1
+          fi
+          mkdir -p secrets
+          cp "${PERSISTENT_LIC}" secrets/gurobi.lic
+          chmod 600 secrets/gurobi.lic
+
+      - name: Validate Gurobi License Present
+        run: |
+          if [ ! -e secrets/gurobi.lic ] || [ -d secrets/gurobi.lic ]; then
+            echo "::error::secrets/gurobi.lic no existe o es un directorio. El runner self-hosted debe tener la licencia (o un placeholder vacío) en esa ruta como archivo regular propiedad del usuario del runner."
+            exit 1
+          fi
 
       - name: Validate Required Secrets
         env:
@@ -229,14 +247,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          clean: true
+          clean: false
           persist-credentials: false
 
       - name: Enforce Clean Deploy Revision
         run: |
           git fetch --force --prune --tags origin
           git checkout --force "${GITHUB_SHA}"
-          git clean -ffdx
+          git clean -ffdx -e secrets/
 
           ACTUAL_SHA="$(git rev-parse HEAD)"
           if [ "${ACTUAL_SHA}" != "${GITHUB_SHA}" ]; then
@@ -246,6 +264,24 @@ jobs:
 
           echo "Deploying commit ${ACTUAL_SHA}"
           git status --short
+
+      - name: Restore Gurobi License From Persistent Storage
+        run: |
+          PERSISTENT_LIC="${HOME}/actions-runner-upme-backend/persistent-secrets/gurobi.lic"
+          if [ ! -f "${PERSISTENT_LIC}" ]; then
+            echo "::error::Falta la licencia persistente en ${PERSISTENT_LIC}. Cargala una vez en el runner self-hosted (mkdir -p ese directorio y poné ahí gurobi.lic con chmod 600 y chown procesa01)."
+            exit 1
+          fi
+          mkdir -p secrets
+          cp "${PERSISTENT_LIC}" secrets/gurobi.lic
+          chmod 600 secrets/gurobi.lic
+
+      - name: Validate Gurobi License Present
+        run: |
+          if [ ! -e secrets/gurobi.lic ] || [ -d secrets/gurobi.lic ]; then
+            echo "::error::secrets/gurobi.lic no existe o es un directorio. El runner self-hosted debe tener la licencia (o un placeholder vacío) en esa ruta como archivo regular propiedad del usuario del runner."
+            exit 1
+          fi
 
       - name: Validate Required Secrets
         env:

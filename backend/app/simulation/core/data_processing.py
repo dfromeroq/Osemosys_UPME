@@ -242,6 +242,9 @@ class ProcessingResult:
     fuel_name_by_id: dict[int, str] = field(default_factory=dict)
     emission_name_by_id: dict[int, str] = field(default_factory=dict)
     storage_name_by_id: dict[int, str] = field(default_factory=dict)
+    # Reporte de calidad de datos detectado durante el procesamiento.
+    # Estructura: ver app.simulation.core.data_validation.DataQualityReport.to_dict()
+    data_quality_warnings: dict = field(default_factory=dict)
 
 
 def _load_catalog_lookups(db: Session) -> dict[str, dict]:
@@ -461,26 +464,12 @@ def export_scenario_to_csv(
         sets["MODE_OF_OPERATION"]["1"] = None
 
     # ------------------------------------------------------------------
-    # Excluir años donde YearSplit == 0 (años de cierre sin operación).
+    # NOTA (refactor 2026-05): la exclusión de "dead years" (YearSplit==0)
+    # ya NO se hace aquí. Se aplica de forma uniforme en los 3 modos
+    # (Excel/CSV/BD) vía `data_validation.apply_dead_year_exclusion` después
+    # de generar los CSVs. La nueva regla además es más estricta: requiere
+    # que TODOS los timeslices de un año tengan YearSplit=0, no sólo alguno.
     # ------------------------------------------------------------------
-    dead_years: set[int] = set()
-    for rec in param_rows.get("YearSplit", []):
-        y = rec.get("YEAR")
-        if y is not None and float(rec.get("VALUE", 0.0)) == 0.0:
-            dead_years.add(int(y))
-
-    if dead_years:
-        logger.info("Excluyendo años con YearSplit=0: %s", sorted(dead_years))
-        for dy in dead_years:
-            sets["YEAR"].pop(dy, None)
-        for pname in list(param_rows.keys()):
-            spec = PARAM_INDEX.get(pname, [])
-            if "YEAR" not in spec:
-                continue
-            param_rows[pname] = [
-                r for r in param_rows[pname]
-                if int(r.get("YEAR", -1)) not in dead_years
-            ]
 
     # ------------------------------------------------------------------
     # Filtrar param_rows para incluir solo set members existentes.
@@ -516,28 +505,18 @@ def export_scenario_to_csv(
                 ys_rows.append({"TIMESLICE": ts, "YEAR": yy, "VALUE": 1.0})
 
     # ------------------------------------------------------------------
-    # Reconciliar pares lower/upper si hay inversión por precisión float.
+    # NOTA (refactor 2026-05): la reconciliación silenciosa de pares
+    # lower/upper se ELIMINÓ. Antes se promediaban automáticamente todos
+    # los casos `Min > Max` lo que destruía datos cuando la diferencia era
+    # real (no precisión float).
+    #
+    # Ahora los conflictos se DETECTAN (vía
+    # `data_validation.detect_bound_conflicts`) y se reportan como
+    # warnings en `ProcessingResult.data_quality_warnings`. La corrección
+    # automática sólo está disponible para los conflictos clasificados
+    # como `numeric_precision` (gap < 1e-4) y debe pedirse explícitamente
+    # vía `apply_bound_fix_numeric_precision`.
     # ------------------------------------------------------------------
-    bound_pairs = [
-        ("TotalTechnologyAnnualActivityLowerLimit", "TotalTechnologyAnnualActivityUpperLimit"),
-        ("TotalAnnualMinCapacity", "TotalAnnualMaxCapacity"),
-        ("TotalAnnualMinCapacityInvestment", "TotalAnnualMaxCapacityInvestment"),
-    ]
-    for lower_name, upper_name in bound_pairs:
-        lower_rows = param_rows.get(lower_name, [])
-        upper_rows = param_rows.get(upper_name, [])
-        if not lower_rows or not upper_rows:
-            continue
-        spec = PARAM_INDEX.get(lower_name, [])
-        upper_by_key = {tuple(r.get(c, "") for c in spec): r for r in upper_rows}
-        for lrec in lower_rows:
-            key = tuple(lrec.get(c, "") for c in spec)
-            urec = upper_by_key.get(key)
-            if urec is not None and lrec["VALUE"] > urec["VALUE"]:
-                # Ajuste simétrico mínimo para mantener consistencia numérica.
-                mid = (float(lrec["VALUE"]) + float(urec["VALUE"])) / 2.0
-                lrec["VALUE"] = mid
-                urec["VALUE"] = mid
 
     has_storage = bool(
         sets.get("STORAGE")
@@ -1275,13 +1254,22 @@ def run_data_processing_from_excel(
     # 7. Reordenar columnas de ActivityRatio para DataPortal
     reorder_activity_ratio_csvs_for_dataportal(csv_dir)
 
+    # 8. Validación de calidad de datos (común a Excel/CSV/BD).
+    #    Aplica dead_year exclusion automáticamente y reporta bound_conflicts
+    #    como warnings sin corregirlos.
+    quality = _apply_data_quality_validation(csv_dir, detected_during="excel")
+
+    # Re-leer ProcessingResult tras la posible exclusión de años.
     result = _build_processing_result_from_csv_dir(csv_dir)
+    result.data_quality_warnings = quality
     logger.info("Procesamiento desde Excel completado: %d sets, has_storage=%s, has_udc=%s",
                 len(result.sets), result.has_storage, result.has_udc)
     return result
 
 
-def get_processing_result_from_csv_dir(csv_dir: str) -> ProcessingResult:
+def get_processing_result_from_csv_dir(
+    csv_dir: str, *, validate: bool = True
+) -> ProcessingResult:
     """Construye ProcessingResult leyendo los CSVs de sets en un directorio existente.
 
     Útil cuando ya tienes CSVs temporales listos (p. ej. generados por el script
@@ -1292,13 +1280,52 @@ def get_processing_result_from_csv_dir(csv_dir: str) -> ProcessingResult:
     ----------
     csv_dir : str
         Ruta al directorio que contiene los CSVs (REGION.csv, TECHNOLOGY.csv, etc.).
+    validate : bool
+        Si True (default), aplica `_apply_data_quality_validation` al directorio
+        — esto **modifica los CSVs** excluyendo años con YearSplit=0 en todos
+        sus timeslices y agrega `data_quality_warnings` al resultado. Pasar
+        False para inspección no destructiva.
 
     Returns
     -------
     ProcessingResult
-        Sets, has_storage, has_udc y lookups (region_id_by_name, etc.) para el pipeline.
+        Sets, has_storage, has_udc, lookups y data_quality_warnings.
     """
-    return _build_processing_result_from_csv_dir(csv_dir)
+    if validate:
+        quality = _apply_data_quality_validation(csv_dir, detected_during="csv")
+    else:
+        quality = {}
+    result = _build_processing_result_from_csv_dir(csv_dir)
+    result.data_quality_warnings = quality
+    return result
+
+
+def _apply_data_quality_validation(
+    csv_dir: str, *, detected_during: str
+) -> dict:
+    """Paso final común a los 3 pipelines (Excel/CSV/BD).
+
+    1. Detecta `BoundConflict`s y `YearExclusion`s en los CSVs ya generados.
+    2. **Aplica** la exclusión de dead_years (modifica YEAR.csv y todos los
+       CSVs con columna YEAR).
+    3. Logea los warnings.
+    4. Devuelve el reporte como dict (ya con dead_years aplicados, los demás
+       conflicts permanecen sin tocar; corresponde al usuario corregirlos vía
+       `data_validation.apply_bound_fix_numeric_precision`).
+
+    Garantiza comportamiento idéntico entre Excel, CSV-dir y BD.
+    """
+    from app.simulation.core import data_validation as dv
+
+    report = dv.build_report(csv_dir, detected_during=detected_during)
+    if report.year_exclusions:
+        n_files = dv.apply_dead_year_exclusion(csv_dir, report.year_exclusions)
+        logger.info(
+            "Excluyendo %d años (YearSplit=0 en TODOS los timeslices). %d archivos modificados.",
+            len(report.year_exclusions), n_files,
+        )
+    dv.log_report(report, source=detected_during)
+    return report.to_dict()
 
 
 # ========================================================================
@@ -1373,6 +1400,18 @@ def run_data_processing(
 
     # 7. Reordenar columnas de ActivityRatio para compatibilidad con DataPortal
     reorder_activity_ratio_csvs_for_dataportal(csv_dir)
+
+    # 8. Validación de calidad de datos (común a Excel/CSV/BD).
+    #    Aplica dead_year exclusion automáticamente y reporta bound_conflicts
+    #    como warnings sin corregirlos.
+    quality = _apply_data_quality_validation(csv_dir, detected_during="db")
+
+    # Re-leer ProcessingResult tras la posible exclusión de años, y
+    # adjuntar warnings.
+    result_after = _build_processing_result_from_csv_dir(csv_dir)
+    # Preservar lookups y flags de la versión BD; sólo refrescamos sets y warnings.
+    result.sets = result_after.sets
+    result.data_quality_warnings = quality
 
     logger.info("Procesamiento de datos completado")
     return result

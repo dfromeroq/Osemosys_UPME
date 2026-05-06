@@ -67,6 +67,17 @@ class SimulationJob(Base):
     run_iis_analysis: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    #: Si ``True``, el pipeline escribe el modelo como archivo `.lp` en
+    #: ``tmp/lp-files/`` con nombre ``sim_<id>_<nombre>_<timestamp>.lp`` para
+    #: poder inspeccionarlo o resolverlo en otra herramienta. ``False`` (default)
+    #: omite la escritura para ahorrar I/O.
+    generate_lp: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    #: Ruta absoluta dentro del worker al archivo `.lp` escrito (cuando
+    #: ``generate_lp=True``). Sirve como puntero estable para el endpoint de
+    #: descarga, independiente de que el ``display_name`` cambie luego.
+    lp_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: Visibilidad del resultado.
     #: ``True`` (default) → cualquier usuario autenticado lo ve en global scope.
     #: ``False`` → solo lo ve el dueño (aunque se liste con scope=global).
@@ -81,6 +92,10 @@ class SimulationJob(Base):
     finished_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # --- Result summary (populated when job succeeds) ---
+    #: Hilos efectivamente entregados al solver (leídos del propio optimizador
+    #: post-configuración). NULL si el solver no soporta multihilo (e.g. GLPK)
+    #: o si la lectura del valor efectivo falló.
+    solver_threads_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
     objective_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     coverage_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
     total_demand: Mapped[float | None] = mapped_column(Float, nullable=True)

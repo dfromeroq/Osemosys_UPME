@@ -47,8 +47,10 @@ def run_osemosys_from_db(
     on_stage: Callable[[str, float], None] | None = None,
     generate_lp: bool = False,
     lp_dir: str | Path | None = None,
+    lp_basename: str | None = None,
     on_solver_finished: Callable[[Any, Any, Any, dict], None] | None = None,
     run_iis_analysis: bool = False,
+    job_id: int | None = None,
 ) -> dict:
     """Pipeline completo: DB → CSVs temporales → DataPortal → solve → results.
 
@@ -144,7 +146,8 @@ def run_osemosys_from_db(
         if generate_lp:
             effective_lp_dir = Path(lp_dir) if lp_dir else Path(csv_dir)
             effective_lp_dir.mkdir(parents=True, exist_ok=True)
-            lp_path = effective_lp_dir / f"osemosys_scenario_{scenario_id}.lp"
+            base = lp_basename or f"osemosys_scenario_{scenario_id}"
+            lp_path = effective_lp_dir / f"{base}.lp"
 
         t = perf_counter()
         solver_result = solve_model(
@@ -172,7 +175,10 @@ def run_osemosys_from_db(
                         enrich_solution_dict,
                     )
                     enrich_solution_dict(
-                        solver_result, instance=instance, csv_dir=csv_dir
+                        solver_result,
+                        instance=instance,
+                        csv_dir=csv_dir,
+                        job_id=job_id,
                     )
                     diag = solver_result.get("infeasibility_diagnostics")
                     if isinstance(diag, dict):
@@ -238,6 +244,7 @@ def run_osemosys_from_csv_dir(
     lp_basename: str = "osemosys",
     on_solver_finished: Callable[[Any, Any, Any, dict], None] | None = None,
     run_iis_analysis: bool = False,
+    job_id: int | None = None,
 ) -> dict:
     """Pipeline desde directorio de CSVs: lee sets del directorio y ejecuta solve → results.
 
@@ -365,7 +372,12 @@ def run_osemosys_from_csv_dir(
                 from app.simulation.core.infeasibility_analysis import (  # noqa: WPS433
                     enrich_solution_dict,
                 )
-                enrich_solution_dict(solver_result, instance=instance, csv_dir=csv_dir)
+                enrich_solution_dict(
+                    solver_result,
+                    instance=instance,
+                    csv_dir=csv_dir,
+                    job_id=job_id,
+                )
                 diag = solver_result.get("infeasibility_diagnostics")
                 if isinstance(diag, dict):
                     diag["diagnostic_status"] = "SUCCEEDED"

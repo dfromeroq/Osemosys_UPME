@@ -37,21 +37,25 @@ export const simulationApi = {
     solverName: SimulationSolver,
     options?: {
       runIisAnalysis?: boolean;
+      generateLp?: boolean;
       display_name?: string | null;
     },
   ) {
-    // Unifica en un solo `options` los dos flags opcionales:
-    //   - `runIisAnalysis`: correr análisis de infactibilidad inline (viene del feature).
-    //   - `display_name`: alias visible de la corrida (viene de develop).
+    // Unifica en un solo `options` los flags opcionales:
+    //   - `runIisAnalysis`: correr análisis de infactibilidad inline.
+    //   - `generateLp`: persistir el modelo a `.lp` antes de resolver.
+    //   - `display_name`: alias visible de la corrida.
     const body: {
       scenario_id: number;
       solver_name: SimulationSolver;
       run_iis_analysis: boolean;
+      generate_lp: boolean;
       display_name?: string;
     } = {
       scenario_id: scenarioId,
       solver_name: solverName,
       run_iis_analysis: Boolean(options?.runIisAnalysis),
+      generate_lp: Boolean(options?.generateLp),
     };
     const dn = options?.display_name?.trim();
     if (dn) body.display_name = dn.slice(0, 255);
@@ -73,12 +77,13 @@ export const simulationApi = {
       tag_id?: number | null;
       display_name?: string | null;
     },
-    options?: { display_name?: string | null },
+    options?: { display_name?: string | null; generateLp?: boolean },
   ) {
     const formData = new FormData();
     formData.append("csv_zip", file);
     formData.append("solver_name", solverName);
     formData.append("run_iis_analysis", String(runIisAnalysis));
+    formData.append("generate_lp", String(Boolean(options?.generateLp)));
     formData.append("simulation_type", input.simulation_type);
     formData.append("save_as_scenario", input.save_as_scenario ? "true" : "false");
     if (input.input_name?.trim()) formData.append("input_name", input.input_name.trim());
@@ -198,6 +203,40 @@ export const simulationApi = {
     return { blob, filename };
   },
 
+  /** Descarga el `.lp` del modelo Pyomo (solo si la corrida se lanzó con
+   * `generate_lp=true`). */
+  async downloadLpFile(jobId: number): Promise<{ blob: Blob; filename: string }> {
+    const { data, headers } = await httpClient.get(
+      `/simulations/${jobId}/lp-file`,
+      { responseType: "blob", timeout: 5 * 60 * 1000 },
+    );
+    const blob = data as Blob;
+    const disposition = headers["content-disposition"];
+    let filename = `sim_${jobId}.lp`;
+    if (typeof disposition === "string") {
+      const match = /filename="?([^";\n]+)"?/i.exec(disposition);
+      if (match?.[1]) filename = match[1].trim();
+    }
+    return { blob, filename };
+  },
+
+  /** Descarga el `.ilp` del IIS (solo si la corrida fue con Gurobi y el
+   * análisis ya finalizó). */
+  async downloadIisIlp(jobId: number): Promise<{ blob: Blob; filename: string }> {
+    const { data, headers } = await httpClient.get(
+      `/simulations/${jobId}/iis-ilp`,
+      { responseType: "blob", timeout: 2 * 60 * 1000 },
+    );
+    const blob = data as Blob;
+    const disposition = headers["content-disposition"];
+    let filename = `iis_job_${jobId}.ilp`;
+    if (typeof disposition === "string") {
+      const match = /filename="?([^";\n]+)"?/i.exec(disposition);
+      if (match?.[1]) filename = match[1].trim();
+    }
+    return { blob, filename };
+  },
+
   async getResultSummary(jobId: number) {
     const { data } = await httpClient.get<ResultSummaryResponse>(`/visualizations/${jobId}/result-summary`);
     return data;
@@ -272,7 +311,7 @@ export const simulationApi = {
     return { blob, filename };
   },
 
-  async getCompareData(params: { job_ids: string, tipo: string, un?: string, years_to_plot?: string, agrupacion?: string, sub_filtro?: string, loc?: string }) {
+  async getCompareData(params: { job_ids: string, tipo: string, un?: string, years_to_plot?: string, agrupacion?: string, sub_filtro?: string, loc?: string, group_by?: string }) {
     const { data } = await httpClient.get<CompareChartResponse>(`/visualizations/chart-data/compare`, { params });
     return data;
   },
