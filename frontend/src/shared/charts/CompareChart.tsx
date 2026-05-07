@@ -144,7 +144,8 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         tickLength: (!sharedYAxis || idx === 0) ? 6 : 0,
         tickColor: (!sharedYAxis || idx === 0) ? '#64748b' : 'transparent',
         // Y-axis line always visible (provides chart boundaries between scenarios)
-        lineWidth: 1,
+        // lineWidth: 1,
+        lineWidth: idx === 0 ? 1 : 0,
         lineColor: '#64748b',
         labels: {
           // Only show labels on first subplot when Y-axis is shared
@@ -232,7 +233,9 @@ export const CompareChart: React.FC<CompareChartProps> = ({
           stacking: 'normal',
           borderWidth: 0,
           dataLabels: { enabled: false },
-          ...(isByYearAltMode ? { pointWidth: 50 } : {}),
+          // ...(isByYearAltMode ? { pointWidth: 50 } : {}),
+          ...(isByYearAltMode ? { pointWidth: 50, pointPadding: 0.2, groupPadding: 0.5 } : {}),
+
         },
       },
       series: series as Highcharts.SeriesOptionsType[],
