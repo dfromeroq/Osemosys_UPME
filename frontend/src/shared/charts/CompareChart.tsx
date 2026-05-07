@@ -55,7 +55,8 @@ export const CompareChart: React.FC<CompareChartProps> = ({
     });
     return globalMax;
   }, [data.subplots, sharedYAxis]);
-
+  const isByYearAltMode =
+    data.subplots.length > 0 && !!data.subplots[0]?.scenario_name;
   const [hiddenNames, setHiddenNames] = useState<Set<string>>(() => new Set());
   const dataSignature = allSeriesNames.join('|');
   useEffect(() => {
@@ -115,6 +116,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         labels: { style: { color: '#94a3b8', fontSize: '13px' } },
         lineColor: '#334155',
         tickColor: '#334155',
+        ...(isByYearAltMode ? { tickWidth: 2, tickLength: 10 } : {}),
       });
 
       yAxis.push({
@@ -131,8 +133,8 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         height: '86%',
         min: typeof yAxisMin === 'number' ? yAxisMin : 0,
         // Use shared maximum if enabled, otherwise use individual yAxisMax
-        max: typeof yAxisMax === 'number' 
-          ? yAxisMax 
+        max: typeof yAxisMax === 'number'
+          ? yAxisMax
           : (sharedYAxis && sharedYAxisMax > 0 ? sharedYAxisMax : null),
         // Grid lines always visible on all charts for visual reference
         gridLineColor: '#334155',
@@ -142,7 +144,8 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         tickLength: (!sharedYAxis || idx === 0) ? 6 : 0,
         tickColor: (!sharedYAxis || idx === 0) ? '#64748b' : 'transparent',
         // Y-axis line always visible (provides chart boundaries between scenarios)
-        lineWidth: 1,
+        // lineWidth: 1,
+        lineWidth: idx === 0 ? 1 : 0,
         lineColor: '#64748b',
         labels: {
           // Only show labels on first subplot when Y-axis is shared
@@ -158,7 +161,8 @@ export const CompareChart: React.FC<CompareChartProps> = ({
             fontWeight: 'bold',
             color: '#94a3b8',
             textOutline: 'none',
-            fontSize: '10px',
+            fontSize: isByYearAltMode ? '14px' : '10px',
+            // fontSize: '10px',
           },
           // eslint-disable-next-line react-hooks/unsupported-syntax -- API de Highcharts (`this`)
           formatter: function (this: Highcharts.StackItemObject) {
@@ -179,7 +183,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
           borderWidth: 0,
           showInLegend: idx === 0,
           visible: !hiddenNames.has(s.name),
-          custom: { 
+          custom: {
             subplotYear: subplot.year,
             scenarioName: subplot.scenario_name || null,
           },
@@ -207,9 +211,11 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       tooltip: buildStackedSinglePointTooltipOptions({
         unitLabel: data.yAxisLabel,
         headerPrefix: (ctx) => {
-          const userOptions = ctx.series.userOptions as { 
-            custom?: { subplotYear?: number | string;
-                       scenarioName?: string }
+          const userOptions = ctx.series.userOptions as {
+            custom?: {
+              subplotYear?: number | string;
+              scenarioName?: string
+            }
           };
           // Para modo alternativo, mostrar nombre del escenario
           if (userOptions.custom?.scenarioName) {
@@ -227,6 +233,9 @@ export const CompareChart: React.FC<CompareChartProps> = ({
           stacking: 'normal',
           borderWidth: 0,
           dataLabels: { enabled: false },
+          // ...(isByYearAltMode ? { pointWidth: 50 } : {}),
+          ...(isByYearAltMode ? { pointWidth: 50, pointPadding: 0.2, groupPadding: 0.5 } : {}),
+
         },
       },
       series: series as Highcharts.SeriesOptionsType[],
@@ -259,7 +268,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, inverted, hiddenNames, yAxisMin, yAxisMax, sharedYAxisMax]);
+  }, [data, inverted, hiddenNames, yAxisMin, yAxisMax, sharedYAxisMax, isByYearAltMode]);
 
   return (
     <div style={{ width: '100%' }}>
