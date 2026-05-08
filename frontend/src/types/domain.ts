@@ -786,6 +786,7 @@ export type ResultSummaryResponse = {
   solver_status: string;
   objective_value: number;
   coverage_ratio: number;
+  reserve_margin_dual: number | null;
   total_demand: number;
   total_dispatch: number;
   total_unmet: number;

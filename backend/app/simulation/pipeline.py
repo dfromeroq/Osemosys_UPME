@@ -328,6 +328,7 @@ def _persist_solution(
     job.objective_value = solution.get("objective_value")
     job.solver_threads_used = solution.get("solver_threads_used")
     job.coverage_ratio = solution.get("coverage_ratio")
+    job.reserve_margin_dual = solution.get("reserve_margin_dual")
     job.total_demand = solution.get("total_demand")
     job.total_dispatch = solution.get("total_dispatch")
     job.total_unmet = solution.get("total_unmet")

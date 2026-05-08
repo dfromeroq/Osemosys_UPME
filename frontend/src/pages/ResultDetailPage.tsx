@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import {
+  Activity,
   DollarSign,
   LayoutGrid,
   Leaf,
@@ -199,7 +200,41 @@ function ScenarioCard({ summary, isCurrent = false }: ScenarioCardProps) {
           label="CO₂ Emissions (MtCO₂eq)"
           value={formatCompactNumber(summary.total_co2, 2)}
         />
+        <ReserveMarginDualRow dual={summary.reserve_margin_dual} />
       </div>
+    </div>
+  );
+}
+
+function ReserveMarginDualRow({ dual }: { dual: number | null | undefined }) {
+  const isBinding = dual != null && Math.abs(dual) > 1e-6;
+  const valueStr =
+    dual == null
+      ? '—'
+      : dual.toLocaleString('en-US', { maximumFractionDigits: 4, minimumFractionDigits: 4 });
+  return (
+    <div className="flex justify-between items-center gap-4 py-2 border-b border-slate-800/50 last:border-0">
+      <span className="text-slate-400 text-sm flex items-center gap-2 min-w-0">
+        <Activity className="w-4 h-4 shrink-0 text-slate-500" aria-hidden />
+        Dual Margen de Reserva
+      </span>
+      <span className="flex items-center gap-2 shrink-0">
+        <span className="font-mono font-bold tabular-nums text-right text-white">
+          {valueStr}
+        </span>
+        {dual != null && (
+          <span
+            className={[
+              'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide',
+              isBinding
+                ? 'border border-amber-500/30 bg-amber-500/10 text-amber-400'
+                : 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+            ].join(' ')}
+          >
+            {isBinding ? 'Binding' : 'No binding'}
+          </span>
+        )}
+      </span>
     </div>
   );
 }
@@ -1377,6 +1412,9 @@ export function ResultDetailPage() {
                     <th className="p-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
                       CO₂ (Mt)
                     </th>
+                    <th className="p-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      Dual Margen Reserva
+                    </th>
                   </tr>
                   <tr className="border-b border-slate-800/80 bg-slate-950/30">
                     <th className="p-2" />
@@ -1581,6 +1619,25 @@ export function ResultDetailPage() {
                         </td>
                         <td className="p-4 text-right font-mono text-slate-200 tabular-nums">
                           {formatCompactNumber(s.total_co2, 2)}
+                        </td>
+                        <td className="p-4 text-right">
+                          {s.reserve_margin_dual == null ? (
+                            <span className="text-slate-600">—</span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="font-mono tabular-nums text-slate-200">
+                                {s.reserve_margin_dual.toLocaleString('en-US', { maximumFractionDigits: 4, minimumFractionDigits: 4 })}
+                              </span>
+                              <span className={[
+                                'inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide',
+                                Math.abs(s.reserve_margin_dual) > 1e-6
+                                  ? 'border border-amber-500/30 bg-amber-500/10 text-amber-400'
+                                  : 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+                              ].join(' ')}>
+                                {Math.abs(s.reserve_margin_dual) > 1e-6 ? 'Binding' : 'No binding'}
+                              </span>
+                            </span>
+                          )}
                         </td>
                       </tr>
                     );
