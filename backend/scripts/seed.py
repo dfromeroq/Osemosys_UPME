@@ -214,7 +214,7 @@ def main() -> None:
             user = User(
                 email="seed@example.com",
                 username="seed",
-                hashed_password=get_password_hash("seed123"),
+                hashed_password=get_password_hash("seed1234"),
                 document_number="1234567890",
                 document_type_id=dt_cc.id,
                 is_active=True,
@@ -227,7 +227,7 @@ def main() -> None:
             session.flush()
         else:
             # Mantiene credencial de prueba consistente tras cambios de algoritmo hash.
-            user.hashed_password = get_password_hash("seed123")
+            user.hashed_password = get_password_hash("seed1234")
             if user.document_type_id is None:
                 user.document_type_id = dt_cc.id
             if not user.document_number:
