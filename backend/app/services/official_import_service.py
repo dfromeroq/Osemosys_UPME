@@ -218,8 +218,14 @@ def _get_or_create_name_catalog(
     row: dict[str, object],
     stats: ImportStats,
     section: str,
+    existing_names: set[str] | None = None,
 ) -> None:
-    """Crea o reactiva catálogo por nombre (Parameter, Region, Technology, etc.) desde fila Excel."""
+    """Crea o reactiva catálogo por nombre (Parameter, Region, Technology, etc.) desde fila Excel.
+
+    ``existing_names`` es un set pre-cargado de nombres ya en BD. Cuando se pasa,
+    evita una query por fila (N→1). Las entradas con ``is_active=False`` se
+    reactivan solo cuando el set no está disponible (ruta de compatibilidad).
+    """
     name = _clean_str(row.get("name") or row.get("nombre") or row.get("value") or row.get("valor"))
     if not name:
         non_empty_values = [str(v).strip() for v in row.values() if v is not None and str(v).strip()]
@@ -228,6 +234,14 @@ def _get_or_create_name_catalog(
     if not name:
         stats.skipped += 1
         stats.warn(f"[{section}] fila omitida por nombre vacío.")
+        return
+    if existing_names is not None:
+        if name in existing_names:
+            stats.skipped += 1
+            return
+        db.add(model(name=name))
+        existing_names.add(name)
+        stats.inserted += 1
         return
     existing = db.execute(select(model).where(model.name == name)).scalar_one_or_none()
     if existing:
@@ -248,14 +262,26 @@ def _get_or_create_code_catalog(
     row: dict[str, object],
     stats: ImportStats,
     section: str,
+    existing_codes: set[str] | None = None,
 ) -> None:
-    """Crea o actualiza catálogo por código (Timeslice, ModeOfOperation, etc.) desde fila Excel."""
+    """Crea o actualiza catálogo por código (Timeslice, ModeOfOperation, etc.) desde fila Excel.
+
+    ``existing_codes`` es un set pre-cargado de códigos ya en BD.
+    """
     code = _clean_str(row.get("code") or row.get("codigo") or row.get("cod"))
     if not code:
         stats.skipped += 1
         stats.warn(f"[{section}] fila omitida por código vacío.")
         return
     description = _clean_str(row.get("description") or row.get("descripcion"))
+    if existing_codes is not None:
+        if code in existing_codes:
+            stats.skipped += 1
+            return
+        db.add(model(code=code, description=description))
+        existing_codes.add(code)
+        stats.inserted += 1
+        return
     existing = db.execute(select(model).where(model.code == code)).scalar_one_or_none()
     if existing:
         if description and existing.description != description:
@@ -2191,10 +2217,14 @@ class OfficialImportService:
                 continue
             if not _is_sheet_selected(sheet.title, selected_sheet_name):
                 continue
+            existing_names: set[str] = {
+                item.name for item in db.execute(select(model)).scalars().all()
+            }
             for row in _iter_rows(sheet):
                 stats.total_rows_read += 1
                 _get_or_create_name_catalog(
-                    db, model=model, row=row, stats=stats, section=model.__tablename__
+                    db, model=model, row=row, stats=stats, section=model.__tablename__,
+                    existing_names=existing_names,
                 )
 
         for model, aliases in code_catalog_sheets:
@@ -2203,10 +2233,14 @@ class OfficialImportService:
                 continue
             if not _is_sheet_selected(sheet.title, selected_sheet_name):
                 continue
+            existing_codes: set[str] = {
+                item.code for item in db.execute(select(model)).scalars().all()
+            }
             for row in _iter_rows(sheet):
                 stats.total_rows_read += 1
                 _get_or_create_code_catalog(
-                    db, model=model, row=row, stats=stats, section=model.__tablename__
+                    db, model=model, row=row, stats=stats, section=model.__tablename__,
+                    existing_codes=existing_codes,
                 )
 
         if scenario_id_override is None and not use_default_scenario:

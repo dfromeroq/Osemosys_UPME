@@ -12,6 +12,7 @@ Uso: recibe la instancia concreta de instance_builder.build_instance();
 from __future__ import annotations
 
 import logging
+import os
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -179,10 +180,11 @@ def _resolve_solver_threads(settings: object) -> int:
     """Devuelve los hilos a entregar al solver.
 
     Prioridad: ``core.system_setting['solver.threads']`` (configurable desde la
-    UI admin) → ``SIM_SOLVER_THREADS`` (env var del despliegue). Si BD no está
-    accesible (ej. tests sin DB), cae al env var.
+    UI admin) → ``SIM_SOLVER_THREADS`` (env var del despliegue) → auto-detect
+    (``os.cpu_count()``). Si BD no está accesible (ej. tests sin DB), cae al env var.
     """
-    fallback = int(getattr(settings, "sim_solver_threads", 0) or 0)
+    configured = int(getattr(settings, "sim_solver_threads", 0) or 0)
+    fallback = configured if configured > 0 else (os.cpu_count() or 1)
     try:
         from app.db.session import SessionLocal
         from app.services.system_settings_service import SystemSettingsService

@@ -10,6 +10,11 @@ services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '${DB_CPU_LIMIT:-2}'
+          memory: ${DB_MEM_LIMIT:-4G}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-osemosys}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-osemosys}
@@ -30,6 +35,11 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '${REDIS_CPU_LIMIT:-1}'
+          memory: ${REDIS_MEM_LIMIT:-512M}
     command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
     ports:
       - "${REDIS_BIND_HOST:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
@@ -46,6 +56,11 @@ services:
     build:
       context: ./backend
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '${API_CPU_LIMIT:-4}'
+          memory: ${API_MEM_LIMIT:-4G}
     command: >
       sh -lc "exec python -m uvicorn app.main:app
       --host 0.0.0.0
@@ -64,10 +79,10 @@ services:
       SIM_TOTAL_WEIGHT_LIMIT: ${SIM_TOTAL_WEIGHT_LIMIT:-8}
       SIM_WEIGHT_NATIONAL: ${SIM_WEIGHT_NATIONAL:-1}
       SIM_WEIGHT_REGIONAL: ${SIM_WEIGHT_REGIONAL:-3}
-      SIM_SOLVER_THREADS: ${SIM_SOLVER_THREADS:-12}
-      OMP_NUM_THREADS: ${OMP_NUM_THREADS:-4}
-      OPENBLAS_NUM_THREADS: ${OPENBLAS_NUM_THREADS:-4}
-      MKL_NUM_THREADS: ${MKL_NUM_THREADS:-4}
+      SIM_SOLVER_THREADS: ${SIM_SOLVER_THREADS:-0}
+      OMP_NUM_THREADS: ${OMP_NUM_THREADS}
+      OPENBLAS_NUM_THREADS: ${OPENBLAS_NUM_THREADS}
+      MKL_NUM_THREADS: ${MKL_NUM_THREADS}
     ports:
       - "${API_BIND_HOST:-127.0.0.1}:${API_PORT:-8010}:8000"
     volumes:
@@ -94,6 +109,11 @@ services:
     build:
       context: ./backend
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '${WORKER_CPU_LIMIT:-28}'
+          memory: ${WORKER_MEM_LIMIT:-24G}
     env_file:
       - ./backend/.env
     environment:
@@ -105,10 +125,10 @@ services:
       SIM_TOTAL_WEIGHT_LIMIT: ${SIM_TOTAL_WEIGHT_LIMIT:-8}
       SIM_WEIGHT_NATIONAL: ${SIM_WEIGHT_NATIONAL:-1}
       SIM_WEIGHT_REGIONAL: ${SIM_WEIGHT_REGIONAL:-3}
-      SIM_SOLVER_THREADS: ${SIM_SOLVER_THREADS:-12}
-      OMP_NUM_THREADS: ${OMP_NUM_THREADS:-4}
-      OPENBLAS_NUM_THREADS: ${OPENBLAS_NUM_THREADS:-4}
-      MKL_NUM_THREADS: ${MKL_NUM_THREADS:-4}
+      SIM_SOLVER_THREADS: ${SIM_SOLVER_THREADS:-0}
+      OMP_NUM_THREADS: ${OMP_NUM_THREADS}
+      OPENBLAS_NUM_THREADS: ${OPENBLAS_NUM_THREADS}
+      MKL_NUM_THREADS: ${MKL_NUM_THREADS}
       GRB_LICENSE_FILE: /opt/gurobi/gurobi.lic
     command: >
       celery -A app.simulation.celery_app:celery_app worker
@@ -140,6 +160,11 @@ services:
   frontend:
     build:
       context: ./frontend
+    deploy:
+      resources:
+        limits:
+          cpus: '${FRONTEND_CPU_LIMIT:-1}'
+          memory: ${FRONTEND_MEM_LIMIT:-256M}
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
         VITE_APP_ENV: ${VITE_APP_ENV:-production}

@@ -13,8 +13,8 @@ Flujo: run_data_processing() → export_scenario_to_csv() → completar matrices
 
 from __future__ import annotations
 
-import itertools
 import logging
+from concurrent.futures import ThreadPoolExecutor
 import os
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -593,101 +593,41 @@ def export_scenario_to_csv(
 # ========================================================================
 
 def completar_Matrix_Act_Ratio(path_csv: str, variable: str) -> None:
-    """Completa la matriz de InputActivityRatio o OutputActivityRatio.
-    Genera todas las combinaciones REGION×TECHNOLOGY×FUEL×MODE_OF_OPERATION×YEAR,
-    hace merge left con los datos existentes y elimina filas sin VALUE (dropna).
-    Así DataPortal no rellena con 0 sino que usa el default del modelo para índices faltantes.
+    """Normaliza MODE_OF_OPERATION en InputActivityRatio/OutputActivityRatio.
+
+    Equivalent to the original cross-join approach (O(n×t×f×m×y)) but runs in
+    O(n_rows): the full Cartesian product was immediately filtered back to the
+    rows that existed in the original CSV, so reading, normalizing, and writing
+    the existing rows produces the same result.
     """
     df = pd.read_csv(path_csv + variable)
     df["MODE_OF_OPERATION"] = normalize_mode_of_operation_series(df["MODE_OF_OPERATION"])
-
-    regions = df["REGION"].unique()
-    technologies = pd.read_csv(path_csv + "TECHNOLOGY.csv", dtype=str)["VALUE"].unique()
-    fuels = pd.read_csv(path_csv + "FUEL.csv", dtype=str)["VALUE"].unique()
-    moo_df = pd.read_csv(path_csv + "MODE_OF_OPERATION.csv")
-    modes = normalize_mode_of_operation_series(moo_df["VALUE"])
-    modes = modes[modes != ""].drop_duplicates().tolist()
-    years = pd.read_csv(path_csv + "YEAR.csv")["VALUE"].unique()
-
-    all_combinations = pd.DataFrame(itertools.product(
-        regions, technologies, fuels, modes, years),
-        columns=["REGION", "TECHNOLOGY", "FUEL", "MODE_OF_OPERATION", "YEAR"]
-    )
-
-    result = all_combinations.merge(df, on=["REGION", "TECHNOLOGY", "MODE_OF_OPERATION", "FUEL", "YEAR"], how="left")
-
-    result.dropna(subset=["VALUE"], inplace=True)
-    result.to_csv(path_csv + variable, index=False)
+    df.dropna(subset=["VALUE"], inplace=True)
+    df.to_csv(path_csv + variable, index=False)
 
 
 def completar_Matrix_Emission(path_csv: str, variable: str) -> None:
-    """Completa la matriz de EmissionActivityRatio (REGION×TECHNOLOGY×EMISSION×MODE×YEAR)."""
+    """Normaliza MODE_OF_OPERATION en EmissionActivityRatio."""
     df = pd.read_csv(path_csv + variable)
     df["MODE_OF_OPERATION"] = normalize_mode_of_operation_series(df["MODE_OF_OPERATION"])
-
-    regions = df["REGION"].unique()
-    technologies = pd.read_csv(path_csv + "TECHNOLOGY.csv")["VALUE"].unique()
-    emission = pd.read_csv(path_csv + "EMISSION.csv")["VALUE"].unique()
-    moo_df = pd.read_csv(path_csv + "MODE_OF_OPERATION.csv")
-    modes = normalize_mode_of_operation_series(moo_df["VALUE"])
-    modes = modes[modes != ""].drop_duplicates().tolist()
-    years = pd.read_csv(path_csv + "YEAR.csv")["VALUE"].unique()
-
-    all_combinations = pd.DataFrame(itertools.product(
-        regions, technologies, emission, modes, years),
-        columns=["REGION", "TECHNOLOGY", "EMISSION", "MODE_OF_OPERATION", "YEAR"]
-    )
-
-    result = all_combinations.merge(df, on=["REGION", "TECHNOLOGY", "EMISSION", "MODE_OF_OPERATION", "YEAR"], how="left")
-
-    result.dropna(subset=["VALUE"], inplace=True)
-    result.to_csv(path_csv + variable, index=False)
+    df.dropna(subset=["VALUE"], inplace=True)
+    df.to_csv(path_csv + variable, index=False)
 
 
 def completar_Matrix_Storage(path_csv: str, variable: str) -> None:
-    """Completa TechnologyToStorage o TechnologyFromStorage (REGION×TECHNOLOGY×STORAGE×MODE)."""
+    """Normaliza MODE_OF_OPERATION en TechnologyToStorage/TechnologyFromStorage."""
     df = pd.read_csv(path_csv + variable)
     df["MODE_OF_OPERATION"] = normalize_mode_of_operation_series(df["MODE_OF_OPERATION"])
-
-    regions = df["REGION"].unique()
-    technologies = pd.read_csv(path_csv + "TECHNOLOGY.csv")["VALUE"].unique()
-    storage = pd.read_csv(path_csv + "STORAGE.csv")["VALUE"].unique()
-    moo_df = pd.read_csv(path_csv + "MODE_OF_OPERATION.csv")
-    modes = normalize_mode_of_operation_series(moo_df["VALUE"])
-    modes = modes[modes != ""].drop_duplicates().tolist()
-
-    all_combinations = pd.DataFrame(itertools.product(
-        regions, technologies, storage, modes),
-        columns=["REGION", "TECHNOLOGY", "STORAGE", "MODE_OF_OPERATION"]
-    )
-
-    result = all_combinations.merge(df, on=["REGION", "TECHNOLOGY", "STORAGE", "MODE_OF_OPERATION"], how="left")
-
-    result.dropna(subset=["VALUE"], inplace=True)
-    result.to_csv(path_csv + variable, index=False)
+    df.dropna(subset=["VALUE"], inplace=True)
+    df.to_csv(path_csv + variable, index=False)
 
 
 def completar_Matrix_Cost(path_csv: str, variable: str) -> None:
-
+    """Normaliza MODE_OF_OPERATION en VariableCost."""
     df = pd.read_csv(path_csv + variable)
     df["MODE_OF_OPERATION"] = normalize_mode_of_operation_series(df["MODE_OF_OPERATION"])
-
-    regions = df["REGION"].unique()
-    technologies = pd.read_csv(path_csv + "TECHNOLOGY.csv")["VALUE"].unique()
-    moo_df = pd.read_csv(path_csv + "MODE_OF_OPERATION.csv")
-    modes = normalize_mode_of_operation_series(moo_df["VALUE"])
-    modes = modes[modes != ""].drop_duplicates().tolist()
-    years = pd.read_csv(path_csv + "YEAR.csv")["VALUE"].unique()
-
-    all_combinations = pd.DataFrame(itertools.product(
-        regions, technologies, modes, years),
-        columns=["REGION", "TECHNOLOGY", "MODE_OF_OPERATION", "YEAR"]
-    )
-
-    result = all_combinations.merge(df, on=["REGION", "TECHNOLOGY", "MODE_OF_OPERATION", "YEAR"], how="left")
-
-    result.dropna(subset=["VALUE"], inplace=True)
-    result.to_csv(path_csv + variable, index=False)
+    df.dropna(subset=["VALUE"], inplace=True)
+    df.to_csv(path_csv + variable, index=False)
 
 
 # ========================================================================
@@ -1213,24 +1153,30 @@ def run_data_processing_from_excel(
     # 2. Eliminar valores fuera de índices (celda 8)
     eliminar_valores_fuera_de_indices(csv_dir)
 
-    # 3. Completar matrices (celdas 9-12)
+    # 3. Completar matrices (celdas 9-12) — tareas paralelas (cada una escribe un CSV distinto)
     path_csv = csv_dir + os.sep
-    completar_Matrix_Act_Ratio(path_csv, "InputActivityRatio.csv")
-    completar_Matrix_Act_Ratio(path_csv, "OutputActivityRatio.csv")
-
-    if os.path.exists(os.path.join(csv_dir, "EMISSION.csv")):
-        completar_Matrix_Emission(path_csv, "EmissionActivityRatio.csv")
-
+    has_emission_csv = os.path.exists(os.path.join(csv_dir, "EMISSION.csv"))
     storage_csvs = ["STORAGE", "SEASON", "DAYTYPE", "DAILYTIMEBRACKET"]
     has_storage = all(os.path.exists(os.path.join(csv_dir, f"{s}.csv")) for s in storage_csvs)
-    if has_storage:
-        completar_Matrix_Storage(path_csv, "TechnologyFromStorage.csv")
-        completar_Matrix_Storage(path_csv, "TechnologyToStorage.csv")
 
-    completar_Matrix_Cost(path_csv, "VariableCost.csv")
+    matrix_tasks: list[tuple] = [
+        (completar_Matrix_Act_Ratio, path_csv, "InputActivityRatio.csv"),
+        (completar_Matrix_Act_Ratio, path_csv, "OutputActivityRatio.csv"),
+        (completar_Matrix_Cost, path_csv, "VariableCost.csv"),
+    ]
+    if has_emission_csv:
+        matrix_tasks.append((completar_Matrix_Emission, path_csv, "EmissionActivityRatio.csv"))
+    if has_storage:
+        matrix_tasks.append((completar_Matrix_Storage, path_csv, "TechnologyFromStorage.csv"))
+        matrix_tasks.append((completar_Matrix_Storage, path_csv, "TechnologyToStorage.csv"))
+
+    with ThreadPoolExecutor(max_workers=len(matrix_tasks)) as pool:
+        futures = [pool.submit(fn, *args) for fn, *args in matrix_tasks]
+        for f in futures:
+            f.result()
 
     # 4. Emisiones a la entrada (celda 13 del notebook)
-    if os.path.exists(os.path.join(csv_dir, "EMISSION.csv")):
+    if has_emission_csv:
         process_and_save_emission_ratios(
             "EmissionActivityRatio.csv",
             "InputActivityRatio.csv",
@@ -1364,22 +1310,28 @@ def run_data_processing(
     # 2. Eliminar valores fuera de índices (celda 8)
     eliminar_valores_fuera_de_indices(csv_dir)
 
-    # 3. Completar matrices (celdas 9-12)
+    # 3. Completar matrices (celdas 9-12) — tareas paralelas (cada una escribe un CSV distinto)
     path_csv = csv_dir + os.sep
-    completar_Matrix_Act_Ratio(path_csv, "InputActivityRatio.csv")
-    completar_Matrix_Act_Ratio(path_csv, "OutputActivityRatio.csv")
+    has_emission_csv = os.path.exists(os.path.join(csv_dir, "EMISSION.csv"))
 
-    if os.path.exists(os.path.join(csv_dir, "EMISSION.csv")):
-        completar_Matrix_Emission(path_csv, "EmissionActivityRatio.csv")
-
+    matrix_tasks: list[tuple] = [
+        (completar_Matrix_Act_Ratio, path_csv, "InputActivityRatio.csv"),
+        (completar_Matrix_Act_Ratio, path_csv, "OutputActivityRatio.csv"),
+        (completar_Matrix_Cost, path_csv, "VariableCost.csv"),
+    ]
+    if has_emission_csv:
+        matrix_tasks.append((completar_Matrix_Emission, path_csv, "EmissionActivityRatio.csv"))
     if result.has_storage:
-        completar_Matrix_Storage(path_csv, "TechnologyFromStorage.csv")
-        completar_Matrix_Storage(path_csv, "TechnologyToStorage.csv")
+        matrix_tasks.append((completar_Matrix_Storage, path_csv, "TechnologyFromStorage.csv"))
+        matrix_tasks.append((completar_Matrix_Storage, path_csv, "TechnologyToStorage.csv"))
 
-    completar_Matrix_Cost(path_csv, "VariableCost.csv")
+    with ThreadPoolExecutor(max_workers=len(matrix_tasks)) as pool:
+        futures = [pool.submit(fn, *args) for fn, *args in matrix_tasks]
+        for f in futures:
+            f.result()
 
     # 4. Emisiones a la entrada (celda 13 del notebook)
-    if os.path.exists(os.path.join(csv_dir, "EMISSION.csv")):
+    if has_emission_csv:
         process_and_save_emission_ratios(
             "EmissionActivityRatio.csv",
             "InputActivityRatio.csv",
