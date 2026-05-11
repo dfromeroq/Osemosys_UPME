@@ -250,6 +250,42 @@ export const CompareChart: React.FC<CompareChartProps> = ({
           chart: { backgroundColor: '#FFFFFF' },
           title: { style: { color: '#1e293b', fontSize: '28px' } },
           legend: { itemStyle: { color: '#334155', fontSize: '20px' } },
+          // Preserve Y-axis configuration for all subplots during export
+          yAxis: data.subplots.map((_, idx) => {
+            const widthPerSubplot = 100 / (data.subplots.length || 1);
+            const leftStr = `${idx * widthPerSubplot}%`;
+            const widthStr = `${widthPerSubplot}%`;
+            return {
+              left: leftStr,
+              width: widthStr,
+              top: '0%',
+              height: '86%',
+              gridLineColor: '#e2e8f0',
+              gridLineWidth: 1,
+              lineWidth: (!sharedYAxis || idx === 0) ? 1 : 0,
+              lineColor: (!sharedYAxis || idx === 0) ? '#64748b' : 'transparent',
+              tickWidth: (!sharedYAxis || idx === 0) ? 1 : 0,
+              tickLength: (!sharedYAxis || idx === 0) ? 6 : 0,
+              tickColor: (!sharedYAxis || idx === 0) ? '#64748b' : 'transparent',
+              labels: {
+                enabled: !sharedYAxis || idx === 0,
+                style: { color: '#334155', fontSize: '22px' },
+              },
+              title: {
+                text: idx === 0 ? data.yAxisLabel : null,
+                style: { color: '#334155', fontSize: '24px' },
+              },
+              stackLabels: {
+                enabled: true,
+                style: {
+                  fontWeight: 'bold',
+                  color: '#1e293b',
+                  textOutline: 'none',
+                  fontSize: '18px',
+                },
+              },
+            };
+          }),
         },
         buttons: {
           contextButton: {
