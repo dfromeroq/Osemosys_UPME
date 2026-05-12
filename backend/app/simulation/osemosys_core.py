@@ -41,8 +41,11 @@ logger = logging.getLogger(__name__)
 
 def _maybe_run_constraint_diagnostics(instance) -> None:
     if os.getenv("OSEMOSYS_CONSTRAINT_DIAGNOSTICS", "0") == "1":
-        from app.simulation.core.constraint_diagnostics import diagnose_model_constraints
-        diagnose_model_constraints(instance)
+        try:
+            from app.simulation.core.constraint_diagnostics import diagnose_model_constraints
+            diagnose_model_constraints(instance)
+        except Exception:
+            logger.exception("constraint_diagnostics falló — simulación continúa igual")
 
 
 def run_osemosys_from_db(
