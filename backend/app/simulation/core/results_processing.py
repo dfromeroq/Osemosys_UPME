@@ -753,6 +753,7 @@ def process_results(
         "solver_name": solver_result["solver_name"],
         "solver_status": solver_result["solver_status"],
         "coverage_ratio": coverage_ratio,
+        "reserve_margin_dual": solver_result.get("reserve_margin_dual"),
         "total_demand": total_demand,
         "total_dispatch": total_dispatch,
         "total_unmet": total_unmet,

@@ -1807,6 +1807,7 @@ def get_result_summary(
         solver_status=solver_status,
         objective_value=job.objective_value or 0.0,
         coverage_ratio=job.coverage_ratio or 0.0,
+        reserve_margin_dual=job.reserve_margin_dual,
         total_demand=job.total_demand or 0.0,
         total_dispatch=job.total_dispatch or 0.0,
         total_unmet=job.total_unmet or 0.0,

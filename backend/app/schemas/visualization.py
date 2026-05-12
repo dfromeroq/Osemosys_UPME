@@ -156,6 +156,7 @@ class ResultSummaryResponse(BaseModel):
     solver_status: str
     objective_value: float
     coverage_ratio: float
+    reserve_margin_dual: float | None = None
     total_demand: float
     total_dispatch: float
     total_unmet: float

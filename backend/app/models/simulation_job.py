@@ -98,6 +98,7 @@ class SimulationJob(Base):
     solver_threads_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
     objective_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     coverage_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reserve_margin_dual: Mapped[float | None] = mapped_column(Float, nullable=True)
     total_demand: Mapped[float | None] = mapped_column(Float, nullable=True)
     total_dispatch: Mapped[float | None] = mapped_column(Float, nullable=True)
     total_unmet: Mapped[float | None] = mapped_column(Float, nullable=True)

@@ -27,6 +27,7 @@ from pyomo.environ import (
     Param,
     Reals,
     Set,
+    Suffix,
     Var,
     minimize,
 )
@@ -1329,6 +1330,8 @@ def create_abstract_model(
 
     if has_storage:
         _add_storage_constraints(model)
+
+    model.dual = Suffix(direction=Suffix.IMPORT)
 
     return model
 
