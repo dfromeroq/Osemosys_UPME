@@ -638,34 +638,51 @@ def create_abstract_model(
     #    Constraints — Energy Balance A (por timeslice: oferta >= demanda + inputs)
     # ####################################################################
 
+    _activity_ratio_cache: dict = {}
+
+    def _ensure_oar_iar_cache(m: object) -> None:
+        if 'oar_fuels' in _activity_ratio_cache:
+            return
+        oar_fuels: set = set()
+        iar_fuels: set = set()
+        oar_tech_modes: dict = {}  # (r,f,y) -> [(t,mo)]
+        iar_tech_modes: dict = {}  # (r,f,y) -> [(t,mo)]
+        # Only iterate sparse non-zero entries (default=0 → _data omits zeros)
+        for _r, _t, _f, _mo, _y in m.OutputActivityRatio._data:
+            key = (_r, _f, _y)
+            oar_fuels.add(key)
+            if key not in oar_tech_modes:
+                oar_tech_modes[key] = []
+            oar_tech_modes[key].append((_t, _mo))
+        for _r, _t, _f, _mo, _y in m.InputActivityRatio._data:
+            key = (_r, _f, _y)
+            iar_fuels.add(key)
+            if key not in iar_tech_modes:
+                iar_tech_modes[key] = []
+            iar_tech_modes[key].append((_t, _mo))
+        _activity_ratio_cache['oar_fuels'] = oar_fuels
+        _activity_ratio_cache['iar_fuels'] = iar_fuels
+        _activity_ratio_cache['oar_tech_modes'] = oar_tech_modes
+        _activity_ratio_cache['iar_tech_modes'] = iar_tech_modes
+
     def EnergyBalanceEachTS5_rule(m, r, l, f, y):
-        has_oar = any(
-            m.OutputActivityRatio[r, t, f, mo, y] != 0
-            for mo in m.MODE_OF_OPERATION
-            for t in m.TECHNOLOGY
-        )
-        has_iar = any(
-            m.InputActivityRatio[r, t, f, mo, y] != 0
-            for mo in m.MODE_OF_OPERATION
-            for t in m.TECHNOLOGY
-        )
+        _ensure_oar_iar_cache(m)
+        key = (r, f, y)
+        has_oar = key in _activity_ratio_cache['oar_fuels']
+        has_iar = key in _activity_ratio_cache['iar_fuels']
         if not has_oar and m.Demand[r, l, f, y] == 0 and not has_iar:
             return Constraint.Skip
         lhs = sum(
             m.RateOfActivity[r, l, t, mo, y]
             * m.OutputActivityRatio[r, t, f, mo, y]
             * m.YearSplit[l, y]
-            for mo in m.MODE_OF_OPERATION
-            for t in m.TECHNOLOGY
-            if m.OutputActivityRatio[r, t, f, mo, y] != 0
+            for t, mo in _activity_ratio_cache['oar_tech_modes'].get(key, ())
         )
         rhs_inputs = sum(
             m.RateOfActivity[r, l, t, mo, y]
             * m.InputActivityRatio[r, t, f, mo, y]
             * m.YearSplit[l, y]
-            for mo in m.MODE_OF_OPERATION
-            for t in m.TECHNOLOGY
-            if m.InputActivityRatio[r, t, f, mo, y] != 0
+            for t, mo in _activity_ratio_cache['iar_tech_modes'].get(key, ())
         )
         return lhs >= m.Demand[r, l, f, y] + rhs_inputs
     model.EnergyBalanceEachTS5 = Constraint(
@@ -678,35 +695,25 @@ def create_abstract_model(
     # ####################################################################
 
     def EnergyBalanceEachYear4_rule(m, r, f, y):
-        has_oar = any(
-            m.OutputActivityRatio[r, t, f, mo, y] != 0
-            for mo in m.MODE_OF_OPERATION
-            for t in m.TECHNOLOGY
-        )
-        has_iar = any(
-            m.InputActivityRatio[r, t, f, mo, y] != 0
-            for mo in m.MODE_OF_OPERATION
-            for t in m.TECHNOLOGY
-        )
+        _ensure_oar_iar_cache(m)
+        key = (r, f, y)
+        has_oar = key in _activity_ratio_cache['oar_fuels']
+        has_iar = key in _activity_ratio_cache['iar_fuels']
         if not has_oar and m.AccumulatedAnnualDemand[r, f, y] == 0 and not has_iar:
             return Constraint.Skip
         lhs = sum(
             m.RateOfActivity[r, l, t, mo, y]
             * m.OutputActivityRatio[r, t, f, mo, y]
             * m.YearSplit[l, y]
-            for t in m.TECHNOLOGY
-            for mo in m.MODE_OF_OPERATION
+            for t, mo in _activity_ratio_cache['oar_tech_modes'].get(key, ())
             for l in m.TIMESLICE
-            if m.OutputActivityRatio[r, t, f, mo, y] != 0
         )
         rhs_inputs = sum(
             m.RateOfActivity[r, l, t, mo, y]
             * m.InputActivityRatio[r, t, f, mo, y]
             * m.YearSplit[l, y]
-            for mo in m.MODE_OF_OPERATION
-            for t in m.TECHNOLOGY
+            for t, mo in _activity_ratio_cache['iar_tech_modes'].get(key, ())
             for l in m.TIMESLICE
-            if m.InputActivityRatio[r, t, f, mo, y] != 0
         )
         return lhs >= rhs_inputs + m.AccumulatedAnnualDemand[r, f, y]
     model.EnergyBalanceEachYear4 = Constraint(
@@ -1154,16 +1161,16 @@ def create_abstract_model(
     )
 
     def ReserveMargin_FuelsIncluded_rule(m, r, l, y):
+        _ensure_oar_iar_cache(m)
         return (
             sum(
                 sum(
                     m.RateOfActivity[r, l, t, mo, y] * m.OutputActivityRatio[r, t, f, mo, y]
-                    for t in m.TECHNOLOGY
-                    for mo in m.MODE_OF_OPERATION
-                    if m.OutputActivityRatio[r, t, f, mo, y] != 0
+                    for t, mo in _activity_ratio_cache['oar_tech_modes'].get((r, f, y), ())
                 )
                 * m.ReserveMarginTagFuel[r, f, y]
                 for f in m.FUEL
+                if m.ReserveMarginTagFuel[r, f, y] != 0
             )
             == m.DemandNeedingReserveMargin[r, l, y]
         )
