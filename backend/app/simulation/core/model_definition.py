@@ -639,6 +639,18 @@ def create_abstract_model(
     # ####################################################################
 
     def EnergyBalanceEachTS5_rule(m, r, l, f, y):
+        has_oar = any(
+            m.OutputActivityRatio[r, t, f, mo, y] != 0
+            for mo in m.MODE_OF_OPERATION
+            for t in m.TECHNOLOGY
+        )
+        has_iar = any(
+            m.InputActivityRatio[r, t, f, mo, y] != 0
+            for mo in m.MODE_OF_OPERATION
+            for t in m.TECHNOLOGY
+        )
+        if not has_oar and m.Demand[r, l, f, y] == 0 and not has_iar:
+            return Constraint.Skip
         lhs = sum(
             m.RateOfActivity[r, l, t, mo, y]
             * m.OutputActivityRatio[r, t, f, mo, y]
@@ -647,7 +659,6 @@ def create_abstract_model(
             for t in m.TECHNOLOGY
             if m.OutputActivityRatio[r, t, f, mo, y] != 0
         )
-        demand = m.Demand[r, l, f, y]
         rhs_inputs = sum(
             m.RateOfActivity[r, l, t, mo, y]
             * m.InputActivityRatio[r, t, f, mo, y]
@@ -656,9 +667,7 @@ def create_abstract_model(
             for t in m.TECHNOLOGY
             if m.InputActivityRatio[r, t, f, mo, y] != 0
         )
-        if lhs == 0 and demand == 0 and rhs_inputs == 0:
-            return Constraint.Skip
-        return lhs >= demand + rhs_inputs
+        return lhs >= m.Demand[r, l, f, y] + rhs_inputs
     model.EnergyBalanceEachTS5 = Constraint(
         model.REGION, model.TIMESLICE, model.FUEL, model.YEAR,
         rule=EnergyBalanceEachTS5_rule,
@@ -669,6 +678,18 @@ def create_abstract_model(
     # ####################################################################
 
     def EnergyBalanceEachYear4_rule(m, r, f, y):
+        has_oar = any(
+            m.OutputActivityRatio[r, t, f, mo, y] != 0
+            for mo in m.MODE_OF_OPERATION
+            for t in m.TECHNOLOGY
+        )
+        has_iar = any(
+            m.InputActivityRatio[r, t, f, mo, y] != 0
+            for mo in m.MODE_OF_OPERATION
+            for t in m.TECHNOLOGY
+        )
+        if not has_oar and m.AccumulatedAnnualDemand[r, f, y] == 0 and not has_iar:
+            return Constraint.Skip
         lhs = sum(
             m.RateOfActivity[r, l, t, mo, y]
             * m.OutputActivityRatio[r, t, f, mo, y]
@@ -678,7 +699,6 @@ def create_abstract_model(
             for l in m.TIMESLICE
             if m.OutputActivityRatio[r, t, f, mo, y] != 0
         )
-        acc_demand = m.AccumulatedAnnualDemand[r, f, y]
         rhs_inputs = sum(
             m.RateOfActivity[r, l, t, mo, y]
             * m.InputActivityRatio[r, t, f, mo, y]
@@ -688,9 +708,7 @@ def create_abstract_model(
             for l in m.TIMESLICE
             if m.InputActivityRatio[r, t, f, mo, y] != 0
         )
-        if lhs == 0 and acc_demand == 0 and rhs_inputs == 0:
-            return Constraint.Skip
-        return lhs >= rhs_inputs + acc_demand
+        return lhs >= rhs_inputs + m.AccumulatedAnnualDemand[r, f, y]
     model.EnergyBalanceEachYear4 = Constraint(
         model.REGION, model.FUEL, model.YEAR,
         rule=EnergyBalanceEachYear4_rule,
