@@ -121,7 +121,7 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
       title: {
         text: data.title,
         style: {
-          fontSize: fb('16px'),
+          fontSize: fb('22.66px'),
           fontWeight: 'bold',
           color: '#f8fafc',
         },
@@ -129,7 +129,7 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
       xAxis: {
         categories: data.categories,
         crosshair: { color: '#334155' },
-        labels: { style: { color: '#94a3b8', fontSize: fb('13px') } },
+        labels: { style: { color: '#94a3b8', fontSize: fb('14.67px') } },
         lineColor: '#334155',
         tickColor: '#334155',
       },
@@ -141,10 +141,10 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
         ...(typeof yAxisMax === 'number' ? { max: yAxisMax } : null),
         title: {
           text: data.yAxisLabel,
-          style: { color: '#94a3b8', fontSize: fb('14px') },
+          style: { color: '#94a3b8', fontSize: fb('22.66px') },
         },
         labels: {
-          style: { color: '#94a3b8', fontSize: fb('13px') },
+          style: { color: '#94a3b8', fontSize: fb('14.67px') },
           // Mínimo 3 cifras significativas (sin notación científica).
           formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
             return formatAxis3Sig(this.value as number);
@@ -157,7 +157,7 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
             fontWeight: 'bold',
             color: '#94a3b8',
             textOutline: 'none',
-            fontSize: fb('10px'),
+            fontSize: fb('14.67px'),
           },
           // Highcharts invoca el formatter con `this` como StackItemObject; no usar flecha.
           // Mostrar solo cada 2 categorías (0, 2, 4, …) con 1 decimal máximo.
@@ -194,21 +194,21 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
         scale: 1,
         fallbackToExportServer: false,
         error: onHighchartsExportError,
-        chartOptions: {
+          chartOptions: {
           chart: { backgroundColor: '#FFFFFF' },
-          title: { style: { color: '#1e293b', fontSize: '28px' } },
+          title: { style: { color: '#1e293b', fontSize: '22.66px' } },
           xAxis: {
-            labels: { style: { color: '#334155', fontSize: '20px' } },
+            labels: { style: { color: '#334155', fontSize: '14.67px' } },
             lineColor: '#cbd5e1',
             tickColor: '#cbd5e1',
           },
           yAxis: {
-            labels: { style: { color: '#334155', fontSize: '20px' } },
-            title: { style: { color: '#334155', fontSize: '22px' } },
+            labels: { style: { color: '#334155', fontSize: '14.67px' } },
+            title: { style: { color: '#334155', fontSize: '22.66px' } },
             gridLineColor: '#e2e8f0',
-            stackLabels: { style: { color: '#1e293b', fontSize: '16px' } },
+            stackLabels: { style: { color: '#1e293b', fontSize: '14.67px' } },
           },
-          legend: { itemStyle: { color: '#334155', fontSize: '20px' } },
+          legend: { itemStyle: { color: '#334155', fontSize: '14.67px' } },
         },
         buttons: {
           contextButton: {
@@ -227,7 +227,7 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
         // (que queda arriba del stack) aparece al final de la leyenda. Así la
         // leyenda se lee de abajo hacia arriba igual que las barras.
         reversed: true,
-        itemStyle: { color: '#94a3b8', fontWeight: 'normal', fontSize: fb('13px') },
+        itemStyle: { color: '#94a3b8', fontWeight: 'normal', fontSize: fb('14.67px') },
         itemHoverStyle: { color: '#f8fafc' },
       },
     };
