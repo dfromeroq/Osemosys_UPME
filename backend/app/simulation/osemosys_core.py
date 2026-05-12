@@ -39,6 +39,12 @@ from app.simulation.core.solver import solve_model
 logger = logging.getLogger(__name__)
 
 
+def _maybe_run_constraint_diagnostics(instance) -> None:
+    if os.getenv("OSEMOSYS_CONSTRAINT_DIAGNOSTICS", "0") == "1":
+        from app.simulation.core.constraint_diagnostics import diagnose_model_constraints
+        diagnose_model_constraints(instance)
+
+
 def run_osemosys_from_db(
     db: Session,
     *,
@@ -132,6 +138,7 @@ def run_osemosys_from_db(
         timings["create_instance_seconds"] = perf_counter() - t
         del model
         gc.collect()
+        _maybe_run_constraint_diagnostics(instance)
 
         if on_stage:
             on_stage("create_instance", 70.0)
@@ -339,6 +346,7 @@ def run_osemosys_from_csv_dir(
     timings["create_instance_seconds"] = perf_counter() - t
     del model
     gc.collect()
+    _maybe_run_constraint_diagnostics(instance)
 
     if on_stage:
         on_stage("create_instance", 70.0)
@@ -525,6 +533,7 @@ def run_osemosys_from_excel(
         timings["create_instance_seconds"] = perf_counter() - t
         del model
         gc.collect()
+        _maybe_run_constraint_diagnostics(instance)
 
         if on_stage:
             on_stage("create_instance", 70.0)

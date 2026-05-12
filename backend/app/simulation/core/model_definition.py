@@ -639,23 +639,26 @@ def create_abstract_model(
     # ####################################################################
 
     def EnergyBalanceEachTS5_rule(m, r, l, f, y):
-        return (
-            sum(
-                m.RateOfActivity[r, l, t, mo, y]
-                * m.OutputActivityRatio[r, t, f, mo, y]
-                * m.YearSplit[l, y]
-                for mo in m.MODE_OF_OPERATION
-                for t in m.TECHNOLOGY
-            )
-            >= m.Demand[r, l, f, y]
-            + sum(
-                m.RateOfActivity[r, l, t, mo, y]
-                * m.InputActivityRatio[r, t, f, mo, y]
-                * m.YearSplit[l, y]
-                for mo in m.MODE_OF_OPERATION
-                for t in m.TECHNOLOGY
-            )
+        lhs = sum(
+            m.RateOfActivity[r, l, t, mo, y]
+            * m.OutputActivityRatio[r, t, f, mo, y]
+            * m.YearSplit[l, y]
+            for mo in m.MODE_OF_OPERATION
+            for t in m.TECHNOLOGY
+            if m.OutputActivityRatio[r, t, f, mo, y] != 0
         )
+        demand = m.Demand[r, l, f, y]
+        rhs_inputs = sum(
+            m.RateOfActivity[r, l, t, mo, y]
+            * m.InputActivityRatio[r, t, f, mo, y]
+            * m.YearSplit[l, y]
+            for mo in m.MODE_OF_OPERATION
+            for t in m.TECHNOLOGY
+            if m.InputActivityRatio[r, t, f, mo, y] != 0
+        )
+        if lhs == 0 and demand == 0 and rhs_inputs == 0:
+            return Constraint.Skip
+        return lhs >= demand + rhs_inputs
     model.EnergyBalanceEachTS5 = Constraint(
         model.REGION, model.TIMESLICE, model.FUEL, model.YEAR,
         rule=EnergyBalanceEachTS5_rule,
@@ -666,25 +669,28 @@ def create_abstract_model(
     # ####################################################################
 
     def EnergyBalanceEachYear4_rule(m, r, f, y):
-        return (
-            sum(
-                m.RateOfActivity[r, l, t, mo, y]
-                * m.OutputActivityRatio[r, t, f, mo, y]
-                * m.YearSplit[l, y]
-                for t in m.TECHNOLOGY
-                for mo in m.MODE_OF_OPERATION
-                for l in m.TIMESLICE
-            )
-            >= sum(
-                m.RateOfActivity[r, l, t, mo, y]
-                * m.InputActivityRatio[r, t, f, mo, y]
-                * m.YearSplit[l, y]
-                for mo in m.MODE_OF_OPERATION
-                for t in m.TECHNOLOGY
-                for l in m.TIMESLICE
-            )
-            + m.AccumulatedAnnualDemand[r, f, y]
+        lhs = sum(
+            m.RateOfActivity[r, l, t, mo, y]
+            * m.OutputActivityRatio[r, t, f, mo, y]
+            * m.YearSplit[l, y]
+            for t in m.TECHNOLOGY
+            for mo in m.MODE_OF_OPERATION
+            for l in m.TIMESLICE
+            if m.OutputActivityRatio[r, t, f, mo, y] != 0
         )
+        acc_demand = m.AccumulatedAnnualDemand[r, f, y]
+        rhs_inputs = sum(
+            m.RateOfActivity[r, l, t, mo, y]
+            * m.InputActivityRatio[r, t, f, mo, y]
+            * m.YearSplit[l, y]
+            for mo in m.MODE_OF_OPERATION
+            for t in m.TECHNOLOGY
+            for l in m.TIMESLICE
+            if m.InputActivityRatio[r, t, f, mo, y] != 0
+        )
+        if lhs == 0 and acc_demand == 0 and rhs_inputs == 0:
+            return Constraint.Skip
+        return lhs >= rhs_inputs + acc_demand
     model.EnergyBalanceEachYear4 = Constraint(
         model.REGION, model.FUEL, model.YEAR,
         rule=EnergyBalanceEachYear4_rule,
@@ -1136,6 +1142,7 @@ def create_abstract_model(
                     m.RateOfActivity[r, l, t, mo, y] * m.OutputActivityRatio[r, t, f, mo, y]
                     for t in m.TECHNOLOGY
                     for mo in m.MODE_OF_OPERATION
+                    if m.OutputActivityRatio[r, t, f, mo, y] != 0
                 )
                 * m.ReserveMarginTagFuel[r, f, y]
                 for f in m.FUEL
