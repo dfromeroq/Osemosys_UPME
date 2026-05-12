@@ -3638,9 +3638,31 @@ def build_comparison_data_by_year_alt(
         total_por_escenario_año = df_final.groupby(["JOB_ID", "YEAR"])["VALUE"].transform("sum")
         df_final["VALUE"] = df_final["VALUE"] / total_por_escenario_año * 100.0
 
-    # Colores
+    # ── Colores ──────────────────────────────────────────────────
     categorias_unicas = sorted(df_final["CATEGORIA"].dropna().unique())
-    mapa_colores = _color_map_comparison(agrupacion_usar, categorias_unicas)
+    if not es_generico:
+        mapa_colores = _color_map_comparison(agrupacion_usar, categorias_unicas)
+    else:
+        # Para gráficas genéricas: usar color_fn según la agrupación REAL
+        if agrupacion_usar != cfg.get("agrupar_por"):
+            if agrupacion_usar == "FUEL":
+                color_fn = _color_por_grupo_fijo
+            elif agrupacion_usar == "SECTOR":
+                color_fn = _color_por_sector
+            elif agrupacion_usar == "EMISION":
+                color_fn = _color_por_emision
+            else:
+                color_fn = cfg.get("color_fn") or generar_colores_tecnologias
+        else:
+            color_fn = cfg.get("color_fn")
+
+        if color_fn is not None:
+            df_tmp = pd.DataFrame({"COLOR": list(categorias_unicas)})
+            colores_lista, orden_lista = color_fn(df_tmp, "COLOR")
+            mapa_colores = dict(zip(orden_lista, colores_lista))
+        else:
+            _palette = get_colores_grupos()
+            mapa_colores = {c: _palette.get(c, "#999999") for c in categorias_unicas}
 
     # Construir subplots por escenario
     subplots: list[SubplotData] = []
