@@ -250,6 +250,17 @@ export const CompareChart: React.FC<CompareChartProps> = ({
           chart: { backgroundColor: '#FFFFFF' },
           title: { style: { color: '#1e293b', fontSize: '28px' } },
           legend: { itemStyle: { color: '#334155', fontSize: '20px' } },
+          // X-axis overrides for export — matching HighchartsChart.tsx pattern
+          xAxis: data.subplots.map(() => ({
+            labels: {
+              style: { color: '#334155', fontSize: '18px' },
+            },
+            title: {
+              style: { color: '#334155', fontSize: '20px' },
+            },
+            lineColor: '#cbd5e1',
+            tickColor: '#cbd5e1',
+          })),
           // Preserve Y-axis configuration for all subplots during export
           yAxis: data.subplots.map((_, idx) => {
             const widthPerSubplot = 100 / (data.subplots.length || 1);
