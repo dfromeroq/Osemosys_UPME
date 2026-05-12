@@ -10,6 +10,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _pval(v):
+    """Extrae valor Python de un Param Pyomo (mutable o no-mutable)."""
+    return float(v) if not isinstance(v, (int, float)) else v
+
+
 def diagnose_model_constraints(instance) -> dict:
     """Analiza una ConcreteModel instanciada y reporta restricciones redundantes/triviales.
 
@@ -40,17 +45,16 @@ def diagnose_model_constraints(instance) -> dict:
                 for t in techs:
                     for mo in modes:
                         eachts5_total_oar_terms += 1
-                        if m.OutputActivityRatio[r, t, f, mo, y].value == 0:
+                        if _pval(m.OutputActivityRatio[r, t, f, mo, y]) == 0:
                             eachts5_zero_oar_terms += 1
                         else:
                             has_oar = True
-                        if m.InputActivityRatio[r, t, f, mo, y].value != 0:
+                        if _pval(m.InputActivityRatio[r, t, f, mo, y]) != 0:
                             has_iar = True
 
                 if not has_oar:
-                    # Para todos los timeslices de este (r,f,y), si demand==0 también → skip
                     for l in timeslices:
-                        demand_val = m.Demand[r, l, f, y].value or 0
+                        demand_val = _pval(m.Demand[r, l, f, y])
                         if demand_val == 0 and not has_iar:
                             eachts5_skipped += 1
 
@@ -64,20 +68,19 @@ def diagnose_model_constraints(instance) -> dict:
         for f in fuels:
             for y in years:
                 has_oar = any(
-                    m.OutputActivityRatio[r, t, f, mo, y].value != 0
+                    _pval(m.OutputActivityRatio[r, t, f, mo, y]) != 0
                     for t in techs for mo in modes
                 )
                 has_iar = any(
-                    m.InputActivityRatio[r, t, f, mo, y].value != 0
+                    _pval(m.InputActivityRatio[r, t, f, mo, y]) != 0
                     for t in techs for mo in modes
                 )
-                acc_demand = m.AccumulatedAnnualDemand[r, f, y].value or 0
+                acc_demand = _pval(m.AccumulatedAnnualDemand[r, f, y])
                 if not has_oar and acc_demand == 0 and not has_iar:
                     eachyear4_skipped += 1
 
     # ------------------------------------------------------------------ #
     # 3. AnnualEmissionProductionByMode — restricciones con ratio == 0
-    #    (actualmente generan "variable == 0" en vez de Constraint.Skip)
     # ------------------------------------------------------------------ #
     emissions = list(m.EMISSION)
     emission_total = len(regions) * len(techs) * len(emissions) * len(modes) * len(years)
@@ -88,7 +91,7 @@ def diagnose_model_constraints(instance) -> dict:
             for e in emissions:
                 for mo in modes:
                     for y in years:
-                        if m.EmissionActivityRatio[r, t, e, mo, y].value == 0:
+                        if _pval(m.EmissionActivityRatio[r, t, e, mo, y]) == 0:
                             emission_zero_ratio += 1
 
     # ------------------------------------------------------------------ #
@@ -100,56 +103,43 @@ def diagnose_model_constraints(instance) -> dict:
     for r in regions:
         for t in techs:
             for y in years:
-                af = m.AvailabilityFactor[r, t, y].value or 0
+                af = _pval(m.AvailabilityFactor[r, t, y])
                 if af == 1.0:
-                    # Verificar si CapacityFactor es uniforme entre timeslices
-                    cf_vals = [m.CapacityFactor[r, t, l, y].value or 0 for l in timeslices]
+                    cf_vals = [_pval(m.CapacityFactor[r, t, l, y]) for l in timeslices]
                     if len(set(cf_vals)) <= 1:
                         planned_redundant += 1
 
-    # ------------------------------------------------------------------ #
-    # 5. EachYear4 redundante respecto de EachTS5
-    #    (por diseño OSeMOSYS: siempre redundante si EachTS5 es binding)
-    # ------------------------------------------------------------------ #
     eachyear4_implied = eachyear4_total - eachyear4_skipped
 
-    # ------------------------------------------------------------------ #
-    # Reporte
-    # ------------------------------------------------------------------ #
     def pct(num, den):
         return f"{num / den * 100:.1f}%" if den else "N/A"
 
     logger.info("=" * 60)
     logger.info("CONSTRAINT DIAGNOSTICS — OSeMOSYS model")
     logger.info("=" * 60)
-
     logger.info(
         "EnergyBalanceEachTS5:\n"
         f"  Total instancias posibles : {eachts5_total:>10,}\n"
         f"  Skipped (trivial 0>=0)    : {eachts5_skipped:>10,}  ({pct(eachts5_skipped, eachts5_total)})\n"
         f"  Términos OAR==0 filtrados : {eachts5_zero_oar_terms:>10,}  ({pct(eachts5_zero_oar_terms, eachts5_total_oar_terms)} del total de términos)"
     )
-
     logger.info(
         "EnergyBalanceEachYear4:\n"
         f"  Total instancias posibles : {eachyear4_total:>10,}\n"
         f"  Skipped (trivial 0>=0)    : {eachyear4_skipped:>10,}  ({pct(eachyear4_skipped, eachyear4_total)})\n"
         f"  Activas (potenc. redundan): {eachyear4_implied:>10,}  (redundantes por diseño si EachTS5 binding)"
     )
-
     logger.info(
         "AnnualEmissionProductionByMode:\n"
         f"  Total instancias          : {emission_total:>10,}\n"
         f"  Ratio == 0 (fuerza var=0) : {emission_zero_ratio:>10,}  ({pct(emission_zero_ratio, emission_total)})\n"
         f"  → Oportunidad: usar Constraint.Skip en vez de '== 0'"
     )
-
     logger.info(
         "PlannedMaintenance:\n"
         f"  Total instancias          : {planned_total:>10,}\n"
         f"  Potenc. redundantes (AF=1,CF uniforme): {planned_redundant:>6,}  ({pct(planned_redundant, planned_total)})"
     )
-
     logger.info("=" * 60)
 
     return {
