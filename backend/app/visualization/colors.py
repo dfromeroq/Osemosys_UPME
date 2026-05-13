@@ -199,6 +199,17 @@ COLORES_GRUPOS = {
     "DEMAGF": "#28a745",
     "DEMMIN": "#fd7e14",
     "DEMCOQ": "#6f42c1",
+
+    # Transporte — grupos para agrupación TRANSPORTE_GRUPO
+    "Motos":       "#e6194b",
+    "Livianos":    "#3cb44b",
+    "Buses":       "#ffe119",
+    "Microbuses":  "#911eb4",
+    "Carga":       "#46f0f0",
+    "Barcos":      "#f032e6",
+    "Metro":       "#008080",
+    "Aviación":    "#e6beff",
+    "Otros":       "#808080",
 }
 
 
@@ -395,6 +406,10 @@ _color_h2_consumo      = _make_color_fn_fija(COLOR_MAP_H2_CONSUMO)
 _color_bioenergia      = _make_color_fn_fija(COLOR_MAP_BIOENERGIA)
 _color_gas_produccion  = _make_color_fn_fija(COLOR_MAP_GAS_PROD)
 _color_liquidos_import = _make_color_fn_fija(COLOR_MAP_LIQUIDOS_IMPORT)
+
+
+# Paleta fija para agrupación TRANSPORTE_GRUPO
+_color_transporte_grupo = _make_color_fn_fija(COLORES_GRUPOS)
 
 
 # ══════════════════════════════════════════════════════════════════════════

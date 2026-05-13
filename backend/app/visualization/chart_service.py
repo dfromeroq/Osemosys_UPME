@@ -74,6 +74,7 @@ from app.visualization.colors import (
     _color_por_grupo_fijo,
     _color_por_sector,
     _color_por_emision,
+    _color_transporte_grupo,
 )
 from app.visualization.labels import get_label
 from app.visualization.configs import (
@@ -482,6 +483,54 @@ def _filtrar_df(
     return df
 
 
+# Mapeo de código de uso de transporte a nombre de grupo
+_TRANSPORTE_USO_A_GRUPO: dict[str, str] = {
+    "MOT": "Motos",
+    "LDV": "Livianos",
+    "TAX": "Livianos",
+    "FWD": "Livianos",
+    "BUS": "Buses",
+    "MIC": "Microbuses",
+    "TCK": "Carga",
+    "STT": "Carga",
+    "BOT": "Barcos",
+    "SHP": "Barcos",
+    "MET": "Metro",
+    "AVI": "Aviación",
+    "AIR": "Aviación",
+}
+
+
+def _map_transporte_grupo(tech_code: str) -> str:
+    """Clasifica un código DEMTRA en grupo de transporte."""
+    if not isinstance(tech_code, str) or not tech_code.startswith("DEMTRA"):
+        return "Otros"
+    rest = tech_code[len("DEMTRA"):]
+
+    # Eliminar sufijos de eficiencia y área
+    from app.visualization.labels import _EFIC, _AREA  # lazy: evita circular
+    for suffix in _EFIC:
+        if rest.endswith(suffix):
+            rest = rest[:-len(suffix)]
+            break
+    for suffix in _AREA:
+        if rest.endswith(suffix):
+            rest = rest[:-len(suffix)]
+            break
+
+    # Buscar código de uso al final del restante
+    for uso_code in _TRANSPORTE_USO_A_GRUPO:
+        if rest.endswith(uso_code):
+            return _TRANSPORTE_USO_A_GRUPO[uso_code]
+
+    # Fallback: buscar cualquier código conocido en cualquier posición
+    for uso_code in _TRANSPORTE_USO_A_GRUPO:
+        if uso_code in rest:
+            return _TRANSPORTE_USO_A_GRUPO[uso_code]
+
+    return "Otros"
+
+
 def _sector_labels(tech_series: pd.Series) -> pd.Series:
     """Asignación vectorizada de sector, incluyendo PWR → Generación Electricidad.
 
@@ -524,6 +573,9 @@ def _asignar_categoria(
     elif agrupacion == "EMISION":
         # Para AnnualTechnologyEmission, FUEL contiene el tipo de emisión
         df["CATEGORIA"] = df["FUEL"] if "FUEL" in df.columns else "?"
+
+    elif agrupacion == "TRANSPORTE_GRUPO":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_grupo)
 
     return df
 
@@ -791,6 +843,8 @@ def build_chart_data(
         df["COLOR"] = df["FUEL"] if "FUEL" in df.columns else "?"
     elif agrupar_col == "H2_PRODUCCION":
         df["COLOR"] = df["TECHNOLOGY"].apply(_map_h2_verde_azul_gris)
+    elif agrupar_col == "TRANSPORTE_GRUPO":
+        df["COLOR"] = df["TECHNOLOGY"].apply(_map_transporte_grupo)
     elif agrupar_col == "YEAR":
         # emisiones_total: solo agrupa por año
         df["COLOR"] = "Total"
@@ -833,6 +887,8 @@ def build_chart_data(
             color_fn = _color_por_sector
         elif agrupar_col == "EMISION":
             color_fn = _color_por_emision
+        elif agrupar_col == "TRANSPORTE_GRUPO":
+            color_fn = _color_transporte_grupo
         else:
             color_fn = (
                 cfg.get("color_fn")
@@ -1440,6 +1496,8 @@ def _procesar_bloque_single(
         df["CATEGORIA"] = _sector_labels(df["TECHNOLOGY"])
     elif agrupar_col == "EMISION":
         df["CATEGORIA"] = df["FUEL"] if "FUEL" in df.columns else "?"
+    elif agrupar_col == "TRANSPORTE_GRUPO":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_grupo)
     elif agrupar_col == "YEAR":
         df["CATEGORIA"] = "Total"
     else:

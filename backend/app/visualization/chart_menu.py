@@ -86,10 +86,10 @@ MENU = [
           "charts": [
               {"tipo": "tra_total", "label": "Sector Transporte - Consumo Total - UseByTechnology",
                "sub_label": "Modo", "sub_filtros": TRA_SUB,
-               "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
+               "allowed": ["TECNOLOGIA", "FUEL", "TRANSPORTE_GRUPO"], "soporta_pareto": True},
               {"tipo": "tra_uso", "label": "Sector Transporte - ProductionByTechnology",
                "sub_label": "Modo", "sub_filtros": TRA_SUB,
-               "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
+               "allowed": ["TECNOLOGIA", "FUEL", "TRANSPORTE_GRUPO"], "soporta_pareto": True},
           ]},
          {"code": "terciario", "label": "🏢 Terciario",
           "charts": [

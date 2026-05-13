@@ -157,6 +157,11 @@ const AGRUPACION_OPTIONS: { value: string; label: string; description: string }[
     label: 'Por Sector',
     description: 'Agrupa por sectores de demanda',
   },
+  {
+    value: 'TRANSPORTE_GRUPO',
+    label: 'Por Grupo Transporte',
+    description: 'Agrupa por tipo de vehículo (motos, livianos, carga, buses, etc.)',
+  },
 ];
 
 // IDs de charts que NO deben mostrar el selector de agrupación
@@ -256,8 +261,8 @@ const MENU: Module[] = [
       {
         id: 'transporte', label: '🚗 Transporte',
         charts: [
-          { id: 'tra_total', label: 'Sector Transporte - Consumo Total - UseByTechnology', hasSub: true, subFiltroLabel: 'Modo', subFiltros: ['CARRETERA','AVI','BOT','SHP','LDV','FWD','BUS','TCK_C2P','TCK_CSG','MOT','MIC','TAX','STT','MET'], allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
-          { id: 'tra_uso',   label: 'Sector Transporte - ProductionByTechnology',           hasSub: true, subFiltroLabel: 'Modo', subFiltros: ['CARRETERA','AVI','BOT','SHP','LDV','FWD','BUS','TCK_C2P','TCK_CSG','MOT','MIC','TAX','STT','MET'], allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'tra_total', label: 'Sector Transporte - Consumo Total - UseByTechnology', hasSub: true, subFiltroLabel: 'Modo', subFiltros: ['CARRETERA','AVI','BOT','SHP','LDV','FWD','BUS','TCK_C2P','TCK_CSG','MOT','MIC','TAX','STT','MET'], allowedGroupings: ['TECNOLOGIA', 'FUEL', 'TRANSPORTE_GRUPO'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'tra_uso',   label: 'Sector Transporte - ProductionByTechnology',           hasSub: true, subFiltroLabel: 'Modo', subFiltros: ['CARRETERA','AVI','BOT','SHP','LDV','FWD','BUS','TCK_C2P','TCK_CSG','MOT','MIC','TAX','STT','MET'], allowedGroupings: ['TECNOLOGIA', 'FUEL', 'TRANSPORTE_GRUPO'], soportaPareto: true, soportaPorcentaje: true },
         ],
       },
       {
