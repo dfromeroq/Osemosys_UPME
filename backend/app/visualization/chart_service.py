@@ -2335,14 +2335,14 @@ def _render_stacked_bar(
                 f"{total:,.1f}",
                 ha="center",
                 va="bottom",
-                fontsize=11,
+                fontsize=18,
                 color="#333",
             )
 
     ax.set_xticks(x)
-    ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=12)
-    ax.set_ylabel(chart.yAxisLabel, fontsize=14, fontweight="bold")
-    ax.set_title(title, fontsize=17, fontweight="bold", pad=12)
+    ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
+    ax.set_ylabel(chart.yAxisLabel, fontsize=24, fontweight="bold")
+    ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
     # Leyenda invertida respecto al stack: la primera serie (top del stack)
     # aparece al final de la leyenda → lectura abajo→arriba como las barras.
     ax.legend(
@@ -2351,7 +2351,7 @@ def _render_stacked_bar(
         loc="upper center",
         bbox_to_anchor=(0.5, -0.15),
         ncol=_legend_ncols_for_labels(bar_labels),
-        fontsize=14,
+        fontsize=20,
         frameon=False,
         handlelength=1.0,
         handletextpad=0.6,
@@ -2359,7 +2359,7 @@ def _render_stacked_bar(
         labelspacing=0.55,
     )
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-    ax.tick_params(axis="y", labelsize=10)
+    ax.tick_params(axis="y", labelsize=18)
     from matplotlib.ticker import FuncFormatter as _FuncFormatter
 
     ax.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
@@ -2464,9 +2464,9 @@ def _render_line_chart(
         )
 
     ax.set_xticks(x)
-    ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=12)
-    ax.set_ylabel(chart.yAxisLabel, fontsize=14, fontweight="bold")
-    ax.set_title(title, fontsize=17, fontweight="bold", pad=12)
+    ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
+    ax.set_ylabel(chart.yAxisLabel, fontsize=24, fontweight="bold")
+    ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
     # Orden de leyenda:
     #   1) Series naturales en orden invertido (lectura abajo→arriba como
     #      en las columnas apiladas — convención del proyecto).
@@ -2486,7 +2486,7 @@ def _render_line_chart(
         loc="upper center",
         bbox_to_anchor=(0.5, -0.15),
         ncol=_legend_ncols_for_labels([s.name for s in chart.series]),
-        fontsize=14,
+        fontsize=20,
         frameon=False,
         handlelength=1.0,
         handletextpad=0.6,
@@ -2494,7 +2494,7 @@ def _render_line_chart(
         labelspacing=0.55,
     )
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-    ax.tick_params(axis="y", labelsize=10)
+    ax.tick_params(axis="y", labelsize=18)
     from matplotlib.ticker import FuncFormatter as _FuncFormatter
 
     ax.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
@@ -2644,7 +2644,7 @@ def _render_table_image(
 
     fig, ax = plt.subplots(figsize=(fig_w, fig_h))
     ax.axis("off")
-    ax.set_title(title, fontsize=17, fontweight="bold", pad=14)
+    ax.set_title(title, fontsize=28, fontweight="bold", pad=14)
 
     table = ax.table(
         cellText=cell_text if cell_text else [[""]],
@@ -2655,7 +2655,7 @@ def _render_table_image(
         loc="center",
     )
     table.auto_set_font_size(False)
-    table.set_fontsize(12)
+    table.set_fontsize(18)
     # Ancho mínimo razonable: matplotlib ajusta auto pero forzamos pad.
     table.scale(1.0, 1.4)
 
@@ -2819,13 +2819,13 @@ def _render_stacked_area(
         )
 
     ax.set_xticks(x)
-    ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=12)
-    ax.tick_params(axis="y", labelsize=10)
+    ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
+    ax.tick_params(axis="y", labelsize=18)
     from matplotlib.ticker import FuncFormatter as _FuncFormatter
 
     ax.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
-    ax.set_ylabel(chart.yAxisLabel, fontsize=14, fontweight="bold")
-    ax.set_title(title, fontsize=17, fontweight="bold", pad=12)
+    ax.set_ylabel(chart.yAxisLabel, fontsize=24, fontweight="bold")
+    ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
     # Markers circulares en la leyenda (estilo Highcharts), orden top→bottom.
     from matplotlib.lines import Line2D as _Line2D
 
@@ -2861,7 +2861,7 @@ def _render_stacked_area(
         loc="upper center",
         bbox_to_anchor=(0.5, -0.15),
         ncol=_legend_ncols_for_labels(legend_labels),
-        fontsize=14,
+        fontsize=20,
         frameon=False,
         handlelength=1.0,
         handletextpad=0.6,
@@ -2958,11 +2958,11 @@ def render_comparison_by_year_bytes(
                 label=s.name,
                 color=name_to_color.get(s.name) or getattr(s, "color", None),
             )
-        ax.set_title(f"Año {sp.year}", fontsize=15, fontweight="bold")
+        ax.set_title(f"Año {sp.year}", fontsize=22, fontweight="bold")
         ax.set_xticks(x)
-        ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=12)
-        ax.set_ylabel(data.yAxisLabel, fontsize=14, fontweight="bold")
-        ax.tick_params(axis="y", labelsize=10)
+        ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
+        ax.set_ylabel(data.yAxisLabel, fontsize=24, fontweight="bold")
+        ax.tick_params(axis="y", labelsize=18)
         from matplotlib.ticker import FuncFormatter as _FuncFormatter
 
         ax.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
@@ -2974,7 +2974,7 @@ def render_comparison_by_year_bytes(
                 loc="upper center",
                 bbox_to_anchor=(0.5, -0.2),
                 ncol=_legend_ncols_for_labels([s.name for s in sp.series], hard_cap=4),
-                fontsize=14,
+            fontsize=20,
                 frameon=False,
                 handlelength=1.0,
                 handletextpad=0.6,
@@ -2996,7 +2996,7 @@ def render_comparison_by_year_bytes(
     for j in range(n, rows * cols):
         axes[j // cols][j % cols].set_axis_off()
 
-    fig.suptitle(data.title, fontsize=17, fontweight="bold")
+    fig.suptitle(data.title, fontsize=28, fontweight="bold")
     fig.tight_layout(rect=[0, 0.02, 1, 0.96])
 
     buf = io.BytesIO()
@@ -3038,7 +3038,7 @@ def render_pareto_chart_bytes(
     x = np.arange(n)
     fig, ax1 = plt.subplots(figsize=(max(12, n * 0.5), 7))
     ax1.bar(x, values, color="#60a5fa", edgecolor="#1e3a8a", linewidth=0.5)
-    ax1.set_ylabel(pareto.yAxisLabel, fontsize=14, fontweight="bold", color="#1e3a8a")
+    ax1.set_ylabel(pareto.yAxisLabel, fontsize=24, fontweight="bold", color="#1e3a8a")
     ax1.set_xticks(x)
     # Eje X a 45° (más legible que vertical para etiquetas largas tipo
     # tecnología/sector). ``ha="right"`` ancla el final de la etiqueta al tick
@@ -3048,9 +3048,9 @@ def render_pareto_chart_bytes(
         rotation=45,
         ha="right",
         rotation_mode="anchor",
-        fontsize=12,
+        fontsize=20,
     )
-    ax1.tick_params(axis="y", labelsize=10)
+    ax1.tick_params(axis="y", labelsize=18)
     from matplotlib.ticker import FuncFormatter as _FuncFormatter
 
     ax1.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
@@ -3059,13 +3059,13 @@ def render_pareto_chart_bytes(
 
     ax2 = ax1.twinx()
     ax2.plot(x, cum_pct, color="#dc2626", marker="o", linewidth=2)
-    ax2.set_ylabel("% acumulado", fontsize=14, fontweight="bold", color="#dc2626")
-    ax2.tick_params(axis="y", labelsize=10)
+    ax2.set_ylabel("% acumulado", fontsize=24, fontweight="bold", color="#dc2626")
+    ax2.tick_params(axis="y", labelsize=18)
     ax2.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
     ax2.set_ylim(0, 110)
     ax2.spines["top"].set_visible(False)
 
-    ax1.set_title(pareto.title, fontsize=17, fontweight="bold", pad=12)
+    ax1.set_title(pareto.title, fontsize=28, fontweight="bold", pad=12)
     fig.tight_layout()
 
     buf = io.BytesIO()
@@ -3210,8 +3210,8 @@ def render_comparison_facet_figure_bytes(
 
     # Geometría en PULGADAS — las fracciones de figura se derivan de aquí
     # para que paneles, x-labels y leyenda no se superpongan nunca.
-    title_band_inch = 1.05  # suptitle (24pt) + aire respecto a títulos de panel (20pt)
-    x_label_inch = 0.88  # años rotados 90° (≈17pt) + padding
+    title_band_inch = 1.25  # suptitle (32pt) + aire respecto a títulos de panel (28pt)
+    x_label_inch = 1.10  # años rotados 90° (≈20pt) + padding
     gap_inch = 0.24  # separación x-labels ↔ leyenda
     legend_pad_inch = 0.12  # padding leyenda ↔ borde inferior figura
     line_h_inch = leg_font_estimate * 1.35 / 72.0
@@ -3274,9 +3274,9 @@ def render_comparison_facet_figure_bytes(
         x_labels = _facet_x_ticklabels_thinned(categories, x_step)
         n_labeled = sum(1 for lb in x_labels if lb)
         x_fs = (
-            15
+            20
             if n_labeled > 14 or n_cats > 36
-            else (16 if n_cats > 22 or n_labeled > 11 else 17)
+            else (20 if n_cats > 22 or n_labeled > 11 else 22)
         )
         ax.set_xticklabels(
             x_labels,
@@ -3287,7 +3287,7 @@ def render_comparison_facet_figure_bytes(
         )
         ax.set_ylabel(
             y_label,
-            fontsize=19,
+            fontsize=22,
             color="#0f172a",
             fontweight="bold",
             labelpad=8,
@@ -3299,7 +3299,7 @@ def render_comparison_facet_figure_bytes(
         facet_title = f"{sim_lbl} — {tag_lbl}" if tag_lbl else sim_lbl
         ax.set_title(
             facet_title,
-            fontsize=20,
+            fontsize=28,
             fontweight="bold",
             color="#0f172a",
             pad=10,
@@ -3313,7 +3313,7 @@ def render_comparison_facet_figure_bytes(
             ax.spines[_side].set_linewidth(1.35)
         ax.tick_params(
             axis="y",
-            labelsize=18,
+            labelsize=20,
             colors="#0f172a",
             width=1.15,
             length=6,
@@ -3401,7 +3401,7 @@ def render_comparison_facet_figure_bytes(
                 f"{total:,.1f}",
                 ha="center",
                 va="bottom",
-                fontsize=11.5,
+                fontsize=18,
                 color="#0f172a",
                 fontweight="600",
             )
@@ -3414,7 +3414,7 @@ def render_comparison_facet_figure_bytes(
     suptitle_y = 1.0 - 0.28 / fig_h
     fig.suptitle(
         data.title,
-        fontsize=24,
+        fontsize=32,
         fontweight="bold",
         color="#020617",
         y=suptitle_y,

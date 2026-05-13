@@ -44,7 +44,7 @@ export const TOOLTIP_BASE_OPTIONS: Highcharts.TooltipOptions = {
   padding: 10,
   style: {
     color: '#e2e8f0',
-    fontSize: '15px',  // antes 12 — tooltip más legible en pantallas grandes
+    fontSize: '20pt',  // tooltip más legible en pantallas grandes
     pointerEvents: 'auto',
   },
 };
@@ -109,7 +109,7 @@ export function buildStackedTooltipOptions(
           }
           return `<tr>
             <td style="padding:2px 10px 2px 0; white-space:nowrap">
-              <span style="color:${p.color};font-size:14px;line-height:1">●</span>
+              <span style="color:${p.color};font-size:20px;line-height:1">●</span>
               <span style="margin-left:4px">${escapeHtml(p.series.name)}</span>
             </td>
             <td style="padding:2px 0; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap">
@@ -130,9 +130,9 @@ export function buildStackedTooltipOptions(
 
       return `
         <div style="min-width:260px">
-          <div style="font-weight:700; font-size:13px; color:#f8fafc; margin-bottom:${hidePercent ? '6' : '2'}px">${escapeHtml(header)}</div>
+          <div style="font-weight:700; font-size:20px; color:#f8fafc; margin-bottom:${hidePercent ? '6' : '2'}px">${escapeHtml(header)}</div>
           ${totalLine}
-          <table style="border-collapse:collapse; font-size:12px">${rows}${emptyRow}</table>
+          <table style="border-collapse:collapse; font-size:18px">${rows}${emptyRow}</table>
         </div>
       `;
     },
@@ -194,7 +194,7 @@ export function buildLineTooltipOptions(
           const y = p.y ?? 0;
           return `<tr>
             <td style="padding:2px 10px 2px 0; vertical-align:top; white-space:nowrap">
-              <span style="color:${p.color};font-size:14px;line-height:1">●</span>
+              <span style="color:${p.color};font-size:20px;line-height:1">●</span>
               <span style="margin-left:4px">${escapeHtml(p.series.name)}</span>
             </td>
             <td style="padding:2px 0; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap">
@@ -210,8 +210,8 @@ export function buildLineTooltipOptions(
 
       return `
         <div style="min-width:220px">
-          <div style="font-weight:700; font-size:13px; color:#f8fafc; margin-bottom:6px">${escapeHtml(String(this.x ?? ''))}</div>
-          <table style="border-collapse:collapse; font-size:12px">${rows}${emptyRow}</table>
+          <div style="font-weight:700; font-size:20px; color:#f8fafc; margin-bottom:6px">${escapeHtml(String(this.x ?? ''))}</div>
+          <table style="border-collapse:collapse; font-size:18px">${rows}${emptyRow}</table>
         </div>
       `;
     },
@@ -256,9 +256,9 @@ export function buildStackedSinglePointTooltipOptions(
 
       return `
         <div style="min-width:220px">
-          <div style="font-weight:700; font-size:13px; color:#f8fafc; margin-bottom:4px">${escapeHtml(header)}</div>
+          <div style="font-weight:700; font-size:20px; color:#f8fafc; margin-bottom:4px">${escapeHtml(header)}</div>
           <div style="margin-bottom:4px">
-            <span style="color:${color};font-size:14px;line-height:1">●</span>
+            <span style="color:${color};font-size:20px;line-height:1">●</span>
             <span style="margin-left:4px">${escapeHtml(this.series.name)}</span>:
             <b style="color:#f8fafc">${fmtValue(y)}</b> <span style="color:#94a3b8">${escapeHtml(unitLabel)}</span>
             ${pctInline}

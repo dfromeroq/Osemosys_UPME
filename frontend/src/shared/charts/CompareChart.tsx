@@ -104,7 +104,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         categories: subplot.categories,
         title: {
           text: subplot.scenario_name || subplot.year.toString(),
-          style: { color: '#94a3b8', fontWeight: 'bold', fontSize: '22.66px' },
+          style: { color: '#94a3b8', fontWeight: 'bold', fontSize: '28pt' },
         },
         width: widthStr,
         left: leftStr,
@@ -113,7 +113,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         top: '0%',
         height: '86%',
         offset: 0,
-        labels: { style: { color: '#94a3b8', fontSize: '14.67px' } },
+        labels: { style: { color: '#94a3b8', fontSize: '20pt' } },
         lineColor: '#334155',
         tickColor: '#334155',
         ...{ tickWidth: 2, tickLength: 10 },
@@ -123,7 +123,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         id: `y-${idx}`,
         title: {
           text: idx === 0 ? data.yAxisLabel : null,
-          style: { color: '#94a3b8', fontSize: '22.66px' },
+          style: { color: '#94a3b8', fontSize: '28pt' },
         },
         width: widthStr,
         left: leftStr,
@@ -150,7 +150,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         labels: {
           // Only show labels on first subplot when Y-axis is shared
           enabled: !sharedYAxis || idx === 0,
-          style: { color: '#94a3b8', fontSize: '14.67px' },
+          style: { color: '#94a3b8', fontSize: '20pt' },
           formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
             return formatAxis3Sig(this.value as number);
           },
@@ -161,7 +161,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
             fontWeight: 'bold',
             color: '#94a3b8',
             textOutline: 'none',
-            fontSize: '14.67px',
+            fontSize: '20pt',
             // fontSize: '10px',
           },
           // eslint-disable-next-line react-hooks/unsupported-syntax -- API de Highcharts (`this`)
@@ -204,7 +204,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       },
       title: {
         text: data.title,
-        style: { fontSize: '22.66px', fontWeight: 'bold', color: '#f8fafc' },
+        style: { fontSize: '28pt', fontWeight: 'bold', color: '#f8fafc' },
       },
       xAxis,
       yAxis,
@@ -247,15 +247,15 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         error: onHighchartsExportError,
         chartOptions: {
           chart: { backgroundColor: '#FFFFFF' },
-          title: { style: { color: '#1e293b', fontSize: '22.66px' } },
-          legend: { itemStyle: { color: '#334155', fontSize: '14.67px' } },
+          title: { style: { color: '#1e293b', fontSize: '28pt' } },
+          legend: { itemStyle: { color: '#334155', fontSize: '20pt' } },
           // X-axis overrides for export — matching HighchartsChart.tsx pattern
           xAxis: data.subplots.map(() => ({
             labels: {
-              style: { color: '#334155', fontSize: '14.67px' },
+              style: { color: '#334155', fontSize: '20pt' },
             },
             title: {
-              style: { color: '#334155', fontSize: '22.66px' },
+              style: { color: '#334155', fontSize: '28pt' },
             },
             lineColor: '#cbd5e1',
             tickColor: '#cbd5e1',
@@ -279,11 +279,11 @@ export const CompareChart: React.FC<CompareChartProps> = ({
               tickColor: (!sharedYAxis || idx === 0) ? '#64748b' : 'transparent',
               labels: {
                 enabled: !sharedYAxis || idx === 0,
-                style: { color: '#334155', fontSize: '14.67px' },
+                style: { color: '#334155', fontSize: '20pt' },
               },
               title: {
                 text: idx === 0 ? data.yAxisLabel : null,
-                style: { color: '#334155', fontSize: '22.66px' },
+                style: { color: '#334155', fontSize: '28pt' },
               },
               stackLabels: {
                 enabled: true,
@@ -291,7 +291,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
                   fontWeight: 'bold',
                   color: '#1e293b',
                   textOutline: 'none',
-                  fontSize: '14.67px',
+                  fontSize: '20pt',
                 },
               },
             };
@@ -309,7 +309,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         align: 'center',
         verticalAlign: 'bottom',
         layout: 'horizontal',
-        itemStyle: { color: '#94a3b8', fontWeight: 'normal', fontSize: '14.67px' },
+        itemStyle: { color: '#94a3b8', fontWeight: 'normal', fontSize: '20pt' },
         itemHoverStyle: { color: '#f8fafc' },
       },
     };

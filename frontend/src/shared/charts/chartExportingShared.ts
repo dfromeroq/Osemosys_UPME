@@ -15,10 +15,10 @@ export const HIGHCHARTS_GETSVG_MERGE_OPTIONS: Partial<Highcharts.Options> = {
     /** Espacio para etiquetas del eje Y (fuente grande al exportar). */
     marginLeft: 100,
   },
-  title: { style: { color: "#1e293b", fontSize: "22.66px" } },
+  title: { style: { color: "#1e293b", fontSize: "28pt" } },
   xAxis: {
     labels: {
-      style: { color: "#334155", fontSize: "14.67px" },
+      style: { color: "#334155", fontSize: "20pt" },
       rotation: -90,
       align: "right",
       /** Sin esto Highcharts fuerza -45° al exportar. `false` es válido en runtime (tipos incompletos). */
@@ -30,14 +30,14 @@ export const HIGHCHARTS_GETSVG_MERGE_OPTIONS: Partial<Highcharts.Options> = {
     tickWidth: 1,
   },
   yAxis: {
-    labels: { style: { color: "#334155", fontSize: "14.67px" } },
-    title: { style: { color: "#334155", fontSize: "22.66px" } },
+    labels: { style: { color: "#334155", fontSize: "20pt" } },
+    title: { style: { color: "#334155", fontSize: "28pt" } },
     lineColor: "#334155",
     lineWidth: 1,
     gridLineColor: "#e2e8f0",
-    stackLabels: { style: { color: "#1e293b", fontSize: "14.67px" } },
+    stackLabels: { style: { color: "#1e293b", fontSize: "20pt" } },
   },
-  legend: { itemStyle: { color: "#334155", fontSize: "14.67px" } },
+  legend: { itemStyle: { color: "#334155", fontSize: "20pt" } },
 };
 
 /**

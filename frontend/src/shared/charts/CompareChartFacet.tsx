@@ -80,7 +80,7 @@ function stackLabelFormatter(this: Highcharts.StackItemObject): string {
  * Menos facetas = más ancho disponible = fuente más grande.
  */
 function facetXLabelFontPx(_facetCount: number): number {
-  return 14.67;
+  return 20;
 }
 
 /**
@@ -96,7 +96,7 @@ function facetXLabelStep(facetCount: number, categoryCount: number): number {
   return base;
 }
 /** Etiquetas del eje Y (valores) en pantalla. */
-const FACET_Y_LABEL_FONT_PX = 14.67;
+const FACET_Y_LABEL_FONT_PX = 20;
 
 function maxCategoryCharLength(categories: string[]): number {
   if (categories.length === 0) return 1;
@@ -372,7 +372,7 @@ function FacetChart({
     return {
       title: {
         text: facetTitleText,
-        style: { fontSize: "22.66px", fontWeight: "bold", color: "#f8fafc" },
+        style: { fontSize: "28pt", fontWeight: "bold", color: "#f8fafc" },
       },
       xAxis: {
         categories: facet.categories,
@@ -441,7 +441,7 @@ function FacetChart({
         lineColor: "#64748b",
         title: {
           text: yAxisLabel,
-          style: { color: "#94a3b8", fontSize: "22.66px" },
+          style: { color: "#94a3b8", fontSize: "28pt" },
         },
         labels: {
           style: { color: "#94a3b8", fontSize: `${FACET_Y_LABEL_FONT_PX}px` },
@@ -459,7 +459,7 @@ function FacetChart({
                 fontWeight: "bold",
                 color: "#94a3b8",
                 textOutline: "none",
-                fontSize: "14.67px",
+                fontSize: "20pt",
               },
               formatter: stackLabelFormatter,
             },
@@ -557,7 +557,7 @@ function FacetChart({
         layout: "horizontal",
         // Leyenda invertida respecto al stack (lectura abajo→arriba).
         reversed: true,
-        itemStyle: { color: "#94a3b8", fontWeight: "normal", fontSize: "14.67px" },
+        itemStyle: { color: "#94a3b8", fontWeight: "normal", fontSize: "20pt" },
         itemHoverStyle: { color: "#f8fafc" },
       },
     };
@@ -784,7 +784,7 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
         sliceH = Math.floor((1080 - Math.max(0, n - 1) * 16) / Math.max(n, 1));
       }
 
-      const exportXLabelPx = 14.67;
+      const exportXLabelPx = 20;
       const maxCatLenExport = Math.max(
         ...data.facets.map((f) => maxCategoryCharLength(f.categories)),
         1,
