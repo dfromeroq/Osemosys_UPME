@@ -1833,6 +1833,7 @@ export function ResultDetailPage() {
                 barOrientation={chartBarOrientation}
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
+                sharedYAxis={true}
               />
             ) : chartCompareMode === 'by-year-alt' && chartJobIds.length > 1 && compareChartData ? (
               <CompareChart
