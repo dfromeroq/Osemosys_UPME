@@ -40,6 +40,9 @@ class ChartSeries(BaseModel):
     markerRadius: float | None = None
     #: Grosor de línea en px. None = default del renderer.
     lineWidth: float | None = None
+    #: Tipo de chart para esta serie individual (None = usar default del viewMode global).
+    #: "line" = línea, "area" = área, "column" = columna.
+    chart_type: str | None = None
 
 
 class ChartDataResponse(BaseModel):

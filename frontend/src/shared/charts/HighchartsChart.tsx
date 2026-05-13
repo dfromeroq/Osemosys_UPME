@@ -84,19 +84,27 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
       return false;
     };
     const isArea = stackType === 'area';
-    const series = data.series.map((s) => ({
-      type: (isArea ? 'area' : 'column') as 'column' | 'area',
-      name: s.name,
-      data: s.data,
-      color: s.color,
-      stacking: 'normal' as const,
-      stack: s.stack,
-      borderWidth: 0,
-      fillOpacity: isArea ? 0.85 : undefined,
-      lineWidth: isArea ? 0.5 : undefined,
-      marker: isArea ? { enabled: false } : undefined,
-      visible: !hiddenNames.has(s.name),
-    }));
+    const series = data.series.map((s) => {
+      const effectiveType = s.chart_type ?? (isArea ? 'area' : 'column');
+      const isLine = effectiveType === 'line';
+      return {
+        type: effectiveType as 'column' | 'area' | 'line',
+        name: s.name,
+        data: s.data,
+        color: s.color,
+        stacking: isLine ? undefined as unknown as 'normal' : 'normal' as const,
+        stack: isLine ? undefined as unknown as string : s.stack,
+        borderWidth: 0,
+        fillOpacity: isArea ? 0.85 : undefined,
+        lineWidth: isArea ? 0.5 : (isLine ? 2 : undefined),
+        marker: isLine
+          ? { enabled: true, radius: 3, symbol: 'circle' }
+          : isArea
+            ? { enabled: false }
+            : undefined,
+        visible: !hiddenNames.has(s.name),
+      };
+    });
 
     // En modo amplificado: +3pt en todas las fuentes.
     const fb = (s: string) => (amplified ? bumpFontSize(s, 3) ?? s : s);
@@ -183,6 +191,10 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
           lineWidth: 0.5,
           fillOpacity: 0.85,
           marker: { enabled: false },
+          dataLabels: { enabled: false },
+        },
+        line: {
+          marker: { enabled: true, radius: 3 },
           dataLabels: { enabled: false },
         },
       },

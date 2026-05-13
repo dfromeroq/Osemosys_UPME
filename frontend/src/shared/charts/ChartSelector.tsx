@@ -378,6 +378,14 @@ const MENU: Module[] = [
     ],
   },
   {
+    id: 'recursos',
+    emoji: '🛢️',
+    label: 'Recursos y Reservas',
+    charts: [
+      { id: 'recursos_vs_demanda', label: 'Figura 18. Recursos y Reservas vs Demanda', soportaPareto: false, soportaPorcentaje: false },
+    ],
+  },
+  {
     id: 'bioenergía',
     emoji: '♻️',
     label: 'bioenergía',

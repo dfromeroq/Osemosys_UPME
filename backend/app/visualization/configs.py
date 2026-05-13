@@ -1288,4 +1288,18 @@ CONFIGS = {
         "color_fn": _color_por_grupo_fijo,
         "variable_default": "UseByTechnology",
     },
+    # ═══════════════════════════════════════════════════════════════════════
+    # RECURSOS Y RESERVAS
+    # ═══════════════════════════════════════════════════════════════════════
+    "recursos_vs_demanda": {
+        "titulo": "Figura 18. Recursos y reservas contra demanda",
+        "figura": "Figura 18",
+        "filename": "Fig18_Recursos_Reservas_vs_Demanda",
+        "print": "RECURSOS Y RESERVAS CONTRA DEMANDA",
+        "filtro": None,
+        "msg_sin_datos": "Sin datos de extracción de petróleo (MINOIL)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": None,
+        "variable_default": "ProductionByTechnology",
+    },
 }

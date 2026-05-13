@@ -21,7 +21,7 @@ import pandas as pd
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import OsemosysOutputParamValue, SimulationJob
+from app.models import OsemosysOutputParamValue, OsemosysParamValue, SimulationJob, Technology
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -199,6 +199,54 @@ def _load_variable_data(
     df["YEAR"] = df["YEAR"].astype(int)
 
     return df
+
+
+def _load_resource_cap_input(
+    db: Session, job_id: int, tech_prefix: str
+) -> dict[str, float]:
+    """Carga TotalTechnologyModelPeriodActivityUpperLimit desde input params.
+
+    Para tecnologías cuyo nombre empieza con ``tech_prefix`` (ej. MINOIL).
+    Retorna ``{technology_name: cap_value}`` solo para valores no-default
+    (< 9,999,990). Si no hay valores configurados o no existe escenario,
+    retorna dict vacío.
+    """
+    job = db.query(SimulationJob).filter(SimulationJob.id == job_id).first()
+    if not job or not job.scenario_id:
+        return {}
+
+    results = (
+        db.query(Technology.name, OsemosysParamValue.value)
+        .join(Technology, Technology.id == OsemosysParamValue.id_technology)
+        .filter(
+            OsemosysParamValue.id_scenario == job.scenario_id,
+            OsemosysParamValue.param_name
+            == "TotalTechnologyModelPeriodActivityUpperLimit",
+            Technology.name.startswith(tech_prefix),
+        )
+        .all()
+    )
+
+    caps: dict[str, float] = {}
+    for name, value in results:
+        v = float(value)
+        # Default OSeMOSYS = 9999999 (sin restricción real)
+        if v < 9_999_990:
+            caps[name] = v
+    return caps
+
+
+def _unit_conversion_factor(un: str) -> float:
+    """Factor de conversión desde PJ a la unidad solicitada."""
+    if un == "GW":
+        return 1.0 / 31.536
+    elif un == "MW":
+        return 1.0 / 0.031536
+    elif un == "TWh":
+        return 1.0 / 3.6
+    elif un == "Gpc":
+        return 1.0 / 1.0095581216
+    return 1.0  # PJ
 
 
 def _safe_int(val: Any) -> int | None:
@@ -713,6 +761,137 @@ def _build_factor_planta_data(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 2b. build_recursos_vs_demanda_data — RECURSOS Y RESERVAS
+# ═══════════════════════════════════════════════════════════════════════════
+
+_TECH_DISPLAY: dict[str, str] = {
+    "MINOIL_1LIV": "Crudo liviano",
+    "MINOIL_2MID": "Crudo intermedio",
+    "MINOIL_3PES": "Crudo pesado",
+    "MINOIL": "Crudo genérico",
+}
+
+_TECH_COLORS: dict[str, str] = {
+    "MINOIL_3PES": "#2d2d2d",
+    "MINOIL_2MID": "#5c5c5c",
+    "MINOIL_1LIV": "#8c8c8c",
+    "MINOIL": "#b0b0b0",
+}
+
+
+def build_recursos_vs_demanda_data(
+    db: Session,
+    job_id: int,
+    un: str = "PJ",
+) -> ChartDataResponse:
+    """Construye datos para Figura 18. Recursos y reservas contra demanda.
+
+    Para cada categoría MINOIL (1LIV, 2MID, 3PES):
+      1. Carga el recurso inicial desde
+         TotalTechnologyModelPeriodActivityUpperLimit (input param).
+      2. Carga la producción anual desde ProductionByTechnology (output).
+      3. Calcula ``remaining[t] = initial - cumulative_production[t]``.
+
+    Retorna 4 series:
+      - 3 áreas apiladas (stack="recurso"): recurso restante por categoría.
+      - 1 línea (chart_type="line", sin stack): producción anual total.
+    """
+    title = f"Figura 18. Recursos y reservas contra demanda ({un})"
+
+    # 1. Cargar recursos iniciales desde input params (si existen)
+    resource_caps = _load_resource_cap_input(db, job_id, "MINOIL")
+
+    # 2. Cargar producción anual desde output
+    df = _load_variable_data(db, job_id, "ProductionByTechnology")
+    if df.empty:
+        return ChartDataResponse(
+            categories=[], series=[], title=title, yAxisLabel=un
+        )
+
+    # Filtrar solo tecnologías MINOIL
+    df_minoil = df[df["TECHNOLOGY"].str.startswith("MINOIL")].copy()
+    if df_minoil.empty:
+        return ChartDataResponse(
+            categories=[], series=[], title=title, yAxisLabel=un
+        )
+
+    df_agg = df_minoil.groupby(
+        ["TECHNOLOGY", "YEAR"], as_index=False
+    )["VALUE"].sum()
+
+    all_techs = sorted(df_agg["TECHNOLOGY"].unique())
+
+    # 3. Determinar recurso inicial por tecnología.
+    # Si no hay cap configurado (< 9.999.990), usar producción total acumulada
+    # como recurso (la gráfica muestra "este fue el total extraído").
+    prod_totals = df_agg.groupby("TECHNOLOGY")["VALUE"].sum().to_dict()
+
+    initial: dict[str, float] = {}
+    for tech in all_techs:
+        if tech in resource_caps:
+            initial[tech] = resource_caps[tech]
+        else:
+            initial[tech] = prod_totals.get(tech, 0.0)
+
+    años = sorted(df_agg["YEAR"].unique())
+    categories = [str(a) for a in años]
+
+    # Producción anual total (demanda)
+    annual_demand = df_agg.groupby("YEAR")["VALUE"].sum().to_dict()
+
+    # 4. Construir series de recurso restante (apiladas)
+    series: list[ChartSeries] = []
+    factor = _unit_conversion_factor(un)
+
+    for tech in all_techs:
+        cap = initial.get(tech, 0.0)
+        if cap <= 0:
+            continue
+
+        tech_rows = df_agg[df_agg["TECHNOLOGY"] == tech]
+        prod_by_year = dict(
+            zip(tech_rows["YEAR"], tech_rows["VALUE"])
+        )
+
+        cum = 0.0
+        remaining = []
+        for a in años:
+            cum += prod_by_year.get(a, 0.0)
+            rem = max(0.0, cap - cum)
+            remaining.append(round(rem * factor, 6))
+
+        series.append(
+            ChartSeries(
+                name=_TECH_DISPLAY.get(tech, tech),
+                data=remaining,
+                color=_TECH_COLORS.get(tech, "#999999"),
+                stack="recurso",
+            )
+        )
+
+    # 5. Serie de producción anual (línea)
+    demand_data = [
+        round(annual_demand.get(a, 0.0) * factor, 6) for a in años
+    ]
+    series.append(
+        ChartSeries(
+            name="Producción anual",
+            data=demand_data,
+            color="#e11d48",
+            stack=None,
+            chart_type="line",
+        )
+    )
+
+    return ChartDataResponse(
+        categories=categories,
+        series=series,
+        title=title,
+        yAxisLabel=un,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 3. build_chart_data — SINGLE ESCENARIO
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -745,6 +924,10 @@ def build_chart_data(
     variable : str | None
         Override de variable para configs de capacidad.
     """
+    # ── Ruta especial: recursos vs demanda ────────────────────────────────
+    if tipo == "recursos_vs_demanda":
+        return build_recursos_vs_demanda_data(db, job_id, un=un)
+
     if tipo not in CONFIGS:
         raise ValueError(f"tipo='{tipo}' no existe en CONFIGS.")
 
