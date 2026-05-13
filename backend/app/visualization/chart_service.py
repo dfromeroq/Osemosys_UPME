@@ -515,7 +515,10 @@ def _filtrar_df(
 
     df = df[df["TECHNOLOGY"].str.startswith(prefijo)].copy()
 
-    if sub_filtro:
+    if sub_filtro == "CARRETERA":
+        from app.visualization.configs import _ROAD_TRANSPORT_PATTERN
+        df = df[df["TECHNOLOGY"].str.contains(_ROAD_TRANSPORT_PATTERN, regex=True)]
+    elif sub_filtro:
         df = df[df["TECHNOLOGY"].str.contains(sub_filtro)]
 
     if loc == "URB":
@@ -2153,6 +2156,7 @@ def _config_sub_filtros(cfg: dict) -> list[str] | None:
         return ["BOI", "FUR", "MPW", "AIR", "REF", "ILU", "OTH"]
     if filtro_name == "_filtro_transporte":
         return [
+            "CARRETERA",
             "AVI",
             "BOT",
             "SHP",
