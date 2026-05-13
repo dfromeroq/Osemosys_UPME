@@ -142,12 +142,14 @@ def _solve_highs_via_lp(
     tmp = Path(tempfile.mktemp(suffix=".lp"))
     tmp.parent.mkdir(parents=True, exist_ok=True)
 
-    # ── 1. Escribir LP (etiquetas numéricas) ────────────────────────────────
+    # ── 1. Escribir LP (etiquetas simbólicas) ───────────────────────────────
+    # symbolic=True necesario para que h.getLp().col_names_ contenga nombres
+    # reales; con numeric ("x1","x2",...) no es posible el mapeo por nombre.
     t_write = perf_counter()
-    instance.write(str(tmp), io_options={"symbolic_solver_labels": False})
+    instance.write(str(tmp), io_options={"symbolic_solver_labels": True})
     lp_size_mb = tmp.stat().st_size / (1024 * 1024)
     logger.info(
-        "LP write (numeric labels): %.1fs  %.1f MB",
+        "LP write (symbolic labels): %.1fs  %.1f MB",
         perf_counter() - t_write, lp_size_mb,
     )
 
@@ -181,30 +183,41 @@ def _solve_highs_via_lp(
         _ok, obj_val = h.getInfoValue("objective_function_value")
         obj_val = float(obj_val)
 
-    # ── 4. Cargar solución en variables Pyomo ────────────────────────────────
+    # ── 4. Cargar solución en variables Pyomo (mapeo por nombre) ────────────
     if is_optimal:
         t_load = perf_counter()
+        from app.simulation.core.infeasibility_analysis import _canon_name
+
         sol = h.getSolution()
         col_values = sol.col_value
+        lp_col_names = list(h.getLp().col_names_)
 
-        n_highs_cols = h.getNumCol()
-        pyomo_vars = list(instance.component_data_objects(pyo.Var, active=True))
-        n_pyomo_vars = len(pyomo_vars)
+        # El LP writer ordena variables por primera aparición en constraints;
+        # component_data_objects(Var) las devuelve en orden de declaración.
+        # Usar _canon_name (alphanum lowercase) garantiza match sin importar
+        # el formato exacto del LP writer (brackets, underscores, parens).
+        pyomo_by_canon: dict[str, object] = {
+            _canon_name(v.name): v
+            for v in instance.component_data_objects(pyo.Var, active=True)
+        }
 
-        if n_highs_cols != n_pyomo_vars:
+        n_loaded = n_missing = 0
+        for lp_name, val in zip(lp_col_names, col_values):
+            var_data = pyomo_by_canon.get(_canon_name(lp_name))
+            if var_data is not None:
+                var_data.set_value(float(val))
+                n_loaded += 1
+            else:
+                n_missing += 1
+
+        if n_missing:
             logger.warning(
-                "Conteo variables: HiGHS cols=%d vs Pyomo vars=%d — "
-                "mapeo posicional puede ser incorrecto; solución puede ser parcial",
-                n_highs_cols, n_pyomo_vars,
+                "Vars sin match por nombre: %d/%d — solución incompleta",
+                n_missing, len(lp_col_names),
             )
-
-        for i, var in enumerate(pyomo_vars):
-            if i < n_highs_cols:
-                var.set_value(float(col_values[i]))
-
         logger.info(
-            "Solución cargada (%d vars): %.1fs",
-            min(n_highs_cols, n_pyomo_vars), perf_counter() - t_load,
+            "Solución cargada (name-based): %d vars en %.1fs",
+            n_loaded, perf_counter() - t_load,
         )
 
         # ── 5. Cargar duals al Suffix instance.dual ─────────────────────────
