@@ -116,7 +116,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         labels: { style: { color: '#94a3b8', fontSize: '14.67px' } },
         lineColor: '#334155',
         tickColor: '#334155',
-        ...(isByYearAltMode ? { tickWidth: 2, tickLength: 10 } : {}),
+        ...{ tickWidth: 2, tickLength: 10 },
       });
 
       yAxis.push({
@@ -233,8 +233,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
           stacking: 'normal',
           borderWidth: 0,
           dataLabels: { enabled: false },
-          // ...(isByYearAltMode ? { pointWidth: 50 } : {}),
-          ...(isByYearAltMode ? { pointWidth: 50, pointPadding: 0.2, groupPadding: 0.5 } : {}),
+          ...{ pointWidth: 50, pointPadding: 0.2, groupPadding: 0.5 },
 
         },
       },

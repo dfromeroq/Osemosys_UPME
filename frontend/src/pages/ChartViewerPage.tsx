@@ -482,7 +482,7 @@ export function ChartViewerPage() {
                 compactToolbar
               />
             ) : effectiveCompareMode === "by-year" && byYearData ? (
-              <CompareChart data={byYearData} barOrientation={chartBarOrientation} />
+              <CompareChart data={byYearData} barOrientation={chartBarOrientation} sharedYAxis={true} />
             ) : effectiveCompareMode === "line-total" && lineTotalData ? (
               <LineChart data={lineTotalData} amplified chartHeight={chartHeight} />
             ) : chartSelection.viewMode === "pareto" && paretoData ? (
