@@ -64,8 +64,13 @@ def test_solve_model_uses_settings_for_tee_and_keepfiles(monkeypatch) -> None:
 
 
 def test_solve_model_sets_highs_threads_when_configured(monkeypatch) -> None:
-    fake_solver = _FakeSolver(status="optimal")
-    fake_solver.highs_options = {}
+    """La ruta HiGHS LP-directa recibe el nro de threads desde _resolve_solver_threads."""
+    captured: dict = {}
+
+    def _fake_solve_highs_via_lp(instance, *, threads, tee):  # noqa: ARG001
+        captured["threads"] = threads
+        return ("optimal", 1.0, threads or None)
+
     monkeypatch.setattr(
         solver_module,
         "get_settings",
@@ -80,17 +85,14 @@ def test_solve_model_sets_highs_threads_when_configured(monkeypatch) -> None:
         "get_solver_availability",
         lambda: {"glpk": False, "highs": True},
     )
-    monkeypatch.setattr(
-        solver_module.pyo,
-        "SolverFactory",
-        lambda _factory_name: fake_solver,
-    )
-    monkeypatch.setattr(solver_module.pyo, "value", lambda _obj: 0.0)
+    monkeypatch.setattr(solver_module, "_resolve_solver_threads", lambda _settings: 8)
+    monkeypatch.setattr(solver_module, "_solve_highs_via_lp", _fake_solve_highs_via_lp)
 
     result = solver_module.solve_model(_FakeInstance(), solver_name="highs")
 
     assert result["solver_status"] == "optimal"
-    assert fake_solver.highs_options["threads"] == 8
+    assert captured["threads"] == 8
+    assert result["solver_threads_used"] == 8
 
 
 def test_solve_model_does_not_set_glpk_threads(monkeypatch) -> None:
