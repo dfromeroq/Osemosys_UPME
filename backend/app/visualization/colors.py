@@ -144,6 +144,24 @@ COLOR_MAP_PWR["PWRSOLRTP"] = _orig_bat
 COLOR_MAP_PWR["PWRSOLUGE_BAT"] = _orig_rtp
 del _orig_rtp, _orig_bat
 
+# Override colores de tecnologías eléctricas con paleta explícita
+COLOR_MAP_PWR["PWRGEO"] = "#ff0001"
+COLOR_MAP_PWR["PWRWNDOFS_FIX"] = "#e2c5fe"
+COLOR_MAP_PWR["PWRWNDOFS_FLO"] = "#e2c5fe"
+COLOR_MAP_PWR["PWRWNDONS"] = "#7031a0"
+COLOR_MAP_PWR["PWRSOLRTP"] = "#ffc000"
+COLOR_MAP_PWR["PWRSOLRTP_ZNI"] = "#cc9b00"
+COLOR_MAP_PWR["PWRSOLUGE_BAT"] = "#ff9901"
+COLOR_MAP_PWR["PWRSOLUPE"] = "#feefa2"
+COLOR_MAP_PWR["PWRSOLUGE"] = "#feefa2"
+COLOR_MAP_PWR["PWRHYDROR"] = "#9dc2e6"
+COLOR_MAP_PWR["PWRHYDROR_NDC"] = "#9dc2e6"
+COLOR_MAP_PWR["PWRHYDDAM"] = "#4572c5"
+for _tech in ("PWRCOA", "PWRCOACCS", "PWRNGS_CC", "PWRNGS_CS",
+              "PWRNGSCCS", "PWRDSL", "PWRFOL", "PWRJET", "PWRLPG"):
+    COLOR_MAP_PWR[_tech] = "#777071"
+del _tech
+
 _TECHS_CLASIFICADAS: frozenset[str] = frozenset(
     t for fam in FAMILIAS_TEC.values() for t in fam
 )
@@ -154,21 +172,21 @@ _TECHS_CLASIFICADAS: frozenset[str] = frozenset(
 # ══════════════════════════════════════════════════════════════════════════
 
 COLORES_GRUPOS = {
-    "NGS": "#1f77b4",
+    "NGS": "#d9d9d9",
     # JETSAF debe ir ANTES de "JET" para que asignar_grupo("JETSAF") no
     # haga match con "JET" (substring) antes de llegar a la clave específica.
-    "JETSAF": "#6baed6",
-    "JET": "#ff7f0e",
-    "BGS": "#2ca02c",
+    "JETSAF": "#00ba55",
+    "JET": "#375e67",
+    "BGS": "#2a7e29",
     "BDL": "#d62728",
     "WAS": "#9467bd",
-    "WOO": "#8c564b",
-    "GSL": "#e377c2",
-    "COA": "#7f7f7f",
-    "ELC": "#bcbd22",
-    "BAG": "#17becf",
-    "DSL": "#aec7e8",
-    "LPG": "#ffbb78",
+    "WOO": "#ff9901",
+    "GSL": "#abbdd9",
+    "COA": "#000000",
+    "ELC": "#ffd519",
+    "BAG": "#70ad47",
+    "DSL": "#415e89",
+    "LPG": "#4c98d9",
     "FOL": "#98df8a",
     "AUT": "#ff9896",
     # Crudos (FUEL en UseByTechnology para refinerías).
@@ -180,14 +198,14 @@ COLORES_GRUPOS = {
     "OIL": "#000000",
     "PHEV": "#c5b0d5",
     "HEV": "#f7b6d2",
-    "SAF": "#ffd92f",
+    "SAF": "#00ba55",
     "BJS": "#e5c494",
     "OPL": "#b3b3b3",
     "AFR": "#fbb4ae",
     "SGC": "#b3cde3",
     # Hidrógeno (HDG002 debe ir antes que HDG para asignar_grupo)
-    "HDG002": "#0096c7",
-    "HDG": "#00b4d8",
+    "HDG002": "#01ffff",
+    "HDG": "#01ffff",
     # Petróleos/crudos (orden específico: más largo primero; escala de grises)
     "MINOIL_3PES": "#2d2d2d",  # Crudo pesado - gris oscuro
     "MINOIL_2MID": "#5c5c5c",  # Crudo intermedio - gris medio
