@@ -305,6 +305,8 @@ const MENU: Module[] = [
           { id: 'gas_produccion', label: 'Gas Natural - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
           { id: 'ups_refinacion', label: 'Upstream Refinación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
           { id: 'saf_produccion', label: 'SAF - Producción - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'gas_capacidad', label: 'Gas Natural — Capacidad de Extracción y Regasificación', isCapacity: true },
+          { id: 'gas_import_export', label: 'Gas Natural — Importaciones y Exportaciones', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
         ],
       },
       {

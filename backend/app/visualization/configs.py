@@ -149,6 +149,11 @@ def _filtro_gas_produccion(df, **kw):
     ]
 
 
+def _filtro_gas_flujos(df, **kw):
+    """Importaciones y exportaciones de gas natural (IMPLNG, EXPNGS)."""
+    return df[df["TECHNOLOGY"].str.startswith(("IMPLNG", "EXPNGS"))]
+
+
 def _filtro_ref_total(df, **kw):
     """Tecnologías de refinería (UPSREF)."""
     return df[df["TECHNOLOGY"].str.startswith("UPSREF")]
@@ -561,6 +566,32 @@ CONFIGS = {
         "agrupar_por": "TECNOLOGIA",
         "color_fn": _color_gas_produccion,
         "variable_default": "ProductionByTechnology",
+    },
+    "gas_capacidad": {
+        "titulo_base": "Gas Natural — Capacidad de Extracción y Regasificación",
+        "figura_base": "Figura 22",
+        "filename_base": "Fig22_Capacidad_Gas",
+        "print_base": "CAPACIDAD DE GAS NATURAL",
+        "filtro": _filtro_gas_produccion,
+        "msg_sin_datos": "Sin datos de extracción o regasificación de gas (MINNGS/UPSREG)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_gas_produccion,
+        "es_capacidad": True,
+        "variable_default": "TotalCapacityAnnual",
+    },
+    "gas_import_export": {
+        "titulo": "Gas Natural — Importaciones y Exportaciones",
+        "figura": "Figura 23",
+        "filename": "Fig23_Imp_Exp_Gas",
+        "print": "GAS NATURAL: IMPORTACIONES Y EXPORTACIONES",
+        "filtro": _filtro_gas_flujos,
+        "msg_sin_datos": "Sin datos de importación/exportación de gas (IMPLNG/EXPNGS)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_gas_produccion,
+        "variable_default": "ProductionByTechnology",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
+        "soportaPareto": True,
+        "soportaPorcentaje": True,
     },
     # ═══════════════════════════════════════════════════════════════════
     # REFINERÍAS

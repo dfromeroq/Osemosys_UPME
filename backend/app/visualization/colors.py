@@ -394,6 +394,8 @@ COLOR_MAP_BIOENERGIA: dict[str, str] = {
 COLOR_MAP_GAS_PROD: dict[str, str] = {
     "MINNGS":  "#4472c4",  # Gas Natural Nacional — azul
     "UPSREG":  "#e85020",  # Importación de Gas Natural — rojo-naranja
+    "IMPLNG":  "#c44e52",  # Importación GNL — rojo
+    "EXPNGS":  "#4c72b0",  # Exportación Gas Natural — azul
 }
 
 COLOR_MAP_LIQUIDOS_IMPORT: dict[str, str] = {

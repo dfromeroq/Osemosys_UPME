@@ -169,6 +169,14 @@ DATA_EXPLORER_FILTERS: dict[str, dict[str, Any]] = {
         "variable_names": ["ProductionByTechnology"],
         "technology_prefixes": ["UPSREG", "MINNGS"],
     },
+    "gas_capacidad": {
+        "variable_names": ["TotalCapacityAnnual"],
+        "technology_prefixes": ["UPSREG", "MINNGS"],
+    },
+    "gas_import_export": {
+        "variable_names": ["ProductionByTechnology"],
+        "technology_prefixes": ["IMPLNG", "EXPNGS"],
+    },
     "ref_total": {
         "variable_names": ["ProductionByTechnology"],
         "technology_prefixes": ["UPSREF"],
