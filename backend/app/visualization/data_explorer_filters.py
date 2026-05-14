@@ -243,6 +243,14 @@ DATA_EXPLORER_FILTERS: dict[str, dict[str, Any]] = {
         "variable_names": ["ProductionByTechnology"],
         "technology_prefixes": ["IMPOIL", "EXPOIL"],
     },
+    "ref_produccion_importaciones": {
+        "variable_names": ["ProductionByTechnology"],
+        "technology_prefixes": ["UPSREF_CAR", "UPSREF_BAR", "IMPDSL", "IMPGSL", "IMPJET", "IMPLPG"],
+    },
+    "elec_consumo_liquidos": {
+        "variable_names": ["UseByTechnology"],
+        "technology_prefixes": ["PWRDSL", "PWRFOL", "PWRGSL", "PWRJET", "PWRLPG"],
+    },
     "exp_liquidos_gas": {
         "variable_names": ["ProductionByTechnology", "UseByTechnology"],
         "technology_prefixes": ["EXPDSL", "EXPGSL", "EXPJET", "EXPLPG", "EXPNGS"],

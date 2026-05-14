@@ -204,6 +204,13 @@ def _filtro_crudo_flujos(df, **kw):
     return df[df["TECHNOLOGY"].str.startswith(("IMPOIL", "EXPOIL"))]
 
 
+def _filtro_ref_produccion_importaciones(df, **kw):
+    """Refinerías específicas + importaciones de combustibles líquidos refinados."""
+    return df[df["TECHNOLOGY"].str.startswith(
+        ("UPSREF_CAR", "UPSREF_BAR", "IMPDSL", "IMPGSL", "IMPJET", "IMPLPG")
+    )]
+
+
 def _filtro_demanda_exportaciones_liquidos(df, **kw):
     """Sectores de demanda + exportaciones de líquidos.
 
@@ -678,6 +685,20 @@ CONFIGS = {
         "print": "CRUDO: IMPORTACIONES Y EXPORTACIONES",
         "filtro": _filtro_crudo_flujos,
         "msg_sin_datos": "Sin datos de importación/exportación de crudo (IMPOIL/EXPOIL)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_liquidos_import,
+        "variable_default": "ProductionByTechnology",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
+        "soportaPareto": True,
+        "soportaPorcentaje": True,
+    },
+    "ref_produccion_importaciones": {
+        "titulo": "Refinerías + Importaciones de Líquidos - ProductionByTechnology",
+        "figura": "Figura REF-IMP-LIQ",
+        "filename": "Fig_Ref_Imp_Liquidos",
+        "print": "REFINERÍAS + IMPORTACIONES DE LÍQUIDOS",
+        "filtro": _filtro_ref_produccion_importaciones,
+        "msg_sin_datos": "Sin datos de refinerías o importaciones de líquidos",
         "agrupar_por": "TECNOLOGIA",
         "color_fn": _color_liquidos_import,
         "variable_default": "ProductionByTechnology",
@@ -1284,6 +1305,20 @@ CONFIGS = {
         "agrupar_por": "FUEL",
         "color_fn": _color_por_grupo_fijo,
         "variable_default": "UseByTechnology",
+    },
+    "elec_consumo_liquidos": {
+        "titulo": "Consumo de Líquidos - Sector Eléctrico",
+        "figura": "Figura ELEC-CONS-LIQ",
+        "filename": "Fig_Electrico_Consumo_Liquidos",
+        "print": "SECTOR ELÉCTRICO: CONSUMO DE LÍQUIDOS",
+        "filtro": _filtro_pwr_liquidos,
+        "msg_sin_datos": "Sin consumo de líquidos en generación eléctrica",
+        "agrupar_por": "FUEL",
+        "color_fn": _color_por_grupo_fijo,
+        "variable_default": "UseByTechnology",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
+        "soportaPareto": True,
+        "soportaPorcentaje": True,
     },
     "dem_consumo_liquidos_exp_prod": {
         "titulo": "Producción de Líquidos — Demanda y Exportaciones",
