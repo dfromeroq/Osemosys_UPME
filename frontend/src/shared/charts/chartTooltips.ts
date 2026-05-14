@@ -130,9 +130,9 @@ export function buildStackedTooltipOptions(
 
       return `
         <div style="min-width:260px">
-          <div style="font-weight:700; font-size:20px; color:#f8fafc; margin-bottom:${hidePercent ? '6' : '2'}px">${escapeHtml(header)}</div>
+          <div style="font-weight:700; font-size:14px; color:#f8fafc; margin-bottom:${hidePercent ? '6' : '2'}px">${escapeHtml(header)}</div>
           ${totalLine}
-          <table style="border-collapse:collapse; font-size:18px">${rows}${emptyRow}</table>
+          <table style="border-collapse:collapse; font-size:11px">${rows}${emptyRow}</table>
         </div>
       `;
     },
@@ -210,8 +210,8 @@ export function buildLineTooltipOptions(
 
       return `
         <div style="min-width:220px">
-          <div style="font-weight:700; font-size:20px; color:#f8fafc; margin-bottom:6px">${escapeHtml(String(this.x ?? ''))}</div>
-          <table style="border-collapse:collapse; font-size:18px">${rows}${emptyRow}</table>
+          <div style="font-weight:700; font-size:14px; color:#f8fafc; margin-bottom:6px">${escapeHtml(String(this.x ?? ''))}</div>
+          <table style="border-collapse:collapse; font-size:11px">${rows}${emptyRow}</table>
         </div>
       `;
     },
@@ -256,7 +256,7 @@ export function buildStackedSinglePointTooltipOptions(
 
       return `
         <div style="min-width:220px">
-          <div style="font-weight:700; font-size:20px; color:#f8fafc; margin-bottom:4px">${escapeHtml(header)}</div>
+          <div style="font-weight:700; font-size:14px; color:#f8fafc; margin-bottom:4px">${escapeHtml(header)}</div>
           <div style="margin-bottom:4px">
             <span style="color:${color};font-size:20px;line-height:1">●</span>
             <span style="margin-left:4px">${escapeHtml(this.series.name)}</span>:

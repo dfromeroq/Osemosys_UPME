@@ -96,7 +96,7 @@ function facetXLabelStep(facetCount: number, categoryCount: number): number {
   return base;
 }
 /** Etiquetas del eje Y (valores) en pantalla. */
-const FACET_Y_LABEL_FONT_PX = 20;
+const FACET_Y_LABEL_FONT_PX = 11;
 
 function maxCategoryCharLength(categories: string[]): number {
   if (categories.length === 0) return 1;
@@ -372,7 +372,7 @@ function FacetChart({
     return {
       title: {
         text: facetTitleText,
-        style: { fontSize: "28pt", fontWeight: "bold", color: "#f8fafc" },
+        style: { fontSize: "14pt", fontWeight: "bold", color: "#f8fafc" },
       },
       xAxis: {
         categories: facet.categories,
@@ -441,7 +441,7 @@ function FacetChart({
         lineColor: "#64748b",
         title: {
           text: yAxisLabel,
-          style: { color: "#94a3b8", fontSize: "28pt" },
+          style: { color: "#94a3b8", fontSize: "14pt" },
         },
         labels: {
           style: { color: "#94a3b8", fontSize: `${FACET_Y_LABEL_FONT_PX}px` },
@@ -459,7 +459,7 @@ function FacetChart({
                 fontWeight: "bold",
                 color: "#94a3b8",
                 textOutline: "none",
-                fontSize: "20pt",
+                fontSize: "11pt",
               },
               formatter: stackLabelFormatter,
             },
@@ -557,7 +557,7 @@ function FacetChart({
         layout: "horizontal",
         // Leyenda invertida respecto al stack (lectura abajo→arriba).
         reversed: true,
-        itemStyle: { color: "#94a3b8", fontWeight: "normal", fontSize: "20pt" },
+        itemStyle: { color: "#94a3b8", fontWeight: "normal", fontSize: "11pt" },
         itemHoverStyle: { color: "#f8fafc" },
       },
     };

@@ -129,7 +129,7 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
       title: {
         text: data.title,
         style: {
-          fontSize: fb('28pt'),
+          fontSize: fb('14pt'),
           fontWeight: 'bold',
           color: '#f8fafc',
         },
@@ -137,7 +137,7 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
       xAxis: {
         categories: data.categories,
         crosshair: { color: '#334155' },
-        labels: { style: { color: '#94a3b8', fontSize: fb('20pt') } },
+        labels: { style: { color: '#94a3b8', fontSize: fb('11pt') } },
         lineColor: '#334155',
         tickColor: '#334155',
       },
@@ -149,10 +149,10 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
         ...(typeof yAxisMax === 'number' ? { max: yAxisMax } : null),
         title: {
           text: data.yAxisLabel,
-          style: { color: '#94a3b8', fontSize: fb('28pt') },
+          style: { color: '#94a3b8', fontSize: fb('14pt') },
         },
         labels: {
-          style: { color: '#94a3b8', fontSize: fb('20pt') },
+          style: { color: '#94a3b8', fontSize: fb('11pt') },
           // Mínimo 3 cifras significativas (sin notación científica).
           formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
             return formatAxis3Sig(this.value as number);
@@ -165,7 +165,7 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
             fontWeight: 'bold',
             color: '#94a3b8',
             textOutline: 'none',
-            fontSize: fb('20pt'),
+            fontSize: fb('11pt'),
           },
           // Highcharts invoca el formatter con `this` como StackItemObject; no usar flecha.
           // Mostrar solo cada 2 categorías (0, 2, 4, …) con 1 decimal máximo.
@@ -239,7 +239,7 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
         // (que queda arriba del stack) aparece al final de la leyenda. Así la
         // leyenda se lee de abajo hacia arriba igual que las barras.
         reversed: true,
-        itemStyle: { color: '#94a3b8', fontWeight: 'normal', fontSize: fb('20pt') },
+        itemStyle: { color: '#94a3b8', fontWeight: 'normal', fontSize: fb('11pt') },
         itemHoverStyle: { color: '#f8fafc' },
       },
     };

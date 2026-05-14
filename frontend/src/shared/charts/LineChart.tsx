@@ -136,7 +136,7 @@ export const LineChart: React.FC<LineChartProps> = ({
       title: {
         text: data.title,
         style: {
-          fontSize: fb('28pt'),
+          fontSize: fb('14pt'),
           fontWeight: 'bold',
           color: '#f8fafc',
         },
@@ -144,7 +144,7 @@ export const LineChart: React.FC<LineChartProps> = ({
       xAxis: {
         categories: data.categories,
         crosshair: { color: '#334155' },
-        labels: { style: { color: '#94a3b8', fontSize: fb('20pt') } },
+        labels: { style: { color: '#94a3b8', fontSize: fb('11pt') } },
         lineColor: '#334155',
         tickColor: '#334155',
       },
@@ -157,10 +157,10 @@ export const LineChart: React.FC<LineChartProps> = ({
         ...(typeof yAxisMax === 'number' ? { max: yAxisMax } : null),
         title: {
           text: data.yAxisLabel,
-          style: { color: '#94a3b8', fontSize: fb('28pt') },
+          style: { color: '#94a3b8', fontSize: fb('14pt') },
         },
         labels: {
-          style: { color: '#94a3b8', fontSize: fb('20pt') },
+          style: { color: '#94a3b8', fontSize: fb('11pt') },
           // Mínimo 3 cifras significativas (sin notación científica).
           formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
             return formatAxis3Sig(this.value as number);
@@ -213,7 +213,7 @@ export const LineChart: React.FC<LineChartProps> = ({
         align: 'center',
         verticalAlign: 'bottom',
         layout: 'horizontal',
-        itemStyle: { color: '#94a3b8', fontWeight: 'normal', fontSize: fb('20pt') },
+        itemStyle: { color: '#94a3b8', fontWeight: 'normal', fontSize: fb('11pt') },
         itemHoverStyle: { color: '#f8fafc' },
       },
     };

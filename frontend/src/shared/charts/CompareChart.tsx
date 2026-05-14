@@ -104,7 +104,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         categories: subplot.categories,
         title: {
           text: subplot.scenario_name || subplot.year.toString(),
-          style: { color: '#94a3b8', fontWeight: 'bold', fontSize: '28pt' },
+          style: { color: '#94a3b8', fontWeight: 'bold', fontSize: '14pt' },
         },
         width: widthStr,
         left: leftStr,
@@ -113,7 +113,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         top: '0%',
         height: '86%',
         offset: 0,
-        labels: { style: { color: '#94a3b8', fontSize: '20pt' } },
+        labels: { style: { color: '#94a3b8', fontSize: '11pt' } },
         lineColor: '#334155',
         tickColor: '#334155',
         ...{ tickWidth: 2, tickLength: 10 },
@@ -123,7 +123,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         id: `y-${idx}`,
         title: {
           text: idx === 0 ? data.yAxisLabel : null,
-          style: { color: '#94a3b8', fontSize: '28pt' },
+          style: { color: '#94a3b8', fontSize: '14pt' },
         },
         width: widthStr,
         left: leftStr,
@@ -150,7 +150,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         labels: {
           // Only show labels on first subplot when Y-axis is shared
           enabled: !sharedYAxis || idx === 0,
-          style: { color: '#94a3b8', fontSize: '20pt' },
+          style: { color: '#94a3b8', fontSize: '11pt' },
           formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
             return formatAxis3Sig(this.value as number);
           },
@@ -161,8 +161,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
             fontWeight: 'bold',
             color: '#94a3b8',
             textOutline: 'none',
-            fontSize: '20pt',
-            // fontSize: '10px',
+            fontSize: '11pt',
           },
           // eslint-disable-next-line react-hooks/unsupported-syntax -- API de Highcharts (`this`)
           formatter: function (this: Highcharts.StackItemObject) {
@@ -204,7 +203,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       },
       title: {
         text: data.title,
-        style: { fontSize: '28pt', fontWeight: 'bold', color: '#f8fafc' },
+        style: { fontSize: '14pt', fontWeight: 'bold', color: '#f8fafc' },
       },
       xAxis,
       yAxis,
@@ -309,7 +308,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         align: 'center',
         verticalAlign: 'bottom',
         layout: 'horizontal',
-        itemStyle: { color: '#94a3b8', fontWeight: 'normal', fontSize: '20pt' },
+        itemStyle: { color: '#94a3b8', fontWeight: 'normal', fontSize: '11pt' },
         itemHoverStyle: { color: '#f8fafc' },
       },
     };
