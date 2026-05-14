@@ -136,6 +136,7 @@ MENU = [
          {"tipo": "liquidos_prod_import","label": "Líquidos - Producción + Importación",                  "allowed": ["TECNOLOGIA", "FUEL"]},
          {"tipo": "ups_refinacion",      "label": "Upstream Refinación - ProductionByTechnology",        "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
          {"tipo": "saf_produccion",      "label": "SAF - Producción - ProductionByTechnology",           "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
+         {"tipo": "imp_exp_crudo",      "label": "Crudo - Importaciones y Exportaciones - ProductionByTechnology", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
      ]},
     {"code": "mineria", "label": "Minería & Extracción", "icon": "⛏️",
      "charts": [

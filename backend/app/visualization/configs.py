@@ -199,6 +199,11 @@ def _filtro_import_liquidos(df, **kw):
     return df[df["TECHNOLOGY"].str.startswith(_PREFIJOS_IMP_LIQUIDOS_ALL)]
 
 
+def _filtro_crudo_flujos(df, **kw):
+    """Importaciones y exportaciones de crudo (IMPOIL, EXPOIL)."""
+    return df[df["TECHNOLOGY"].str.startswith(("IMPOIL", "EXPOIL"))]
+
+
 def _filtro_demanda_exportaciones_liquidos(df, **kw):
     """Sectores de demanda + exportaciones de líquidos.
 
@@ -659,6 +664,20 @@ CONFIGS = {
         "print": "LÍQUIDOS: IMPORTACIÓN",
         "filtro": _filtro_import_liquidos,
         "msg_sin_datos": "Sin importaciones de líquidos (IMPDSL/IMPGSL/IMPJET/IMPLNG/IMPLPG/IMPOIL)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_liquidos_import,
+        "variable_default": "ProductionByTechnology",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
+        "soportaPareto": True,
+        "soportaPorcentaje": True,
+    },
+    "imp_exp_crudo": {
+        "titulo": "Crudo - Importaciones y Exportaciones - ProductionByTechnology",
+        "figura": "Figura 20",
+        "filename": "Fig20_Imp_Exp_Crudo",
+        "print": "CRUDO: IMPORTACIONES Y EXPORTACIONES",
+        "filtro": _filtro_crudo_flujos,
+        "msg_sin_datos": "Sin datos de importación/exportación de crudo (IMPOIL/EXPOIL)",
         "agrupar_por": "TECNOLOGIA",
         "color_fn": _color_liquidos_import,
         "variable_default": "ProductionByTechnology",

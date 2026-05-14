@@ -314,6 +314,7 @@ const MENU: Module[] = [
           { id: 'liquidos_prod_import', label: 'Líquidos - Producción + Importación', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
           { id: 'imp_liquidos', label: 'Líquidos - Importación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
           { id: 'exp_liquidos', label: 'Líquidos - Exportación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'imp_exp_crudo', label: 'Crudo - Importaciones y Exportaciones', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
           { id: 'dem_consumo_liquidos', label: 'Consumo de Líquidos - Sectores de Demanda', allowedGroupings: ['FUEL'], defaultGrouping: 'FUEL', soportaPareto: true },
           // { id: 'dem_consumo_liquidos_exp_use', label: 'Consumo de Líquidos — Demanda y Exportaciones', allowedGroupings: ['FUEL'], defaultGrouping: 'FUEL', soportaPareto: true },
           { id: 'dem_consumo_liquidos_total', label: 'Consumo de Líquidos - Sectores de Demanda + Sector Eléctrico', allowedGroupings: ['FUEL'], defaultGrouping: 'FUEL', soportaPareto: true },

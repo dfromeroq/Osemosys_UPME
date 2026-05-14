@@ -239,6 +239,10 @@ DATA_EXPLORER_FILTERS: dict[str, dict[str, Any]] = {
     },
 
     # ── COMERCIO EXTERIOR ──────────────────────────────────────────────────
+    "imp_exp_crudo": {
+        "variable_names": ["ProductionByTechnology"],
+        "technology_prefixes": ["IMPOIL", "EXPOIL"],
+    },
     "exp_liquidos_gas": {
         "variable_names": ["ProductionByTechnology", "UseByTechnology"],
         "technology_prefixes": ["EXPDSL", "EXPGSL", "EXPJET", "EXPLPG", "EXPNGS"],

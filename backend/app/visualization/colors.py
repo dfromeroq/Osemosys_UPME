@@ -408,6 +408,8 @@ COLOR_MAP_LIQUIDOS_IMPORT: dict[str, str] = {
     "EXPGSL":     "#f07050",
     "EXPJET":     "#4aaa6a",
     "EXPLPG":     "#a060c0",
+    "IMPOIL":     "#8B4513",  # Importación Petróleo — marrón
+    "EXPOIL":     "#CD853F",  # Exportación Petróleo — marrón claro
 }
 
 
