@@ -471,6 +471,8 @@ export type ChartSeries = {
   markerRadius?: number | null;
   /** Grosor de línea en px. */
   lineWidth?: number | null;
+  /** Tipo de Highcharts para esta serie individual. "line"|"area"|"column" */
+  chart_type?: string | null;
 };
 
 export type ChartDataResponse = {
