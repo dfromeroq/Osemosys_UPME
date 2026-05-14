@@ -735,11 +735,13 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
       const sel = serverFacetExport.selection;
       const legend_title =
         serverFacetExport.legendTitle ?? facetExportLegendTitleFromSelection(sel);
+      const esPorcentaje = sel.viewMode === 'porcentaje';
       const payload: Parameters<typeof simulationApi.exportCompareFacet>[0] = {
         job_ids: serverFacetExport.jobIds.join(","),
         tipo: sel.tipo,
         un: sel.un,
       };
+      if (esPorcentaje) payload.es_porcentaje = 'true';
       if (sel.sub_filtro) payload.sub_filtro = sel.sub_filtro;
       if (sel.loc) payload.loc = sel.loc;
       if (sel.variable) payload.variable = sel.variable;
