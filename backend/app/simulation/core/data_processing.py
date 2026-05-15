@@ -415,49 +415,6 @@ def export_scenario_to_csv(
                         sets[dim] = {}
                     sets[dim][val] = None
 
-    # ------------------------------------------------------------------
-    # Agregación de timeslices a 1 solo (replica notebook con div=1)
-    # ------------------------------------------------------------------
-    ts_set = sets.get("TIMESLICE", {})
-    if len(ts_set) > 1:
-        canonical_ts = sorted(ts_set.keys())[0]
-        logger.info(
-            "Agregando %d timeslices a 1 ('%s')", len(ts_set), canonical_ts,
-        )
-        _PARAMS_TS_AVG = {"CapacityFactor"}
-        _PARAMS_TS_SKIP = {"Conversionls", "Conversionld", "Conversionlh"}
-
-        for pname in list(param_rows.keys()):
-            spec = PARAM_INDEX.get(pname, [])
-            if "TIMESLICE" not in spec:
-                continue
-
-            if pname in _PARAMS_TS_SKIP:
-                del param_rows[pname]
-                continue
-
-            non_ts_dims = [d for d in spec if d != "TIMESLICE"]
-            rows = param_rows[pname]
-
-            groups: dict[tuple, list[dict]] = defaultdict(list)
-            for rec in rows:
-                key = tuple(rec.get(d, "") for d in non_ts_dims)
-                groups[key].append(rec)
-
-            aggregated: list[dict] = []
-            use_mean = pname in _PARAMS_TS_AVG
-            for key, recs in groups.items():
-                vals = [r["VALUE"] for r in recs]
-                agg_val = sum(vals) / len(vals) if use_mean else sum(vals)
-                new_rec = dict(zip(non_ts_dims, key))
-                new_rec["TIMESLICE"] = canonical_ts
-                new_rec["VALUE"] = agg_val
-                aggregated.append(new_rec)
-
-            param_rows[pname] = aggregated
-
-        sets["TIMESLICE"] = {canonical_ts: None}
-
     if not sets.get("TIMESLICE"):
         sets["TIMESLICE"]["1"] = None
     if not sets.get("MODE_OF_OPERATION"):

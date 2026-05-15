@@ -193,6 +193,9 @@ def _build_output_rows(
             fid = fuel_lookup.get(row["fuel_name"])
             if fid is not None:
                 r["id_fuel"] = int(fid)
+        ts_id = row.get("timeslice_id")
+        if ts_id is not None:
+            r["id_timeslice"] = int(ts_id)
         r["year"] = row.get("year")
         r["value"] = float(row.get("dispatch", 0.0))
         r["value2"] = float(row.get("cost", 0.0))
