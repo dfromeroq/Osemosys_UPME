@@ -32,6 +32,7 @@ import {
   type YearRule,
 } from "@/features/scenarios/api/scenariosApi";
 import { officialImportApi } from "@/features/officialImport/api/officialImportApi";
+import { ScenarioHistorySummary } from "@/features/scenarios/components/ScenarioHistorySummary";
 import { catalogsApi } from "@/features/catalogs/api/catalogsApi";
 import { Badge } from "@/shared/components/Badge";
 import { Button } from "@/shared/components/Button";
@@ -54,7 +55,7 @@ import type {
   SimulationType,
 } from "@/types/domain";
 
-type Tab = "values" | "permissions" | "pending";
+type Tab = "values" | "permissions" | "pending" | "history";
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 const PREVIEW_PAGE_SIZE_OPTIONS = [100, 200, 500, 1000] as const;
@@ -1580,6 +1581,9 @@ export function ScenarioDetailPage() {
         <Button variant={tab === "pending" ? "primary" : "ghost"} onClick={() => setTab("pending")}>
           Solicitudes pendientes
         </Button>
+        <Button variant={tab === "history" ? "primary" : "ghost"} onClick={() => setTab("history")}>
+          Historial
+        </Button>
       </div>
 
       {tab === "values" ? (
@@ -2227,6 +2231,10 @@ export function ScenarioDetailPage() {
             searchableText={(r) => `${r.created_by} ${r.status}`}
           />
         </div>
+      ) : null}
+
+      {tab === "history" && Number.isFinite(scenarioId) ? (
+        <ScenarioHistorySummary scenarioId={scenarioId} />
       ) : null}
 
       <Modal

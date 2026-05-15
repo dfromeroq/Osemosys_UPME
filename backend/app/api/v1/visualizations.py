@@ -260,6 +260,11 @@ def export_comparison_facet_image(
         None,
         description="Título opcional sobre la leyenda (p. ej. Combustible / tecnología)",
     ),
+    series_order: str | None = Query(
+        None,
+        description="Lista de nombres de series separados por coma — define el "
+                    "orden custom (la primera queda arriba del stack).",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -293,11 +298,21 @@ def export_comparison_facet_image(
     if not facet_payload.facets or not any(f.series for f in facet_payload.facets):
         raise HTTPException(status_code=404, detail="Sin datos para exportar con los filtros actuales")
 
+    # Reorden custom de series — aplica a cada faceta para que el PNG/SVG
+    # exportado coincida con el orden elegido por el usuario en la UI.
+    order_list: list[str] | None = None
+    if series_order:
+        order_list = [s.strip() for s in series_order.split(",") if s.strip()] or None
+        if order_list:
+            for facet in facet_payload.facets:
+                chart_service.reorder_chart_series(facet, order_list)
+
     try:
         img_bytes = chart_service.render_comparison_facet_figure_bytes(
             facet_payload,
             fmt=fmt,
             legend_title=legend_title,
+            series_order=order_list,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -371,6 +386,10 @@ def get_chart_data(
     variable: str | None = Query(None),
     agrupar_por: str | None = Query(None, description="Override de agrupación: TECNOLOGIA, FUEL, GROUP"),
     es_porcentaje: bool = Query(False, description="Si true, normaliza cada año a 100%"),
+    timeslice: str | None = Query(
+        None,
+        description="Código de timeslice (p.ej. 'S101'). Si se omite, se agregan todos los TS.",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -393,9 +412,42 @@ def get_chart_data(
             variable=variable,
             agrupar_por=agrupar_por,
             es_porcentaje_override=es_porcentaje,
+            timeslice=timeslice,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{job_id}/timeslices", response_model=list[str])
+def list_job_timeslices(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[str]:
+    """Lista los códigos de timeslice presentes en los outputs del job.
+
+    Útil para poblar un selector en el frontend que permita filtrar la
+    gráfica a un timeslice específico. Si retorna ``[]`` o una sola entrada
+    no tiene sentido mostrar el selector.
+    """
+    from app.models import OsemosysOutputParamValue, Timeslice
+
+    try:
+        job = SimulationService.get_by_id(db, current_user=current_user, job_id=job_id)
+        if job["status"] != "SUCCEEDED":
+            raise HTTPException(status_code=400, detail="Job no está en estado SUCCEEDED")
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Job no encontrado o sin acceso")
+
+    rows = (
+        db.query(Timeslice.code)
+        .join(OsemosysOutputParamValue, OsemosysOutputParamValue.id_timeslice == Timeslice.id)
+        .filter(OsemosysOutputParamValue.id_simulation_job == job["id"])
+        .distinct()
+        .order_by(Timeslice.code)
+        .all()
+    )
+    return [r[0] for r in rows if r[0]]
 
 
 @router.get("/{job_id}/export-chart")
@@ -424,6 +476,16 @@ def export_chart(
     table_cumulative: bool = Query(
         False,
         description="Solo cuando view_mode=table: muestra valores acumulados.",
+    ),
+    table_series: str | None = Query(
+        None,
+        description="Solo cuando view_mode=table: lista de nombres de series "
+                    "separados por coma — restringe la exportación a esas series.",
+    ),
+    table_years: str | None = Query(
+        None,
+        description="Solo cuando view_mode=table: lista de años separados por "
+                    "coma — restringe las columnas de la exportación a esos años.",
     ),
     series_order: str | None = Query(
         None,
@@ -534,6 +596,14 @@ def export_chart(
             chart_service.apply_cumulative_series(chart)
         if table_period_years and table_period_years >= 2:
             chart_service.apply_period_years(chart, table_period_years)
+        # Filtros explícitos: el usuario eligió un subconjunto de series y/o años
+        # en la UI. Si la lista viene vacía, no aplica.
+        if table_series:
+            names = [s.strip() for s in table_series.split(",") if s.strip()]
+            chart_service.filter_chart_series(chart, names)
+        if table_years:
+            years = [y.strip() for y in table_years.split(",") if y.strip()]
+            chart_service.filter_chart_categories(chart, years)
 
     # Reorden custom de series — aplica a todos los formatos.
     if series_order:
