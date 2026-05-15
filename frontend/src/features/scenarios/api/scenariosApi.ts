@@ -142,6 +142,8 @@ export type OsemosysParamAuditEntry = {
   dimensions_json: Record<string, unknown> | null;
   source: string;
   changed_by: string;
+  batch_id: string | null;
+  batch_label: string | null;
   created_at: string;
 };
 
@@ -151,6 +153,96 @@ export type OsemosysParamAuditPage = {
   offset: number;
   limit: number;
 };
+
+export type ScenarioAuditBatch = {
+  batch_id: string | null;
+  batch_label: string | null;
+  changed_by: string;
+  source: string;
+  started_at: string;
+  ended_at: string;
+  stats: Record<string, number>;
+  params_touched: string[];
+  entries_count: number;
+  preview: OsemosysParamAuditEntry[];
+};
+
+export type ScenarioAuditPage = {
+  items: ScenarioAuditBatch[] | OsemosysParamAuditEntry[];
+  total_batches: number;
+  total_entries: number;
+  offset: number;
+  limit: number;
+  grouped: boolean;
+};
+
+export type ScenarioAuditFacets = {
+  param_names: string[];
+  changed_by: string[];
+  sources: string[];
+  actions: string[];
+  region_names: string[];
+  technology_names: string[];
+  fuel_names: string[];
+  emission_names: string[];
+  udc_names: string[];
+  years: number[];
+  date_min: string | null;
+  date_max: string | null;
+};
+
+export type ScenarioAuditFilters = {
+  param_name?: string[] | undefined;
+  region_name?: string[] | undefined;
+  technology_name?: string[] | undefined;
+  fuel_name?: string[] | undefined;
+  emission_name?: string[] | undefined;
+  udc_name?: string[] | undefined;
+  changed_by?: string[] | undefined;
+  action?: string[] | undefined;
+  source?: string[] | undefined;
+  batch_id?: string[] | undefined;
+  year_from?: number | undefined;
+  year_to?: number | undefined;
+  from_date?: string | undefined;
+  to_date?: string | undefined;
+  value_id?: number | undefined;
+  q?: string | undefined;
+  group_by_batch?: boolean | undefined;
+  offset?: number | undefined;
+  limit?: number | undefined;
+};
+
+function buildAuditQuery(filters: ScenarioAuditFilters): URLSearchParams {
+  const sp = new URLSearchParams();
+  const appendList = (key: string, vals?: string[]) => {
+    if (!vals) return;
+    for (const v of vals) {
+      if (v != null && String(v).length) sp.append(key, String(v));
+    }
+  };
+  appendList("param_name", filters.param_name);
+  appendList("region_name", filters.region_name);
+  appendList("technology_name", filters.technology_name);
+  appendList("fuel_name", filters.fuel_name);
+  appendList("emission_name", filters.emission_name);
+  appendList("udc_name", filters.udc_name);
+  appendList("changed_by", filters.changed_by);
+  appendList("action", filters.action);
+  appendList("source", filters.source);
+  appendList("batch_id", filters.batch_id);
+  if (filters.year_from != null) sp.append("year_from", String(filters.year_from));
+  if (filters.year_to != null) sp.append("year_to", String(filters.year_to));
+  if (filters.from_date) sp.append("from_date", filters.from_date);
+  if (filters.to_date) sp.append("to_date", filters.to_date);
+  if (filters.value_id != null) sp.append("value_id", String(filters.value_id));
+  if (filters.q) sp.append("q", filters.q);
+  if (filters.group_by_batch != null)
+    sp.append("group_by_batch", filters.group_by_batch ? "true" : "false");
+  if (filters.offset != null) sp.append("offset", String(filters.offset));
+  if (filters.limit != null) sp.append("limit", String(filters.limit));
+  return sp;
+}
 
 export type ScenarioExcelImportResponse = {
   scenario: Scenario;
@@ -905,6 +997,29 @@ export const scenariosApi = {
       .get<OsemosysParamAuditPage>(`/scenarios/${scenarioId}/osemosys-param-audit`, {
         params: { param_name: paramName, ...params },
       })
+      .then((r) => r.data),
+  listScenarioAudit: (scenarioId: number, filters: ScenarioAuditFilters = {}) =>
+    httpClient
+      .get<ScenarioAuditPage>(`/scenarios/${scenarioId}/audit`, {
+        params: buildAuditQuery(filters),
+      })
+      .then((r) => r.data),
+  listScenarioAuditBatchEntries: (
+    scenarioId: number,
+    batchId: string,
+    filters: Omit<ScenarioAuditFilters, "batch_id" | "group_by_batch"> = {},
+  ) =>
+    httpClient
+      .get<OsemosysParamAuditPage>(
+        `/scenarios/${scenarioId}/audit/batches/${encodeURIComponent(batchId)}`,
+        {
+          params: buildAuditQuery(filters),
+        },
+      )
+      .then((r) => r.data),
+  getScenarioAuditFacets: (scenarioId: number) =>
+    httpClient
+      .get<ScenarioAuditFacets>(`/scenarios/${scenarioId}/audit/facets`)
       .then((r) => r.data),
   createOsemosysValue: (
     scenarioId: number,

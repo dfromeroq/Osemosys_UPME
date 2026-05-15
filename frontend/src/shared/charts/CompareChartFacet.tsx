@@ -589,14 +589,33 @@ function FacetChart({
   );
 }
 
-function buildSharedLegendItems(facets: FacetData[]): { name: string; color: string }[] {
+function buildSharedLegendItems(
+  facets: FacetData[],
+  customOrder?: string[] | null,
+): { name: string; color: string }[] {
   const byName = new Map<string, string>();
   for (const facet of facets) {
     for (const s of facet.series) {
       if (!byName.has(s.name)) byName.set(s.name, s.color);
     }
   }
-  return Array.from(byName.entries()).map(([name, color]) => ({ name, color }));
+  const items = Array.from(byName.entries()).map(([name, color]) => ({ name, color }));
+  if (!customOrder || customOrder.length === 0) return items;
+  // Si el usuario configuró un orden custom, lo usamos como criterio principal
+  // para la leyenda (compartida entre todas las facetas). Las series que no
+  // estén en ``customOrder`` quedan al final, en su orden natural — así la
+  // leyenda corresponde con el orden general de las series y se ve consistente
+  // con el stack de cada subplot.
+  const rank = new Map<string, number>();
+  customOrder.forEach((name, idx) => {
+    if (!rank.has(name)) rank.set(name, idx);
+  });
+  const fallback = customOrder.length;
+  return items.slice().sort((a, b) => {
+    const ra = rank.has(a.name) ? (rank.get(a.name) as number) : fallback;
+    const rb = rank.has(b.name) ? (rank.get(b.name) as number) : fallback;
+    return ra - rb;
+  });
 }
 
 export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
@@ -687,9 +706,14 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
     return 360;
   }, [data.facets, inverted, n]);
 
+  // Orden custom de series — se obtiene de la selección que viene del padre
+  // (ResultDetailPage). Sirve tanto para la leyenda compartida como para el
+  // PNG/SVG exportado, así el render UI y export coinciden.
+  const customSeriesOrder = serverFacetExport?.selection?.customSeriesOrder ?? null;
+
   const sharedLegendItems = useMemo(
-    () => buildSharedLegendItems(data.facets),
-    [data.facets],
+    () => buildSharedLegendItems(data.facets, customSeriesOrder),
+    [data.facets, customSeriesOrder],
   );
 
   const sharedYAxisMax = useMemo(() => {
@@ -748,6 +772,9 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
       if (sel.agrupar_por) payload.agrupar_por = sel.agrupar_por;
       if (legend_title) payload.legend_title = legend_title;
       payload.filename_mode = facetExportFilenameMode;
+      if (sel.customSeriesOrder && sel.customSeriesOrder.length > 0) {
+        payload.series_order = sel.customSeriesOrder.join(",");
+      }
       const { blob, filename } = await simulationApi.exportCompareFacet(payload, "png");
       downloadBlob(blob, filename);
       push("PNG descargado (todas las facetas en una imagen).", "success");

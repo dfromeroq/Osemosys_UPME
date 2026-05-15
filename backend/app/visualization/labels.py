@@ -362,7 +362,7 @@ DISPLAY_NAMES: dict[str, str] = {
     "PWRROR": "Hidroeléctrica Filo de Agua",
     "PWRSOL": "Solar FV",
     "PWRSOLBAT": "Solar FV Utility + Bateria",
-    "PWRSOLRTP": "Solar FV Residencial (RTP)",
+    "PWRSOLRTP": "Solar FV GD",
     "PWRSOLRTP_IND": "Solar FV RTP Ind.",
     "PWRSOLRTP_ZNI": "Solar FV Residencial ZNI",
     "PWRSOLUGE": "Solar FV Utility Gran Escala",
