@@ -79,11 +79,8 @@ function stackLabelFormatter(this: Highcharts.StackItemObject): string {
  * Tamaño de fuente para etiquetas del eje X (años) según cuántos subplots.
  * Menos facetas = más ancho disponible = fuente más grande.
  */
-function facetXLabelFontPx(facetCount: number): number {
-  if (facetCount <= 1) return 15;
-  if (facetCount === 2) return 14;
-  if (facetCount === 3) return 13;
-  return 12;
+function facetXLabelFontPx(_facetCount: number): number {
+  return 20;
 }
 
 /**
@@ -99,7 +96,7 @@ function facetXLabelStep(facetCount: number, categoryCount: number): number {
   return base;
 }
 /** Etiquetas del eje Y (valores) en pantalla. */
-const FACET_Y_LABEL_FONT_PX = 14;
+const FACET_Y_LABEL_FONT_PX = 11;
 
 function maxCategoryCharLength(categories: string[]): number {
   if (categories.length === 0) return 1;
@@ -375,7 +372,7 @@ function FacetChart({
     return {
       title: {
         text: facetTitleText,
-        style: { fontSize: "14px", fontWeight: "bold", color: "#f8fafc" },
+        style: { fontSize: "14pt", fontWeight: "bold", color: "#f8fafc" },
       },
       xAxis: {
         categories: facet.categories,
@@ -444,7 +441,7 @@ function FacetChart({
         lineColor: "#64748b",
         title: {
           text: yAxisLabel,
-          style: { color: "#94a3b8", fontSize: `${FACET_Y_LABEL_FONT_PX + 1}px` },
+          style: { color: "#94a3b8", fontSize: "14pt" },
         },
         labels: {
           style: { color: "#94a3b8", fontSize: `${FACET_Y_LABEL_FONT_PX}px` },
@@ -462,7 +459,7 @@ function FacetChart({
                 fontWeight: "bold",
                 color: "#94a3b8",
                 textOutline: "none",
-                fontSize: "12px",
+                fontSize: "11pt",
               },
               formatter: stackLabelFormatter,
             },
@@ -560,7 +557,7 @@ function FacetChart({
         layout: "horizontal",
         // Leyenda invertida respecto al stack (lectura abajo→arriba).
         reversed: true,
-        itemStyle: { color: "#94a3b8", fontWeight: "normal", fontSize: "13px" },
+        itemStyle: { color: "#94a3b8", fontWeight: "normal", fontSize: "11pt" },
         itemHoverStyle: { color: "#f8fafc" },
       },
     };
@@ -738,11 +735,13 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
       const sel = serverFacetExport.selection;
       const legend_title =
         serverFacetExport.legendTitle ?? facetExportLegendTitleFromSelection(sel);
+      const esPorcentaje = sel.viewMode === 'porcentaje';
       const payload: Parameters<typeof simulationApi.exportCompareFacet>[0] = {
         job_ids: serverFacetExport.jobIds.join(","),
         tipo: sel.tipo,
         un: sel.un,
       };
+      if (esPorcentaje) payload.es_porcentaje = 'true';
       if (sel.sub_filtro) payload.sub_filtro = sel.sub_filtro;
       if (sel.loc) payload.loc = sel.loc;
       if (sel.variable) payload.variable = sel.variable;
@@ -787,7 +786,7 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
         sliceH = Math.floor((1080 - Math.max(0, n - 1) * 16) / Math.max(n, 1));
       }
 
-      const exportXLabelPx = 24;
+      const exportXLabelPx = 20;
       const maxCatLenExport = Math.max(
         ...data.facets.map((f) => maxCategoryCharLength(f.categories)),
         1,
