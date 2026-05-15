@@ -325,6 +325,16 @@ def _color_por_emision(df, columna: str = "COLOR"):
     return _ordered_color_list(COLORES_EMISIONES, df, columna)
 
 
+def _color_por_region(df, columna: str = "COLOR"):
+    """Paleta fija para las 7 regiones del SIN.
+
+    La columna ``columna`` debe contener los códigos AN/CA/IN/NE/OR/SE/SO
+    insertados previamente por ``transform_regional_df``.
+    """
+    from app.visualization.regional import REGION_COLORS  # lazy: evita ciclo
+    return _ordered_color_list(REGION_COLORS, df, columna)
+
+
 def _color_por_grupo_fijo(df, columna: str = "COLOR"):
     """Paleta fija según COLORES_GRUPOS — para gas y refinerías."""
     grupos_presentes = df[columna].unique()

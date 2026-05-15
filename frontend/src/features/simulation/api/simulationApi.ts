@@ -251,6 +251,7 @@ export const simulationApi = {
       loc?: string;
       variable?: string;
       agrupar_por?: string;
+      region?: string;
       timeslice?: string;
     },
   ) {
@@ -340,6 +341,7 @@ export const simulationApi = {
     loc?: string;
     variable?: string;
     agrupar_por?: string;
+    region?: string;
   }) {
     const { data } = await httpClient.get<CompareChartFacetResponse>(`/visualizations/chart-data/compare-facet`, { params });
     return data;

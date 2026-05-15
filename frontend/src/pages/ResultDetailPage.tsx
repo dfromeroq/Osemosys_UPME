@@ -399,6 +399,7 @@ export function ResultDetailPage() {
   // (otro tipo, otra agrupación, otro filtro): el conjunto de series cambia,
   // así que un orden custom anterior dejaría de tener sentido.
   const chartIdentityKey =
+    `${chartSelection.tipo}|${chartSelection.sub_filtro ?? ''}|${chartSelection.loc ?? ''}|${chartSelection.variable ?? ''}|${chartSelection.agrupar_por ?? ''}|${chartSelection.region ?? ''}`;
     `${chartSelection.tipo}|${chartSelection.sub_filtro ?? ''}|${chartSelection.loc ?? ''}|${chartSelection.variable ?? ''}|${chartSelection.agrupar_por ?? ''}|${chartSelection.timeslice ?? ''}`;
   useEffect(() => {
     setCustomSeriesOrder(null);
@@ -809,6 +810,11 @@ export function ResultDetailPage() {
       if (chartSelection.variable) params.variable = chartSelection.variable;
       if (chartSelection.agrupar_por) params.agrupar_por = chartSelection.agrupar_por;
       if (esPorcentaje) params.es_porcentaje = 'true';
+      // Filtro regional: ignorado por backend si el job no es REGIONAL.
+      // Si agrupamos por región, el filtro no aplica (mutuamente excluyente).
+      if (chartSelection.region && chartSelection.agrupar_por !== 'REGION') {
+        params.region = chartSelection.region;
+      }
 
       simulationApi
         .getCompareFacetData(params as Parameters<typeof simulationApi.getCompareFacetData>[0])
@@ -899,6 +905,11 @@ export function ResultDetailPage() {
       if (chartSelection.agrupar_por) params.agrupar_por = chartSelection.agrupar_por;
       if (chartSelection.timeslice) params.timeslice = chartSelection.timeslice;
       if (esPorcentaje) params.es_porcentaje = 'true';
+      // Filtro regional: ignorado por backend si el job no es REGIONAL.
+      // Si agrupamos por región, el filtro no aplica (mutuamente excluyente).
+      if (chartSelection.region && chartSelection.agrupar_por !== 'REGION') {
+        params.region = chartSelection.region;
+      }
 
       if (chartSelection.viewMode === 'pareto') {
         const paretoParams: Record<string, string> = {
@@ -1981,6 +1992,7 @@ export function ResultDetailPage() {
             hideGroupBy={chartCompareMode === 'line-total'}
             barOrientation={chartBarOrientation}
             onChangeBarOrientation={setChartBarOrientation}
+            isRegionalJob={runMeta?.simulation_type === 'REGIONAL'}
             availableTimeslices={availableTimeslices}
           />
 
