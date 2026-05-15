@@ -168,8 +168,9 @@ def get_comparison_facet_data(
     sub_filtro: str | None = Query(None),
     loc: str | None = Query(None),
     variable: str | None = Query(None),
-    agrupar_por: str | None = Query(None, description="Override de agrupación: TECNOLOGIA, FUEL, GROUP"),
+    agrupar_por: str | None = Query(None, description="Override de agrupación: TECNOLOGIA, FUEL, GROUP, REGION"),
     es_porcentaje: bool = Query(False, description="Si true, normaliza cada año a 100%"),
+    region: str | None = Query(None, description="Filtro regional (AN, CA, IN, NE, OR, SE, SO) — solo en jobs REGIONAL"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -187,6 +188,7 @@ def get_comparison_facet_data(
             variable=variable,
             agrupar_por=agrupar_por,
             es_porcentaje_override=es_porcentaje,
+            region=region,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -369,8 +371,9 @@ def get_chart_data(
     sub_filtro: str | None = Query(None),
     loc: str | None = Query(None),
     variable: str | None = Query(None),
-    agrupar_por: str | None = Query(None, description="Override de agrupación: TECNOLOGIA, FUEL, GROUP"),
+    agrupar_por: str | None = Query(None, description="Override de agrupación: TECNOLOGIA, FUEL, GROUP, REGION"),
     es_porcentaje: bool = Query(False, description="Si true, normaliza cada año a 100%"),
+    region: str | None = Query(None, description="Filtro regional (AN, CA, IN, NE, OR, SE, SO) — solo en jobs REGIONAL"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -393,6 +396,7 @@ def get_chart_data(
             variable=variable,
             agrupar_por=agrupar_por,
             es_porcentaje_override=es_porcentaje,
+            region=region,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

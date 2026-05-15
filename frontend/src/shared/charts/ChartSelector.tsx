@@ -24,7 +24,7 @@ export interface ChartSelection {
   loc?: string;
   variable?: string;
   viewMode?: 'column' | 'line' | 'area' | 'pareto' | 'porcentaje' | 'table';
-  /** Agrupación enviada al backend: 'TECNOLOGIA' | 'COMBUSTIBLE' | 'FUEL' | 'GROUP' */
+  /** Agrupación enviada al backend: 'TECNOLOGIA' | 'COMBUSTIBLE' | 'FUEL' | 'GROUP' | 'REGION' */
   agrupar_por?: string;
   /** Solo `viewMode === 'table'`: año-paso (5 = cada 5 años). null/undefined = todos. */
   tablePeriodYears?: number | null;
@@ -38,6 +38,8 @@ export interface ChartSelection {
   yAxisMax?: number | null;
   /** Para Sector Eléctrico: filtra entre 'liquidos', 'todos', 'termica' */
   tipo_electrico?: 'liquidos' | 'todos' | 'termica';
+  /** Solo jobs REGIONAL: filtro por prefijo regional ('AN'..'SO') o undefined = todas. */
+  region?: string;
 }
 
 interface Props {
@@ -55,7 +57,27 @@ interface Props {
    */
   barOrientation?: 'vertical' | 'horizontal';
   onChangeBarOrientation?: (next: 'vertical' | 'horizontal') => void;
+  /**
+   * True si el job es REGIONAL: habilita la opción "Por Región" en
+   * agrupaciones y el dropdown de filtro por región.
+   */
+  isRegionalJob?: boolean;
 }
+
+/** Nombres legibles para las 7 regiones del SIN (debe coincidir con backend). */
+const REGION_OPTIONS: { value: string; label: string }[] = [
+  { value: 'AN', label: 'Antioquia (AN)' },
+  { value: 'CA', label: 'Caribe (CA)' },
+  { value: 'IN', label: 'Interior (IN)' },
+  { value: 'NE', label: 'Noreste (NE)' },
+  { value: 'OR', label: 'Oriente (OR)' },
+  { value: 'SE', label: 'Suroriente (SE)' },
+  { value: 'SO', label: 'Suroccidente (SO)' },
+];
+
+const REGION_LABELS_FE: Record<string, string> = Object.fromEntries(
+  REGION_OPTIONS.map((o) => [o.value, o.label]),
+);
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
 
@@ -161,6 +183,11 @@ const AGRUPACION_OPTIONS: { value: string; label: string; description: string }[
     value: 'TRANSPORTE_GRUPO',
     label: 'Por Grupo Transporte',
     description: 'Agrupa por tipo de vehículo (motos, livianos, carga, buses, etc.)',
+  },
+  {
+    value: 'REGION',
+    label: 'Por Región',
+    description: 'Agrupa por las 7 regiones del SIN (solo jobs REGIONAL)',
   },
 ];
 
@@ -493,6 +520,7 @@ export function ChartSelector({
   hideGroupBy = false,
   barOrientation,
   onChangeBarOrientation,
+  isRegionalJob = false,
 }: Props) {
   const loc = findLocation(value.tipo);
   const activeModule = loc.moduleId;
@@ -759,9 +787,17 @@ export function ChartSelector({
 
       {/* ── Agrupación (no caps, no porcentaje, no emisiones) ── */}
       {canChangeAgrupacion && !hideGroupBy && (() => {
-        const allowedOptions = currentItem?.allowedGroupings
+        const baseOptions = currentItem?.allowedGroupings
           ? AGRUPACION_OPTIONS.filter(o => currentItem.allowedGroupings!.includes(o.value))
           : AGRUPACION_OPTIONS;
+        // REGION solo aparece cuando el job es REGIONAL; siempre disponible
+        // (independiente de allowedGroupings) para que cualquier chart pueda
+        // colapsar por las 7 regiones del SIN.
+        const allowedOptions = isRegionalJob
+          ? (baseOptions.some(o => o.value === 'REGION')
+              ? baseOptions
+              : [...baseOptions, AGRUPACION_OPTIONS.find(o => o.value === 'REGION')!])
+          : baseOptions.filter(o => o.value !== 'REGION');
         return (
           <div>
             <p style={labelStyle}>Agrupar por</p>
@@ -781,6 +817,7 @@ export function ChartSelector({
                         : opt.value === 'COMBUSTIBLE' ? '🔥'
                         : opt.value === 'FUEL' ? '⛽'
                         : opt.value === 'SECTOR' ? '🏢'
+                        : opt.value === 'REGION' ? '🗺️'
                         : '🔗'}
                     </span>
                     <span>{opt.label}</span>
@@ -1062,6 +1099,28 @@ export function ChartSelector({
             </select>
           </label>
         )}
+
+        {isRegionalJob && (
+          <label style={{ display: 'grid', gap: 6 }}>
+            <p style={labelStyle}>Región</p>
+            <select
+              style={selectStyle}
+              value={value.region ?? ''}
+              onChange={(e) => onChange({ ...value, region: e.target.value })}
+              disabled={value.agrupar_por === 'REGION'}
+              title={
+                value.agrupar_por === 'REGION'
+                  ? 'Deshabilitado mientras la agrupación es "Por Región".'
+                  : undefined
+              }
+            >
+              <option value="">Todas (acumulado nacional)</option>
+              {REGION_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       {/* ── Resumen de selección activa ── */}
@@ -1073,6 +1132,7 @@ export function ChartSelector({
             {activeVariable !== '' ? ` — ${activeCapacityLabel}` : ''}
             {value.sub_filtro != null && value.sub_filtro !== '' ? ` [${FUEL_LABELS[value.sub_filtro] ?? value.sub_filtro}]` : ''}
             {value.loc != null && value.loc !== '' ? ` (${value.loc})` : ''}
+            {isRegionalJob && value.region ? ` · Región: ${REGION_LABELS_FE[value.region] ?? value.region}` : ''}
             {' '}· {displayUnit}
             {canChangeAgrupacion ? ` · ${agrupacionLabel}` : ''}
           </span>

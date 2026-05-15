@@ -74,9 +74,11 @@ from app.visualization.colors import (
     _color_por_grupo_fijo,
     _color_por_sector,
     _color_por_emision,
+    _color_por_region,
     _color_transporte_grupo,
 )
 from app.visualization.labels import get_label
+from app.visualization.regional import REGION_LABELS, transform_regional_df
 from app.visualization.configs import (
     CONFIGS,
     TITULOS_VARIABLES_CAPACIDAD,
@@ -95,6 +97,20 @@ logger = logging.getLogger(__name__)
 
 # Variables principales (columnas tipadas en la BD)
 _MAIN_TYPED_VARIABLES = {"Dispatch", "NewCapacity", "UnmetDemand", "AnnualEmissions"}
+
+
+def _is_regional_job(db: Session, job_id: int) -> bool:
+    """``True`` si el simulation_job se ejecutó en modo REGIONAL.
+
+    Se lee directamente de ``simulation_job.simulation_type`` (heredado del
+    escenario al hacer submit). Una sola query escalar.
+    """
+    sim_type = (
+        db.query(SimulationJob.simulation_type)
+        .filter(SimulationJob.id == job_id)
+        .scalar()
+    )
+    return sim_type == "REGIONAL"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -909,6 +925,7 @@ def build_chart_data(
     variable: str | None = None,
     agrupar_por: str | None = None,
     es_porcentaje_override: bool = False,
+    region: str | None = None,
 ) -> ChartDataResponse:
     """Construye la respuesta de gráfica para un solo escenario.
 
@@ -926,6 +943,9 @@ def build_chart_data(
         Localización (URB, RUR, ZNI).
     variable : str | None
         Override de variable para configs de capacidad.
+    region : str | None
+        Solo aplica si el job es REGIONAL. Filtra a una región específica
+        (``'AN'..'SO'``). Ignorado cuando ``agrupar_por == 'REGION'``.
     """
     # ── Ruta especial: recursos vs demanda ────────────────────────────────
     if tipo == "recursos_vs_demanda":
@@ -987,6 +1007,14 @@ def build_chart_data(
     if filtro_fn is not None:
         df = filtro_fn(df, sub_filtro=sub_filtro, loc=loc)
 
+    # ── Transformación regional (jobs REGIONAL) ──────────────────────────
+    if _is_regional_job(db, job_id):
+        df = transform_regional_df(
+            df,
+            region_filter=region,
+            agrupar_por=agrupar_por,
+        )
+
     if df.empty:
         return ChartDataResponse(
             categories=[],
@@ -1031,6 +1059,9 @@ def build_chart_data(
         df["COLOR"] = df["TECHNOLOGY"].apply(_map_h2_verde_azul_gris)
     elif agrupar_col == "TRANSPORTE_GRUPO":
         df["COLOR"] = df["TECHNOLOGY"].apply(_map_transporte_grupo)
+    elif agrupar_col == "REGION":
+        # transform_regional_df ya añadió la columna REGION con prefijos AN..SO.
+        df["COLOR"] = df["REGION"] if "REGION" in df.columns else df["TECHNOLOGY"]
     elif agrupar_col == "YEAR":
         # emisiones_total: solo agrupa por año
         df["COLOR"] = "Total"
@@ -1075,6 +1106,8 @@ def build_chart_data(
             color_fn = _color_por_emision
         elif agrupar_col == "TRANSPORTE_GRUPO":
             color_fn = _color_transporte_grupo
+        elif agrupar_col == "REGION":
+            color_fn = _color_por_region
         else:
             color_fn = (
                 cfg.get("color_fn")
@@ -1098,6 +1131,8 @@ def build_chart_data(
 
     def _composite_label(code: str) -> str:
         # COLOR de la forma "UPSREF_XXX::FUEL" → "Refinería ... — Combustible"
+        if agrupar_col == "REGION":
+            return REGION_LABELS.get(code, code)
         if "::" in code:
             left, right = code.split("::", 1)
             return f"{get_label(left)} — {get_label(right)}"
@@ -1418,6 +1453,7 @@ def build_comparison_facet_data(
     agrupar_por: str | None = None,
     job_display_overrides: dict[int, str] | None = None,
     es_porcentaje_override: bool = False,
+    region: str | None = None,
 ) -> CompareChartFacetResponse:
     """Construye datos para comparación por escenarios completos (facets).
 
@@ -1496,6 +1532,7 @@ def build_comparison_facet_data(
             variable=variable,
             agrupar_por=agrupar_por,
             es_porcentaje_override=es_porcentaje_override,
+            region=region,
         )
 
         if not facets:
