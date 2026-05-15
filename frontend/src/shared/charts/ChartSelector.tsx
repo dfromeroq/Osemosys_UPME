@@ -40,6 +40,12 @@ export interface ChartSelection {
   tipo_electrico?: 'liquidos' | 'todos' | 'termica';
   /** Solo jobs REGIONAL: filtro por prefijo regional ('AN'..'SO') o undefined = todas. */
   region?: string;
+  /**
+   * Código de timeslice para filtrar la gráfica a un TS específico (p. ej.
+   * 'S101'). Cuando es null/undefined la gráfica agrega por año sumando
+   * todos los TS — comportamiento por defecto.
+   */
+  timeslice?: string | null;
 }
 
 interface Props {
@@ -62,6 +68,11 @@ interface Props {
    * agrupaciones y el dropdown de filtro por región.
    */
   isRegionalJob?: boolean;
+   * Códigos de timeslice presentes en los outputs del job actual.
+   * Si tiene 2+ entradas se muestra un selector para filtrar la gráfica a
+   * un TS específico (o "todos" → agregación anual).
+   */
+  availableTimeslices?: string[];
 }
 
 /** Nombres legibles para las 7 regiones del SIN (debe coincidir con backend). */
@@ -521,6 +532,7 @@ export function ChartSelector({
   barOrientation,
   onChangeBarOrientation,
   isRegionalJob = false,
+  availableTimeslices,
 }: Props) {
   const loc = findLocation(value.tipo);
   const activeModule = loc.moduleId;
@@ -1117,6 +1129,20 @@ export function ChartSelector({
               <option value="">Todas (acumulado nacional)</option>
               {REGION_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
+        {Array.isArray(availableTimeslices) && availableTimeslices.length >= 2 && (
+          <label style={{ display: 'grid', gap: 6 }}>
+            <p style={labelStyle}>Timeslice</p>
+            <select
+              style={selectStyle}
+              value={value.timeslice ?? ''}
+              onChange={(e) => {
+                const next = e.target.value;
+                onChange({ ...value, timeslice: next === '' ? null : next });
+              }}
+            >
+              <option value="">Todos (agregado anual)</option>
+              {availableTimeslices.map((ts) => (
+                <option key={ts} value={ts}>{ts}</option>
               ))}
             </select>
           </label>
@@ -1133,6 +1159,7 @@ export function ChartSelector({
             {value.sub_filtro != null && value.sub_filtro !== '' ? ` [${FUEL_LABELS[value.sub_filtro] ?? value.sub_filtro}]` : ''}
             {value.loc != null && value.loc !== '' ? ` (${value.loc})` : ''}
             {isRegionalJob && value.region ? ` · Región: ${REGION_LABELS_FE[value.region] ?? value.region}` : ''}
+            {value.timeslice != null && value.timeslice !== '' ? ` · TS=${value.timeslice}` : ''}
             {' '}· {displayUnit}
             {canChangeAgrupacion ? ` · ${agrupacionLabel}` : ''}
           </span>

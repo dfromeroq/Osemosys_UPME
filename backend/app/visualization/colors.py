@@ -58,6 +58,12 @@ FAMILIAS_TEC = {
     "TERMICA_FOSIL": [
         "PWRCOA",
         "PWRCOACCS",
+        # ``PWRNGS`` es la tecnología consolidada que aparece en charts donde
+        # se aplica ``PWR_TECH_ALIASES`` (cap_electricidad / prd_electricidad
+        # / elec_produccion). Agrupa NGS_CC + NGS_CS + NGSCCS + JET + LPG.
+        # En el resto de charts NGS_CC/NGS_CS/NGSCCS/JET/LPG conservan su
+        # color individual.
+        "PWRNGS",
         "PWRNGS_CC",
         "PWRNGS_CS",
         "PWRNGSCCS",

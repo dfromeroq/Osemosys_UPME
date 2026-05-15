@@ -791,6 +791,7 @@ class SimulationResultsService:
                     columns="year_key",
                     values="value",
                     aggfunc="first",
+                    dropna=False,
                 )
                 .reset_index()
             )

@@ -1777,6 +1777,148 @@ class ScenarioService:
         return {"items": items, "total": total, "offset": safe_offset, "limit": safe_limit}
 
     @staticmethod
+    def _serialize_audit_entry(r) -> dict:
+        return {
+            "id": int(r.id),
+            "param_name": str(r.param_name),
+            "id_osemosys_param_value": int(r.id_osemosys_param_value)
+            if r.id_osemosys_param_value is not None
+            else None,
+            "action": str(r.action),
+            "old_value": float(r.old_value) if r.old_value is not None else None,
+            "new_value": float(r.new_value) if r.new_value is not None else None,
+            "dimensions_json": r.dimensions_json,
+            "source": str(r.source),
+            "changed_by": str(r.changed_by),
+            "batch_id": str(r.batch_id) if r.batch_id else None,
+            "batch_label": str(r.batch_label) if r.batch_label else None,
+            "created_at": r.created_at,
+        }
+
+    @staticmethod
+    def list_scenario_audit(
+        db: Session,
+        *,
+        scenario_id: int,
+        current_user: User,
+        offset: int = 0,
+        limit: int = 50,
+        group_by_batch: bool = True,
+        filters: dict | None = None,
+    ) -> dict:
+        """Listado scenario-wide de auditoría con filtros opcionales.
+
+        ``filters`` admite:
+          ``param_names``, ``actions``, ``sources``, ``changed_by``,
+          ``batch_ids``, ``from_date``, ``to_date``, ``year_from``, ``year_to``,
+          ``q``, ``value_id`` y ``dimension_filters``
+          (dict con keys region_name/technology_name/fuel_name/emission_name/udc_name).
+        """
+        ScenarioService._require_access(
+            db, scenario_id=scenario_id, current_user=current_user
+        )
+        flt = filters or {}
+        safe_offset = max(0, offset)
+        safe_limit = max(1, min(limit, 500))
+
+        if group_by_batch:
+            batches, total_batches, total_entries = (
+                OsemosysParamAuditService.list_grouped_batches(
+                    db,
+                    scenario_id=scenario_id,
+                    offset=safe_offset,
+                    limit=safe_limit,
+                    **flt,
+                )
+            )
+            items = [
+                {
+                    "batch_id": b["batch_id"],
+                    "batch_label": b["batch_label"],
+                    "changed_by": b["changed_by"],
+                    "source": b["source"],
+                    "started_at": b["started_at"],
+                    "ended_at": b["ended_at"],
+                    "stats": b["stats"],
+                    "params_touched": b["params_touched"],
+                    "entries_count": b["entries_count"],
+                    "preview": [
+                        ScenarioService._serialize_audit_entry(r) for r in b["preview"]
+                    ],
+                }
+                for b in batches
+            ]
+            return {
+                "items": items,
+                "total_batches": total_batches,
+                "total_entries": total_entries,
+                "offset": safe_offset,
+                "limit": safe_limit,
+                "grouped": True,
+            }
+
+        rows, total_entries = OsemosysParamAuditService.list_entries(
+            db,
+            scenario_id=scenario_id,
+            offset=safe_offset,
+            limit=safe_limit,
+            **flt,
+        )
+        items = [ScenarioService._serialize_audit_entry(r) for r in rows]
+        return {
+            "items": items,
+            "total_batches": 0,
+            "total_entries": total_entries,
+            "offset": safe_offset,
+            "limit": safe_limit,
+            "grouped": False,
+        }
+
+    @staticmethod
+    def list_scenario_audit_batch_entries(
+        db: Session,
+        *,
+        scenario_id: int,
+        batch_id: str,
+        current_user: User,
+        offset: int = 0,
+        limit: int = 100,
+        filters: dict | None = None,
+    ) -> dict:
+        """Entradas individuales de un batch_id concreto."""
+        ScenarioService._require_access(
+            db, scenario_id=scenario_id, current_user=current_user
+        )
+        flt = dict(filters or {})
+        flt["batch_ids"] = [batch_id]
+        rows, total = OsemosysParamAuditService.list_entries(
+            db,
+            scenario_id=scenario_id,
+            offset=max(0, offset),
+            limit=max(1, min(limit, 1000)),
+            **flt,
+        )
+        items = [ScenarioService._serialize_audit_entry(r) for r in rows]
+        return {
+            "items": items,
+            "total": total,
+            "offset": max(0, offset),
+            "limit": max(1, min(limit, 1000)),
+        }
+
+    @staticmethod
+    def list_scenario_audit_facets(
+        db: Session,
+        *,
+        scenario_id: int,
+        current_user: User,
+    ) -> dict:
+        ScenarioService._require_access(
+            db, scenario_id=scenario_id, current_user=current_user
+        )
+        return OsemosysParamAuditService.list_facets(db, scenario_id=scenario_id)
+
+    @staticmethod
     def ensure_default_reserve_margin_udc(db: Session, *, scenario_id: int) -> None:
         """Inserta valores UDC por defecto tipo 'RESERVEMARGIN' para un escenario.
 

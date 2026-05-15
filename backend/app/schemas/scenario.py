@@ -554,6 +554,8 @@ class OsemosysParamAuditEntryPublic(BaseModel):
     dimensions_json: dict | list | None = None
     source: str
     changed_by: str
+    batch_id: str | None = None
+    batch_label: str | None = None
     created_at: datetime
 
 
@@ -564,6 +566,53 @@ class OsemosysParamAuditPage(BaseModel):
     total: int
     offset: int
     limit: int
+
+
+class ScenarioAuditBatchPublic(BaseModel):
+    """Batch (operación) que agrupa N entradas de auditoría."""
+
+    batch_id: str | None = None
+    batch_label: str | None = None
+    changed_by: str
+    source: str
+    started_at: datetime
+    ended_at: datetime
+    stats: dict[str, int]
+    params_touched: list[str]
+    entries_count: int
+    preview: list[OsemosysParamAuditEntryPublic]
+
+
+class ScenarioAuditPage(BaseModel):
+    """Listado scenario-wide de auditoría (agrupado o plano)."""
+
+    items: list[ScenarioAuditBatchPublic] | list[OsemosysParamAuditEntryPublic]
+    total_batches: int
+    total_entries: int
+    offset: int
+    limit: int
+    grouped: bool
+
+
+class ScenarioAuditFacets(BaseModel):
+    """Valores únicos disponibles en el historial del escenario.
+
+    Solo se devuelven valores que efectivamente tuvieron cambios; eso permite
+    a la UI mostrar dropdowns de filtros sin opciones vacías.
+    """
+
+    param_names: list[str]
+    changed_by: list[str]
+    sources: list[str]
+    actions: list[str]
+    region_names: list[str]
+    technology_names: list[str]
+    fuel_names: list[str]
+    emission_names: list[str]
+    udc_names: list[str]
+    years: list[int]
+    date_min: datetime | None = None
+    date_max: datetime | None = None
 
 
 # ============================================================================

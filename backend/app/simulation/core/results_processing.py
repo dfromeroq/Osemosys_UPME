@@ -316,11 +316,15 @@ def _extract_dispatch(
     instance: pyo.ConcreteModel,
     region_id_by_name: dict[str, int],
     technology_id_by_name: dict[str, int],
+    timeslice_id_by_name: dict[str, int] | None = None,
 ) -> list[dict]:
-    """Dispatch anual por (región, tecnología, año).
+    """Dispatch por (región, timeslice, tecnología, año).
 
-    Usa RateOfActivity × YearSplit para actividad por timeslice; suma por año.
-    Asigna coste variable medio y el fuel 'principal' (OutputActivityRatio > 0) por (r,t,y).
+    Usa RateOfActivity × YearSplit para actividad por timeslice. Preserva la
+    dimensión TIMESLICE en la salida (una fila por (r, l, t, y) con dispatch
+    distinto de cero); el frontend agrega por año cuando corresponde.
+    Asigna coste variable medio y el fuel 'principal' (OutputActivityRatio > 0)
+    por (r, t, y).
     """
     roa_raw = _safe_extract(instance.RateOfActivity)
 
@@ -339,17 +343,17 @@ def _extract_dispatch(
     if vc_param is not None:
         vc_data = _safe_extract(vc_param) if hasattr(vc_param, "extract_values") else {}
 
-    activity_by_rty: dict[tuple, float] = defaultdict(float)
-    cost_by_rty: dict[tuple, float] = defaultdict(float)
+    activity_by_rlty: dict[tuple, float] = defaultdict(float)
+    cost_by_rlty: dict[tuple, float] = defaultdict(float)
 
     for (r, l, t, mo, y), roa in roa_raw.items():
         if abs(roa) < _EPS:
             continue
         ys = ys_data.get((l, y), 1.0) if ys_data else 1.0
         act = roa * ys
-        activity_by_rty[(r, t, y)] += act
+        activity_by_rlty[(r, l, t, y)] += act
         vc = vc_data.get((r, t, mo, y), 0.0) if vc_data else 0.0
-        cost_by_rty[(r, t, y)] += act * vc
+        cost_by_rlty[(r, l, t, y)] += act * vc
 
     best_fuel: dict[tuple, str] = {}
     for (r, t, f, mo, y), oar_val in oar_data.items():
@@ -358,17 +362,20 @@ def _extract_dispatch(
             if key not in best_fuel:
                 best_fuel[key] = f
 
+    ts_lookup = timeslice_id_by_name or {}
     results = []
-    for (r, t, y), total_act in activity_by_rty.items():
+    for (r, l, t, y), total_act in activity_by_rlty.items():
         if total_act < _EPS:
             continue
-        avg_cost = cost_by_rty[(r, t, y)] / total_act if total_act > 0 else 0.0
+        avg_cost = cost_by_rlty[(r, l, t, y)] / total_act if total_act > 0 else 0.0
         results.append({
             "region_id": region_id_by_name.get(r, -1),
             "year": _coerce_year(y),
             "technology_name": t,
             "technology_id": technology_id_by_name.get(t, -1),
             "fuel_name": best_fuel.get((r, t, y)),
+            "timeslice_name": l,
+            "timeslice_id": ts_lookup.get(l),
             "dispatch": total_act,
             "cost": avg_cost,
         })
@@ -687,7 +694,12 @@ def process_results(
         if y_num is not None:
             normalized_years.append(y_num)
 
-    dispatch = _extract_dispatch(instance, region_id_by_name, technology_id_by_name)
+    dispatch = _extract_dispatch(
+        instance,
+        region_id_by_name,
+        technology_id_by_name,
+        timeslice_id_by_name=timeslice_id_by_name,
+    )
     new_capacity = _extract_new_capacity(instance, region_id_by_name, technology_id_by_name)
     unmet = _compute_unmet_demand(instance, region_id_by_name)
     annual_emissions = _extract_annual_emissions(
