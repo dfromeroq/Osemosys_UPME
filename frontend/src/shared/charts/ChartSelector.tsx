@@ -68,6 +68,7 @@ interface Props {
    * agrupaciones y el dropdown de filtro por región.
    */
   isRegionalJob?: boolean;
+  /**
    * Códigos de timeslice presentes en los outputs del job actual.
    * Si tiene 2+ entradas se muestra un selector para filtrar la gráfica a
    * un TS específico (o "todos" → agregación anual).
@@ -1129,6 +1130,11 @@ export function ChartSelector({
               <option value="">Todas (acumulado nacional)</option>
               {REGION_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </label>
+        )}
+
         {Array.isArray(availableTimeslices) && availableTimeslices.length >= 2 && (
           <label style={{ display: 'grid', gap: 6 }}>
             <p style={labelStyle}>Timeslice</p>
