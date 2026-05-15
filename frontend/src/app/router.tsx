@@ -21,6 +21,7 @@ import { RouteErrorPage } from "@/pages/RouteErrorPage";
 const HomePage = lazy(() => import("@/pages/HomePage").then((m) => ({ default: m.HomePage })));
 const ScenariosPage = lazy(() => import("@/pages/ScenariosPage").then((m) => ({ default: m.ScenariosPage })));
 const ScenarioDetailPage = lazy(() => import("@/pages/ScenarioDetailPage").then((m) => ({ default: m.ScenarioDetailPage })));
+const ScenarioHistoryPage = lazy(() => import("@/pages/ScenarioHistoryPage").then((m) => ({ default: m.ScenarioHistoryPage })));
 const CatalogsPage = lazy(() => import("@/pages/CatalogsPage").then((m) => ({ default: m.CatalogsPage })));
 const SimulationPage = lazy(() => import("@/pages/SimulationPage").then((m) => ({ default: m.SimulationPage })));
 const ResultsPage = lazy(() => import("@/pages/ResultsPage").then((m) => ({ default: m.ResultsPage })));
@@ -98,6 +99,7 @@ export const router = createBrowserRouter([
               { index: true, element: <SuspenseWrapper><HomePage /></SuspenseWrapper> },
               { path: "scenarios", element: <SuspenseWrapper><ScenariosPage /></SuspenseWrapper> },
               { path: "scenarios/:id", element: <SuspenseWrapper><ScenarioDetailPage /></SuspenseWrapper> },
+              { path: "scenarios/:id/history", element: <SuspenseWrapper><ScenarioHistoryPage /></SuspenseWrapper> },
               { path: "change-requests", element: <SuspenseWrapper><ChangeRequestsPage /></SuspenseWrapper> },
               { path: "simulation", element: <SuspenseWrapper><SimulationPage /></SuspenseWrapper> },
               { path: "results", element: <SuspenseWrapper><ResultsPage /></SuspenseWrapper> },
