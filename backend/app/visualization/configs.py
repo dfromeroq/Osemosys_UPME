@@ -100,6 +100,47 @@ TITULOS_VARIABLES_CAPACIDAD = {
 
 
 # ════════════════════════════════════════════════════════════════════════
+# AGRUPACIÓN DE TECNOLOGÍAS DEL SECTOR ELÉCTRICO
+# ════════════════════════════════════════════════════════════════════════
+#
+# Algunas tecnologías son variantes de otras y, para las gráficas de
+# generación y capacidad instalada del sector eléctrico, conviene mostrarlas
+# agrupadas (sumadas) bajo la tecnología "padre". El alias se aplica DESPUÉS
+# del filtro (`_filtro_pwr`) y ANTES del groupby/coloreo, para que la suma
+# quede consolidada y la leyenda muestre solo el nombre del padre.
+#
+# Origen → Destino (display = label del destino):
+#   PWRSOLRTP_ZNI → PWRSOLRTP   (Solar FV Residencial ZNI → Solar FV GD)
+#   PWRJET        → PWRNGS      (Jet Fuel                → Gas Natural)
+#   PWRLPG        → PWRNGS      (GLP                     → Gas Natural)
+#   PWRNGS_CS     → PWRNGS      (Gas Natural Ciclo Simple → Gas Natural)
+#   PWRNGS_CC     → PWRNGS      (Gas Natural Ciclo Combinado → Gas Natural)
+#   PWRNGSCCS     → PWRNGS      (Gas Natural+CCS         → Gas Natural)
+#   PWRHYDROR_NDC → PWRHYDROR   (Filo de Agua NDC        → Filo de Agua)
+#   PWRSTD        → PWRDSL      (Gen Diésel Independiente → Diésel)
+PWR_TECH_ALIASES: dict[str, str] = {
+    "PWRSOLRTP_ZNI": "PWRSOLRTP",
+    "PWRJET": "PWRNGS",
+    "PWRLPG": "PWRNGS",
+    "PWRNGS_CS": "PWRNGS",
+    "PWRNGS_CC": "PWRNGS",
+    "PWRNGSCCS": "PWRNGS",
+    "PWRHYDROR_NDC": "PWRHYDROR",
+    "PWRSTD": "PWRDSL",
+}
+
+# Configs (tipo) en los que se aplican los aliases anteriores. Limitamos a los
+# tres charts principales del sector eléctrico para no afectar las vistas de
+# detalle (líquidos/térmica/factor planta) donde el usuario quiere ver cada
+# tecnología por separado.
+CONFIGS_CON_ALIAS_PWR: frozenset[str] = frozenset({
+    "cap_electricidad",
+    "prd_electricidad",
+    "elec_produccion",
+})
+
+
+# ════════════════════════════════════════════════════════════════════════
 # FILTROS NOMBRADOS (reemplazan los lambdas del original)
 # ════════════════════════════════════════════════════════════════════════
 

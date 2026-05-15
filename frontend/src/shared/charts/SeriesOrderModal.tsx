@@ -55,6 +55,13 @@ export function SeriesOrderModal({
     if (open) setDraft(initialOrder);
   }, [open, initialOrder]);
 
+  // Estado del drag & drop. ``dragIndex`` = índice de la fila que el usuario
+  // está arrastrando; ``hoverIndex`` = posición de inserción mostrada (entre
+  // dos filas). Mantenerlos como estado dispara re-render para pintar el
+  // indicador visual mientras se arrastra.
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+
   if (!open) return null;
 
   const move = (idx: number, delta: -1 | 1) => {
@@ -63,6 +70,19 @@ export function SeriesOrderModal({
       const target = idx + delta;
       if (target < 0 || target >= next.length) return prev;
       [next[idx], next[target]] = [next[target]!, next[idx]!];
+      return next;
+    });
+  };
+
+  const reorderByDrag = (from: number, insertAt: number) => {
+    setDraft((prev) => {
+      if (from === insertAt || from === insertAt - 1) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      // Si quitamos un ítem antes de la posición de inserción, el índice
+      // destino baja en 1 para mantener la posición visual prometida.
+      const adjusted = from < insertAt ? insertAt - 1 : insertAt;
+      next.splice(adjusted, 0, moved!);
       return next;
     });
   };
@@ -131,46 +151,128 @@ export function SeriesOrderModal({
           {draft.length === 0 ? (
             <p className="text-xs text-slate-500">No hay series.</p>
           ) : (
-            <ul className="space-y-1">
-              {draft.map((name, idx) => (
-                <li
-                  key={name}
-                  className="flex items-center gap-2 rounded border border-slate-800 bg-slate-950/40 px-2 py-1.5"
-                >
-                  <span
-                    className="inline-block h-4 w-4 shrink-0 rounded-sm border border-slate-700"
-                    style={{ background: colorByName.get(name) || "#94a3b8" }}
-                    aria-hidden
-                  />
-                  <span className="flex-1 min-w-0 truncate text-xs">
-                    <span className="text-slate-500 mr-2 font-mono">
-                      {String(idx + 1).padStart(2, "0")}
-                    </span>
-                    {name}
-                  </span>
-                  <div className="flex shrink-0 gap-1">
-                    <button
-                      type="button"
-                      onClick={() => move(idx, -1)}
-                      disabled={idx === 0}
-                      className="rounded border border-slate-700 px-2 py-0.5 text-xs disabled:opacity-30 hover:bg-slate-700"
-                      aria-label="Subir"
+            <>
+              <p className="m-0 mb-2 text-[11px] text-slate-500">
+                Arrastra una fila desde el manejador <span className="font-mono">⋮⋮</span> para reordenar, o usa los botones ▲▼.
+              </p>
+              <ul
+                className="space-y-1"
+                onDragOver={(e) => {
+                  // Permite drop en la lista (necesario para que onDrop dispare
+                  // si el cursor cae fuera de cualquier fila pero dentro de la
+                  // lista — ej. al final).
+                  if (dragIndex !== null) e.preventDefault();
+                }}
+                onDrop={(e) => {
+                  if (dragIndex === null) return;
+                  e.preventDefault();
+                  // Fallback: drop al final de la lista si no hay hoverIndex
+                  // específico (cursor sobre el padding inferior).
+                  const insertAt = hoverIndex ?? draft.length;
+                  reorderByDrag(dragIndex, insertAt);
+                  setDragIndex(null);
+                  setHoverIndex(null);
+                }}
+              >
+                {draft.map((name, idx) => {
+                  const isDragging = dragIndex === idx;
+                  const showTopIndicator = hoverIndex === idx && dragIndex !== null && dragIndex !== idx && dragIndex !== idx - 1;
+                  const showBottomIndicator = idx === draft.length - 1 && hoverIndex === draft.length && dragIndex !== null && dragIndex !== idx;
+                  return (
+                    <li
+                      key={name}
+                      draggable
+                      onDragStart={(e) => {
+                        setDragIndex(idx);
+                        setHoverIndex(idx);
+                        e.dataTransfer.effectAllowed = "move";
+                        // Algunos navegadores requieren setData para que el
+                        // drag se inicie correctamente.
+                        try { e.dataTransfer.setData("text/plain", name); } catch { /* noop */ }
+                      }}
+                      onDragEnter={(e) => {
+                        if (dragIndex === null) return;
+                        e.preventDefault();
+                      }}
+                      onDragOver={(e) => {
+                        if (dragIndex === null) return;
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = "move";
+                        // Mitad superior → insertar antes de esta fila;
+                        // mitad inferior → insertar después.
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        const before = e.clientY < rect.top + rect.height / 2;
+                        setHoverIndex(before ? idx : idx + 1);
+                      }}
+                      onDragEnd={() => {
+                        setDragIndex(null);
+                        setHoverIndex(null);
+                      }}
+                      className={[
+                        "relative flex items-center gap-2 rounded border bg-slate-950/40 px-2 py-1.5 transition-opacity",
+                        isDragging
+                          ? "border-emerald-500/50 opacity-50"
+                          : "border-slate-800",
+                      ].join(" ")}
+                      style={{
+                        cursor: dragIndex !== null ? "grabbing" : undefined,
+                      }}
                     >
-                      ▲
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => move(idx, 1)}
-                      disabled={idx === draft.length - 1}
-                      className="rounded border border-slate-700 px-2 py-0.5 text-xs disabled:opacity-30 hover:bg-slate-700"
-                      aria-label="Bajar"
-                    >
-                      ▼
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                      {showTopIndicator ? (
+                        <span
+                          aria-hidden
+                          className="pointer-events-none absolute -top-[3px] left-0 right-0 h-[3px] rounded-full bg-emerald-400"
+                        />
+                      ) : null}
+                      {showBottomIndicator ? (
+                        <span
+                          aria-hidden
+                          className="pointer-events-none absolute -bottom-[3px] left-0 right-0 h-[3px] rounded-full bg-emerald-400"
+                        />
+                      ) : null}
+                      <span
+                        title="Arrastra para reordenar"
+                        className="inline-flex h-5 w-4 shrink-0 cursor-grab select-none items-center justify-center text-base leading-none text-slate-500 hover:text-slate-200 active:cursor-grabbing"
+                        aria-hidden
+                      >
+                        ⋮⋮
+                      </span>
+                      <span
+                        className="inline-block h-4 w-4 shrink-0 rounded-sm border border-slate-700"
+                        style={{ background: colorByName.get(name) || "#94a3b8" }}
+                        aria-hidden
+                      />
+                      <span className="flex-1 min-w-0 truncate text-xs">
+                        <span className="text-slate-500 mr-2 font-mono">
+                          {String(idx + 1).padStart(2, "0")}
+                        </span>
+                        {name}
+                      </span>
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => move(idx, -1)}
+                          disabled={idx === 0}
+                          className="rounded border border-slate-700 px-2 py-0.5 text-xs disabled:opacity-30 hover:bg-slate-700"
+                          aria-label="Subir"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => move(idx, 1)}
+                          disabled={idx === draft.length - 1}
+                          className="rounded border border-slate-700 px-2 py-0.5 text-xs disabled:opacity-30 hover:bg-slate-700"
+                          aria-label="Bajar"
+                        >
+                          ▼
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
           )}
         </div>
 

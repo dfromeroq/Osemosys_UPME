@@ -297,6 +297,28 @@ export function ResultDetailPage() {
   const [compareLineData, setCompareLineData] = useState<ChartDataResponse | null>(null);
   const [paretoData, setParetoData] = useState<ParetoChartResponse | null>(null);
   const [loadingChart, setLoadingChart] = useState(false);
+  const [availableTimeslices, setAvailableTimeslices] = useState<string[]>([]);
+
+  // Cargar los timeslices presentes en los outputs del job actual.
+  // Sirve para mostrar el selector de TS en `ChartSelector` cuando hay >1.
+  useEffect(() => {
+    if (!currentRunId || Number.isNaN(currentRunId)) {
+      setAvailableTimeslices([]);
+      return;
+    }
+    let cancelled = false;
+    simulationApi
+      .getJobTimeslices(currentRunId)
+      .then((ts) => {
+        if (!cancelled) setAvailableTimeslices(Array.isArray(ts) ? ts : []);
+      })
+      .catch(() => {
+        if (!cancelled) setAvailableTimeslices([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentRunId]);
 
   const [chartBarOrientation, setChartBarOrientation] = useState<ChartBarOrientation>(() =>
     loadChartBarOrientation(),
@@ -342,7 +364,7 @@ export function ResultDetailPage() {
   // (otro tipo, otra agrupación, otro filtro): el conjunto de series cambia,
   // así que un orden custom anterior dejaría de tener sentido.
   const chartIdentityKey =
-    `${chartSelection.tipo}|${chartSelection.sub_filtro ?? ''}|${chartSelection.loc ?? ''}|${chartSelection.variable ?? ''}|${chartSelection.agrupar_por ?? ''}`;
+    `${chartSelection.tipo}|${chartSelection.sub_filtro ?? ''}|${chartSelection.loc ?? ''}|${chartSelection.variable ?? ''}|${chartSelection.agrupar_por ?? ''}|${chartSelection.timeslice ?? ''}`;
   useEffect(() => {
     setCustomSeriesOrder(null);
     setYAxisMin(null);
@@ -840,6 +862,7 @@ export function ResultDetailPage() {
       if (chartSelection.loc) params.loc = chartSelection.loc;
       if (chartSelection.variable) params.variable = chartSelection.variable;
       if (chartSelection.agrupar_por) params.agrupar_por = chartSelection.agrupar_por;
+      if (chartSelection.timeslice) params.timeslice = chartSelection.timeslice;
       if (esPorcentaje) params.es_porcentaje = 'true';
 
       if (chartSelection.viewMode === 'pareto') {
@@ -1900,6 +1923,7 @@ export function ResultDetailPage() {
             hideGroupBy={chartCompareMode === 'line-total'}
             barOrientation={chartBarOrientation}
             onChangeBarOrientation={setChartBarOrientation}
+            availableTimeslices={availableTimeslices}
           />
 
           {/* Series manuales overlay: solo aplican en gráficas de línea. */}

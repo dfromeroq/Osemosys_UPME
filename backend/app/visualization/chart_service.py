@@ -21,7 +21,7 @@ import pandas as pd
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import OsemosysOutputParamValue, SimulationJob
+from app.models import OsemosysOutputParamValue, SimulationJob, Timeslice
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -78,6 +78,8 @@ from app.visualization.colors import (
 from app.visualization.labels import get_label
 from app.visualization.configs import (
     CONFIGS,
+    CONFIGS_CON_ALIAS_PWR,
+    PWR_TECH_ALIASES,
     TITULOS_VARIABLES_CAPACIDAD,
     NOMBRES_COMBUSTIBLES,
     _map_h2_verde_azul_gris,
@@ -130,8 +132,14 @@ def _load_variable_data(
     """
 
     # ── Consulta BD ──────────────────────────────────────────────────────
+    # Hacemos LEFT JOIN con `timeslice` para recuperar el código de TS cuando
+    # el output tiene `id_timeslice` poblado (Dispatch tipado; intermedias
+    # como ProductionByTechnology / UseByTechnology / RateOfActivity). Las
+    # filas sin TS quedan con cadena vacía y el filtro de `timeslice` en
+    # `build_chart_data` simplemente no las restringe.
     rows = (
-        db.query(OsemosysOutputParamValue)
+        db.query(OsemosysOutputParamValue, Timeslice.code.label("ts_code"))
+        .outerjoin(Timeslice, OsemosysOutputParamValue.id_timeslice == Timeslice.id)
         .filter(
             OsemosysOutputParamValue.id_simulation_job == job_id,
             OsemosysOutputParamValue.variable_name == variable_name,
@@ -140,16 +148,17 @@ def _load_variable_data(
     )
 
     if not rows:
-        return pd.DataFrame(columns=["TECHNOLOGY", "FUEL", "YEAR", "VALUE"])
+        return pd.DataFrame(columns=["TECHNOLOGY", "FUEL", "TIMESLICE", "YEAR", "VALUE"])
 
     # ── Construir DataFrame ──────────────────────────────────────────────
     if variable_name in _MAIN_TYPED_VARIABLES:
         records = []
-        for r in rows:
+        for r, ts_code in rows:
             records.append(
                 {
                     "TECHNOLOGY": r.technology_name or "",
                     "FUEL": r.fuel_name or "",
+                    "TIMESLICE": ts_code or "",
                     "YEAR": r.year,
                     "VALUE": float(r.value),
                 }
@@ -159,7 +168,7 @@ def _load_variable_data(
     else:
         # Variable intermedia → extraer de index_json
         records = []
-        for r in rows:
+        for r, ts_code in rows:
             idx_raw = r.index_json if r.index_json else []
             idx = idx_raw if isinstance(idx_raw, (list, tuple)) else []
             # Convenciones del pipeline:
@@ -187,6 +196,7 @@ def _load_variable_data(
                 {
                     "TECHNOLOGY": technology,
                     "FUEL": fuel,
+                    "TIMESLICE": ts_code or "",
                     "YEAR": year,
                     "VALUE": float(r.value),
                 }
@@ -274,6 +284,25 @@ def _year_keep_indices(
     return keep
 
 
+def _aplicar_alias_pwr(df: pd.DataFrame) -> pd.DataFrame:
+    """Reescribe ``TECHNOLOGY`` según ``PWR_TECH_ALIASES``.
+
+    Aplica los aliases definidos en ``configs.PWR_TECH_ALIASES`` sobre la
+    columna ``TECHNOLOGY``. Las filas cuya tecnología no esté en el mapa
+    quedan intactas. Llamar DESPUÉS del filtro y ANTES del ``groupby``: así
+    las variantes (p. ej. ``PWRSOLRTP_ZNI``) se suman bajo la tecnología
+    padre (``PWRSOLRTP``) y la leyenda muestra una sola entrada con el label
+    del padre.
+    """
+    if df is None or df.empty or "TECHNOLOGY" not in df.columns:
+        return df
+    if not PWR_TECH_ALIASES:
+        return df
+    df = df.copy()
+    df["TECHNOLOGY"] = df["TECHNOLOGY"].replace(PWR_TECH_ALIASES)
+    return df
+
+
 def reorder_chart_series(chart: Any, order: list[str] | None) -> None:
     """Reordena ``chart.series`` in-place según ``order`` (lista de nombres).
 
@@ -301,6 +330,46 @@ def reorder_chart_series(chart: Any, order: list[str] | None) -> None:
         if s.name not in used:
             new_series.append(s)
     chart.series = new_series
+
+
+def filter_chart_series(chart: Any, names: list[str] | None) -> None:
+    """Restringe ``chart.series`` a las que están en ``names`` (in-place).
+
+    Match exacto por ``series.name``. ``None`` o lista vacía → no-op.
+    Mantiene el orden actual del chart, no el de ``names``.
+    """
+    if not names:
+        return
+    series = getattr(chart, "series", None)
+    if not series:
+        return
+    allowed = set(names)
+    chart.series = [s for s in series if s.name in allowed]
+
+
+def filter_chart_categories(chart: Any, keep_categories: list[str] | None) -> None:
+    """Restringe ``chart.categories`` a las que están en ``keep_categories``.
+
+    El filtrado se aplica también a cada ``series.data`` por índice posicional
+    para mantener la alineación. Match por ``str(category)`` (los años suelen
+    venir como ``int``). ``None`` o lista vacía → no-op.
+    """
+    if not keep_categories:
+        return
+    cats = getattr(chart, "categories", None)
+    series = getattr(chart, "series", None)
+    if not cats or series is None:
+        return
+    allowed = {str(k) for k in keep_categories}
+    keep_idx = [i for i, c in enumerate(cats) if str(c) in allowed]
+    if not keep_idx or len(keep_idx) == len(cats):
+        return
+    chart.categories = [cats[i] for i in keep_idx]
+    for s in series:
+        data = getattr(s, "data", None)
+        if data is None:
+            continue
+        s.data = [data[i] for i in keep_idx if i < len(data)]
 
 
 def apply_period_years(chart: Any, period: int | None) -> None:
@@ -675,6 +744,7 @@ def build_chart_data(
     variable: str | None = None,
     agrupar_por: str | None = None,
     es_porcentaje_override: bool = False,
+    timeslice: str | None = None,
 ) -> ChartDataResponse:
     """Construye la respuesta de gráfica para un solo escenario.
 
@@ -718,6 +788,8 @@ def build_chart_data(
         title += f" — {sub_label}"
     if loc:
         title += f" ({loc})"
+    if timeslice:
+        title += f" [TS={timeslice}]"
 
     es_emision = cfg.get("es_emision", False)
     es_emision_kt = cfg.get("es_emision_kt", False)
@@ -749,6 +821,13 @@ def build_chart_data(
     if filtro_fn is not None:
         df = filtro_fn(df, sub_filtro=sub_filtro, loc=loc)
 
+    # Filtro por timeslice (opcional): si el DataFrame tiene la columna
+    # TIMESLICE y el caller pasa un código, restringimos antes del groupby.
+    # Si no se pasa, se agrega por año (suma de todos los TS), que es el
+    # comportamiento histórico.
+    if timeslice and "TIMESLICE" in df.columns:
+        df = df[df["TIMESLICE"].astype(str) == str(timeslice)]
+
     if df.empty:
         return ChartDataResponse(
             categories=[],
@@ -756,6 +835,13 @@ def build_chart_data(
             title=title,
             yAxisLabel=un,
         )
+
+    # ── Alias de tecnologías (sector eléctrico) ──────────────────────────
+    # Para los charts principales del sector eléctrico, consolidamos algunas
+    # variantes bajo su tecnología "padre" — la leyenda queda más limpia y
+    # la lectura del stack es directa (ver PWR_TECH_ALIASES en configs.py).
+    if tipo in CONFIGS_CON_ALIAS_PWR:
+        df = _aplicar_alias_pwr(df)
 
     # ── Agrupación ───────────────────────────────────────────────────────
     agrupar_col = agrupar_por if agrupar_por is not None else cfg["agrupar_por"]
@@ -1066,6 +1152,7 @@ def build_comparison_data(
                 años_a_procesar,
                 un,
                 agrupacion_override=agrupacion_usar,
+                tipo=tipo,
             )
 
         if df is None or df.empty:
@@ -1401,6 +1488,7 @@ def _procesar_bloque_single(
     años: list[int],
     un: str,
     agrupacion_override: str | None = None,
+    tipo: str | None = None,
 ) -> pd.DataFrame | None:
     """Procesador genérico que emula la agrupación de build_chart_data para comparación."""
     if df_var is None or df_var.empty:
@@ -1421,6 +1509,10 @@ def _procesar_bloque_single(
     df = df[df["YEAR"].isin(años)]
     if df.empty:
         return None
+
+    # Alias de tecnologías del sector eléctrico (mismas reglas que build_chart_data).
+    if tipo and tipo in CONFIGS_CON_ALIAS_PWR:
+        df = _aplicar_alias_pwr(df)
 
     agrupar_col = agrupacion_override if agrupacion_override is not None else cfg["agrupar_por"]
 
@@ -2336,16 +2428,28 @@ def _render_table_image(
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    import textwrap
 
     categories = list(chart.categories)
     series = list(chart.series)
     n_cols = 1 + len(categories)  # 1 columna para "Tecnología/Categoría"
     n_rows_body = len(series)
 
+    # Wrap del nombre en hasta 2 líneas para evitar el clipping en la primera
+    # columna (matplotlib no hace wrap automático).
+    def _wrap_name(name: str, width: int = 22) -> str:
+        wrapped = textwrap.wrap(name, width=width, break_long_words=False) or [name]
+        if len(wrapped) > 2:
+            wrapped = [wrapped[0], " ".join(wrapped[1:])]
+        return "\n".join(wrapped)
+
+    name_max_chars = max((len(s.name) for s in series), default=12)
+    wrap_width = max(16, min(28, int(name_max_chars * 0.65)))
+
     # Cuerpo de la tabla
     cell_text: list[list[str]] = []
     for s in series:
-        row = [s.name]
+        row = [_wrap_name(s.name, wrap_width)]
         for i in range(len(categories)):
             v = s.data[i] if i < len(s.data) else None
             row.append(format_axis_3sig(v))
@@ -2392,26 +2496,41 @@ def _render_table_image(
                 row_colors[0] = series[r_idx].color or "#94a3b8"
         cell_colours.append(row_colors)
 
-    # Tamaño dinámico de figura.
-    fig_w = max(8.0, min(24.0, 1.6 + 1.4 * n_cols))
-    fig_h = max(2.0, min(20.0, 1.6 + 0.55 * (n_total_rows + 1)))
+    # Tamaño dinámico de figura. La altura se ajusta a las filas reales para
+    # evitar que `loc="upper center"` deje espacio sobrante bajo la tabla.
+    # Cuenta líneas máximas en la columna 0 (puede haber wrap a 2 líneas).
+    max_lines_col0 = max(
+        (row[0].count("\n") + 1 for row in cell_text if row), default=1
+    )
+    fig_w = max(9.0, min(26.0, 2.4 + 1.4 * n_cols))
+    fig_h = max(2.0, min(22.0, 1.0 + 0.5 * (n_total_rows + 1) * max(1, max_lines_col0)))
 
     fig, ax = plt.subplots(figsize=(fig_w, fig_h))
     ax.axis("off")
-    ax.set_title(title, fontsize=17, fontweight="bold", pad=14)
+    ax.set_title(title, fontsize=17, fontweight="bold", pad=6)
 
+    # Reparte ancho: primera columna ~22-30% según largo de nombres; el resto
+    # se reparte entre las columnas de año/categoría.
+    name_col_share = max(0.18, min(0.32, wrap_width / 90.0))
+    rest_share = (1.0 - name_col_share) / max(1, len(categories))
+    col_widths = [name_col_share] + [rest_share] * len(categories)
+
+    # ``loc="upper center"`` ancla la tabla justo bajo el título, evitando el
+    # gran hueco vertical que aparecía con ``loc="center"`` cuando la tabla
+    # tiene pocas filas.
     table = ax.table(
         cellText=cell_text if cell_text else [[""]],
         colLabels=col_labels,
         cellColours=cell_colours if cell_colours else None,
         colColours=[header_color] * n_cols,
         cellLoc="center",
-        loc="center",
+        loc="upper center",
+        colWidths=col_widths,
     )
     table.auto_set_font_size(False)
-    table.set_fontsize(12)
-    # Ancho mínimo razonable: matplotlib ajusta auto pero forzamos pad.
-    table.scale(1.0, 1.4)
+    table.set_fontsize(11)
+    # Escala vertical mayor para acomodar wrap de 2 líneas en col 0.
+    table.scale(1.0, 1.4 + 0.4 * (max_lines_col0 - 1))
 
     # Estilo: cabecera bold, texto blanco; primera columna con texto blanco
     # contra el color de la serie. Si el color es muy claro, matplotlib
@@ -2878,6 +2997,7 @@ def render_comparison_facet_figure_bytes(
     legend_title: str | None = None,
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
+    series_order: list[str] | None = None,
 ) -> bytes:
     """Una sola figura: facetas en fila, título global, leyenda inferior (Matplotlib).
 
@@ -2910,6 +3030,43 @@ def render_comparison_facet_figure_bytes(
             if s.name not in seen_names:
                 seen_names.add(s.name)
                 legend_order.append((s.name, s.color))
+
+    # Ordenamiento de la leyenda compartida.
+    #
+    # Sin esta lógica, la leyenda se construye por "primera aparición" recorriendo
+    # las facetas en orden — y como cada escenario suele tener un subconjunto
+    # distinto de tecnologías, las series exclusivas de las últimas facetas
+    # quedan al final aunque pertenezcan a una familia que ya estaba al inicio.
+    # El resultado en pantalla es una leyenda visualmente desordenada respecto
+    # al orden natural / al stack.
+    #
+    # Estrategia:
+    #   1. ``rank_natural``  = mínima posición observada en cualquier faceta.
+    #      Esto recupera el orden canónico de ``_color_electricidad`` (o el
+    #      orden de la color_fn correspondiente) aunque la primera faceta no
+    #      contenga todas las tecnologías.
+    #   2. Si el usuario configuró un ``series_order`` custom, ese orden tiene
+    #      prioridad absoluta; el resto se ordena por ``rank_natural`` como
+    #      desempate (mismo orden que el stack de los subplots).
+    rank_natural: dict[str, int] = {}
+    for facet in facets:
+        for i, s in enumerate(facet.series):
+            current = rank_natural.get(s.name)
+            if current is None or i < current:
+                rank_natural[s.name] = i
+    if series_order:
+        custom_rank: dict[str, int] = {n: i for i, n in enumerate(series_order)}
+        custom_fallback = len(series_order)
+
+        def _legend_key(item: tuple[str, str]) -> tuple[int, int]:
+            name = item[0]
+            if name in custom_rank:
+                return (0, custom_rank[name])
+            return (1, rank_natural.get(name, 10**9))
+
+        legend_order.sort(key=_legend_key)
+    else:
+        legend_order.sort(key=lambda x: rank_natural.get(x[0], 10**9))
 
     n_leg_items = len(legend_order)
     legend_labels_full = [name for name, _c in legend_order]
@@ -3200,10 +3357,12 @@ def render_comparison_facet_figure_bytes(
     legend_anchor_y = legend_pad_inch / fig_h
 
     # Leyenda al estilo de las gráficas individuales: sin marco, sin título.
-    # Leyenda invertida respecto al stack (lectura abajo→arriba como las barras).
+    # Orden directo: coincide con el orden de las series (primera serie = primera
+    # entrada de la leyenda) — así la leyenda exportada corresponde con el orden
+    # configurado por el usuario y con el panel de leyenda compartida en la UI.
     fig.legend(
-        handles=list(reversed(handles)),
-        labels=list(reversed(legend_labels_full)),
+        handles=handles,
+        labels=legend_labels_full,
         loc="lower center",
         bbox_to_anchor=(0.5, legend_anchor_y),
         ncol=leg_ncol,
@@ -3614,6 +3773,7 @@ def build_comparison_data_by_year_alt(
                 df_var, cfg, sub_filtro, loc,
                 years_to_plot, un,
                 agrupacion_override=agrupacion_usar,
+                tipo=tipo,
             )
 
         if df is None or df.empty:

@@ -38,6 +38,12 @@ export interface ChartSelection {
   yAxisMax?: number | null;
   /** Para Sector Eléctrico: filtra entre 'liquidos', 'todos', 'termica' */
   tipo_electrico?: 'liquidos' | 'todos' | 'termica';
+  /**
+   * Código de timeslice para filtrar la gráfica a un TS específico (p. ej.
+   * 'S101'). Cuando es null/undefined la gráfica agrega por año sumando
+   * todos los TS — comportamiento por defecto.
+   */
+  timeslice?: string | null;
 }
 
 interface Props {
@@ -55,6 +61,12 @@ interface Props {
    */
   barOrientation?: 'vertical' | 'horizontal';
   onChangeBarOrientation?: (next: 'vertical' | 'horizontal') => void;
+  /**
+   * Códigos de timeslice presentes en los outputs del job actual.
+   * Si tiene 2+ entradas se muestra un selector para filtrar la gráfica a
+   * un TS específico (o "todos" → agregación anual).
+   */
+  availableTimeslices?: string[];
 }
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
@@ -475,6 +487,7 @@ export function ChartSelector({
   hideGroupBy = false,
   barOrientation,
   onChangeBarOrientation,
+  availableTimeslices,
 }: Props) {
   const loc = findLocation(value.tipo);
   const activeModule = loc.moduleId;
@@ -1044,6 +1057,25 @@ export function ChartSelector({
             </select>
           </label>
         )}
+
+        {Array.isArray(availableTimeslices) && availableTimeslices.length >= 2 && (
+          <label style={{ display: 'grid', gap: 6 }}>
+            <p style={labelStyle}>Timeslice</p>
+            <select
+              style={selectStyle}
+              value={value.timeslice ?? ''}
+              onChange={(e) => {
+                const next = e.target.value;
+                onChange({ ...value, timeslice: next === '' ? null : next });
+              }}
+            >
+              <option value="">Todos (agregado anual)</option>
+              {availableTimeslices.map((ts) => (
+                <option key={ts} value={ts}>{ts}</option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       {/* ── Resumen de selección activa ── */}
@@ -1055,6 +1087,7 @@ export function ChartSelector({
             {activeVariable !== '' ? ` — ${activeCapacityLabel}` : ''}
             {value.sub_filtro != null && value.sub_filtro !== '' ? ` [${FUEL_LABELS[value.sub_filtro] ?? value.sub_filtro}]` : ''}
             {value.loc != null && value.loc !== '' ? ` (${value.loc})` : ''}
+            {value.timeslice != null && value.timeslice !== '' ? ` · TS=${value.timeslice}` : ''}
             {' '}· {displayUnit}
             {canChangeAgrupacion ? ` · ${agrupacionLabel}` : ''}
           </span>

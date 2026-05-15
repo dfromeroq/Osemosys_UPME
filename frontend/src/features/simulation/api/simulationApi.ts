@@ -251,9 +251,15 @@ export const simulationApi = {
       loc?: string;
       variable?: string;
       agrupar_por?: string;
+      timeslice?: string;
     },
   ) {
     const { data } = await httpClient.get<ChartDataResponse>(`/visualizations/${jobId}/chart-data`, { params });
+    return data;
+  },
+
+  async getJobTimeslices(jobId: number): Promise<string[]> {
+    const { data } = await httpClient.get<string[]>(`/visualizations/${jobId}/timeslices`);
     return data;
   },
 
@@ -264,6 +270,10 @@ export const simulationApi = {
     jobId: number,
     selection: ChartSelection,
     fmt: "png" | "svg" | "csv" | "xlsx",
+    tableExportFilters?: {
+      series?: string[];
+      years?: (string | number)[];
+    },
   ): Promise<{ blob: Blob; filename: string }> {
     const params: Record<string, string> = {
       tipo: selection.tipo,
@@ -282,6 +292,12 @@ export const simulationApi = {
       }
       if (selection.tableCumulative) {
         params.table_cumulative = "true";
+      }
+      if (tableExportFilters?.series && tableExportFilters.series.length > 0) {
+        params.table_series = tableExportFilters.series.join(",");
+      }
+      if (tableExportFilters?.years && tableExportFilters.years.length > 0) {
+        params.table_years = tableExportFilters.years.map(String).join(",");
       }
     }
     // Modificadores universales: orden custom de series + rango Y.
@@ -366,6 +382,7 @@ export const simulationApi = {
       agrupar_por?: string;
       legend_title?: string;
       filename_mode?: CompareFacetExportFilenameMode;
+      series_order?: string;
     },
     fmt: "png" | "svg" = "png",
   ): Promise<{ blob: Blob; filename: string }> {
@@ -381,6 +398,7 @@ export const simulationApi = {
     if (params.agrupar_por) q.agrupar_por = params.agrupar_por;
     if (params.legend_title) q.legend_title = params.legend_title;
     if (params.filename_mode) q.filename_mode = params.filename_mode;
+    if (params.series_order) q.series_order = params.series_order;
 
     const response = await httpClient.get("/visualizations/export-compare-facet", {
       params: q,
