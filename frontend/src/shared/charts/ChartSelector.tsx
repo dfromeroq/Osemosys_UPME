@@ -169,6 +169,11 @@ const AGRUPACION_OPTIONS: { value: string; label: string; description: string }[
     label: 'Por Sector',
     description: 'Agrupa por sectores de demanda',
   },
+  {
+    value: 'TRANSPORTE_GRUPO',
+    label: 'Por Grupo Transporte',
+    description: 'Agrupa por tipo de vehículo (motos, livianos, carga, buses, etc.)',
+  },
 ];
 
 // IDs de charts que NO deben mostrar el selector de agrupación
@@ -268,8 +273,8 @@ const MENU: Module[] = [
       {
         id: 'transporte', label: '🚗 Transporte',
         charts: [
-          { id: 'tra_total', label: 'Sector Transporte - Consumo Total - UseByTechnology', hasSub: true, subFiltroLabel: 'Modo', subFiltros: ['CARRETERA','AVI','BOT','SHP','LDV','FWD','BUS','TCK_C2P','TCK_CSG','MOT','MIC','TAX','STT','MET'], allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
-          { id: 'tra_uso',   label: 'Sector Transporte - ProductionByTechnology',           hasSub: true, subFiltroLabel: 'Modo', subFiltros: ['CARRETERA','AVI','BOT','SHP','LDV','FWD','BUS','TCK_C2P','TCK_CSG','MOT','MIC','TAX','STT','MET'], allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'tra_total', label: 'Sector Transporte - Consumo Total - UseByTechnology', hasSub: true, subFiltroLabel: 'Modo', subFiltros: ['CARRETERA','AVI','BOT','SHP','LDV','FWD','BUS','TCK_C2P','TCK_CSG','MOT','MIC','TAX','STT','MET'], allowedGroupings: ['TECNOLOGIA', 'FUEL', 'TRANSPORTE_GRUPO'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'tra_uso',   label: 'Sector Transporte - ProductionByTechnology',           hasSub: true, subFiltroLabel: 'Modo', subFiltros: ['CARRETERA','AVI','BOT','SHP','LDV','FWD','BUS','TCK_C2P','TCK_CSG','MOT','MIC','TAX','STT','MET'], allowedGroupings: ['TECNOLOGIA', 'FUEL', 'TRANSPORTE_GRUPO'], soportaPareto: true, soportaPorcentaje: true },
         ],
       },
       {
@@ -312,6 +317,8 @@ const MENU: Module[] = [
           { id: 'gas_produccion', label: 'Gas Natural - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
           { id: 'ups_refinacion', label: 'Upstream Refinación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
           { id: 'saf_produccion', label: 'SAF - Producción - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'gas_capacidad', label: 'Gas Natural — Capacidad de Extracción y Regasificación', isCapacity: true },
+          { id: 'gas_import_export', label: 'Gas Natural — Importaciones y Exportaciones', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
         ],
       },
       {
@@ -321,6 +328,9 @@ const MENU: Module[] = [
           { id: 'liquidos_prod_import', label: 'Líquidos - Producción + Importación', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
           { id: 'imp_liquidos', label: 'Líquidos - Importación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
           { id: 'exp_liquidos', label: 'Líquidos - Exportación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'imp_exp_crudo', label: 'Crudo - Importaciones y Exportaciones', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'ref_produccion_importaciones', label: 'Refinerías + Importaciones de Líquidos', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'elec_consumo_liquidos', label: 'Consumo de Líquidos - Sector Eléctrico', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
           { id: 'dem_consumo_liquidos', label: 'Consumo de Líquidos - Sectores de Demanda', allowedGroupings: ['FUEL'], defaultGrouping: 'FUEL', soportaPareto: true },
           // { id: 'dem_consumo_liquidos_exp_use', label: 'Consumo de Líquidos — Demanda y Exportaciones', allowedGroupings: ['FUEL'], defaultGrouping: 'FUEL', soportaPareto: true },
           { id: 'dem_consumo_liquidos_total', label: 'Consumo de Líquidos - Sectores de Demanda + Sector Eléctrico', allowedGroupings: ['FUEL'], defaultGrouping: 'FUEL', soportaPareto: true },
@@ -382,6 +392,14 @@ const MENU: Module[] = [
       { id: 'emisiones_sectorial', label: 'Emisiones - Por Sector - AnnualTechnologyEmission', soportaPorcentaje: true },
       { id: 'emisiones_gei',       label: 'Emisiones GEI por Sector (CO₂, CH₄, N₂O)', soportaPorcentaje: true },
       { id: 'emisiones_contaminantes', label: 'Emisiones Contaminantes Criterio (BC, CO, COV, NH₃, NOₓ, PM10, PM2.5, SOₓ)', soportaPorcentaje: true },
+    ],
+  },
+  {
+    id: 'recursos',
+    emoji: '🛢️',
+    label: 'Recursos y Reservas',
+    charts: [
+      { id: 'recursos_vs_demanda', label: 'Figura 18. Recursos y Reservas vs Demanda', soportaPareto: false, soportaPorcentaje: false },
     ],
   },
   {

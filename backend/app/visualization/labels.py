@@ -210,6 +210,15 @@ _GRUPO: dict[str, str] = {
     "DEMAGF": "Agric. y Pesca",
     "DEMMIN": "Minería",
     "DEMCOQ": "Coque",
+    "Motos": "Motos",
+    "Livianos": "Livianos",
+    "Buses": "Buses",
+    "Microbuses": "Microbuses",
+    "Carga": "Carga",
+    "Barcos": "Barcos",
+    "Metro": "Metro",
+    "Aviación": "Aviación",
+    "Otros": "Otros",
 }
 
 # ══════════════════════════════════════════════════════════════════════════

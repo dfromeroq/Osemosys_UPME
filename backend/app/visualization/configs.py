@@ -190,6 +190,11 @@ def _filtro_gas_produccion(df, **kw):
     ]
 
 
+def _filtro_gas_flujos(df, **kw):
+    """Importaciones y exportaciones de gas natural (IMPLNG, EXPNGS)."""
+    return df[df["TECHNOLOGY"].str.startswith(("IMPLNG", "EXPNGS"))]
+
+
 def _filtro_ref_total(df, **kw):
     """Tecnologías de refinería (UPSREF)."""
     return df[df["TECHNOLOGY"].str.startswith("UPSREF")]
@@ -238,6 +243,18 @@ def _filtro_export_liquidos(df, **kw):
 def _filtro_import_liquidos(df, **kw):
     """Importaciones de líquidos (IMPDSL, IMPGSL, IMPJET, IMPLNG, IMPLPG, IMPOIL)."""
     return df[df["TECHNOLOGY"].str.startswith(_PREFIJOS_IMP_LIQUIDOS_ALL)]
+
+
+def _filtro_crudo_flujos(df, **kw):
+    """Importaciones y exportaciones de crudo (IMPOIL, EXPOIL)."""
+    return df[df["TECHNOLOGY"].str.startswith(("IMPOIL", "EXPOIL"))]
+
+
+def _filtro_ref_produccion_importaciones(df, **kw):
+    """Refinerías específicas + importaciones de combustibles líquidos refinados."""
+    return df[df["TECHNOLOGY"].str.startswith(
+        ("UPSREF_CAR", "UPSREF_BAR", "IMPDSL", "IMPGSL", "IMPJET", "IMPLPG")
+    )]
 
 
 def _filtro_demanda_exportaciones_liquidos(df, **kw):
@@ -591,6 +608,32 @@ CONFIGS = {
         "color_fn": _color_gas_produccion,
         "variable_default": "ProductionByTechnology",
     },
+    "gas_capacidad": {
+        "titulo_base": "Gas Natural — Capacidad de Extracción y Regasificación",
+        "figura_base": "Figura 22",
+        "filename_base": "Fig22_Capacidad_Gas",
+        "print_base": "CAPACIDAD DE GAS NATURAL",
+        "filtro": _filtro_gas_produccion,
+        "msg_sin_datos": "Sin datos de extracción o regasificación de gas (MINNGS/UPSREG)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_gas_produccion,
+        "es_capacidad": True,
+        "variable_default": "TotalCapacityAnnual",
+    },
+    "gas_import_export": {
+        "titulo": "Gas Natural — Importaciones y Exportaciones",
+        "figura": "Figura 23",
+        "filename": "Fig23_Imp_Exp_Gas",
+        "print": "GAS NATURAL: IMPORTACIONES Y EXPORTACIONES",
+        "filtro": _filtro_gas_flujos,
+        "msg_sin_datos": "Sin datos de importación/exportación de gas (IMPLNG/EXPNGS)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_gas_produccion,
+        "variable_default": "ProductionByTechnology",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
+        "soportaPareto": True,
+        "soportaPorcentaje": True,
+    },
     # ═══════════════════════════════════════════════════════════════════
     # REFINERÍAS
     # ═══════════════════════════════════════════════════════════════════
@@ -707,6 +750,34 @@ CONFIGS = {
         "soportaPareto": True,
         "soportaPorcentaje": True,
     },
+    "imp_exp_crudo": {
+        "titulo": "Crudo - Importaciones y Exportaciones - ProductionByTechnology",
+        "figura": "Figura 20",
+        "filename": "Fig20_Imp_Exp_Crudo",
+        "print": "CRUDO: IMPORTACIONES Y EXPORTACIONES",
+        "filtro": _filtro_crudo_flujos,
+        "msg_sin_datos": "Sin datos de importación/exportación de crudo (IMPOIL/EXPOIL)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_liquidos_import,
+        "variable_default": "ProductionByTechnology",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
+        "soportaPareto": True,
+        "soportaPorcentaje": True,
+    },
+    "ref_produccion_importaciones": {
+        "titulo": "Refinerías + Importaciones de Líquidos - ProductionByTechnology",
+        "figura": "Figura REF-IMP-LIQ",
+        "filename": "Fig_Ref_Imp_Liquidos",
+        "print": "REFINERÍAS + IMPORTACIONES DE LÍQUIDOS",
+        "filtro": _filtro_ref_produccion_importaciones,
+        "msg_sin_datos": "Sin datos de refinerías o importaciones de líquidos",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_liquidos_import,
+        "variable_default": "ProductionByTechnology",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
+        "soportaPareto": True,
+        "soportaPorcentaje": True,
+    },
     # ═══════════════════════════════════════════════════════════════════
     # RESIDENCIAL
     # ═══════════════════════════════════════════════════════════════════
@@ -770,7 +841,7 @@ CONFIGS = {
         "filtro": _filtro_transporte,
         "msg_sin_datos": "Sin tecnologías de transporte (DEMTRA)",
         "agrupar_por": "TECNOLOGIA",
-        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
+        "allowedGroupings": ["TECNOLOGIA", "FUEL", "TRANSPORTE_GRUPO"],
         "color_fn": generar_colores_tecnologias,
         "variable_default": "UseByTechnology",
     },
@@ -782,6 +853,7 @@ CONFIGS = {
         "filtro": _filtro_transporte,
         "msg_sin_datos": "Sin tecnologías de transporte (DEMTRA)",
         "agrupar_por": "TECNOLOGIA",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL", "TRANSPORTE_GRUPO"],
         "color_fn": generar_colores_tecnologias,
         "variable_default": "ProductionByTechnology",
     },
@@ -1306,6 +1378,20 @@ CONFIGS = {
         "color_fn": _color_por_grupo_fijo,
         "variable_default": "UseByTechnology",
     },
+    "elec_consumo_liquidos": {
+        "titulo": "Consumo de Líquidos - Sector Eléctrico",
+        "figura": "Figura ELEC-CONS-LIQ",
+        "filename": "Fig_Electrico_Consumo_Liquidos",
+        "print": "SECTOR ELÉCTRICO: CONSUMO DE LÍQUIDOS",
+        "filtro": _filtro_pwr_liquidos,
+        "msg_sin_datos": "Sin consumo de líquidos en generación eléctrica",
+        "agrupar_por": "FUEL",
+        "color_fn": _color_por_grupo_fijo,
+        "variable_default": "UseByTechnology",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
+        "soportaPareto": True,
+        "soportaPorcentaje": True,
+    },
     "dem_consumo_liquidos_exp_prod": {
         "titulo": "Producción de Líquidos — Demanda y Exportaciones",
         "figura": "Figura LIQ-DEM-EXP-PROD",
@@ -1327,5 +1413,19 @@ CONFIGS = {
         "agrupar_por": "FUEL",
         "color_fn": _color_por_grupo_fijo,
         "variable_default": "UseByTechnology",
+    },
+    # ═══════════════════════════════════════════════════════════════════════
+    # RECURSOS Y RESERVAS
+    # ═══════════════════════════════════════════════════════════════════════
+    "recursos_vs_demanda": {
+        "titulo": "Figura 18. Recursos y reservas contra demanda",
+        "figura": "Figura 18",
+        "filename": "Fig18_Recursos_Reservas_vs_Demanda",
+        "print": "RECURSOS Y RESERVAS CONTRA DEMANDA",
+        "filtro": None,
+        "msg_sin_datos": "Sin datos de extracción de petróleo (MINOIL)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": None,
+        "variable_default": "ProductionByTechnology",
     },
 }

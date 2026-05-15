@@ -247,6 +247,7 @@ def export_comparison_facet_image(
     loc: str | None = Query(None),
     variable: str | None = Query(None),
     agrupar_por: str | None = Query(None),
+    es_porcentaje: bool = Query(False, description="Si true, normaliza cada año a 100%"),
     fmt: str = Query("png", description="png o svg"),
     filename_mode: str = Query(
         "result",
@@ -289,6 +290,7 @@ def export_comparison_facet_image(
             loc=loc,
             variable=variable,
             agrupar_por=agrupar_por,
+            es_porcentaje_override=es_porcentaje,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

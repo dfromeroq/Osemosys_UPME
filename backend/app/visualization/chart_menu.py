@@ -86,10 +86,10 @@ MENU = [
           "charts": [
               {"tipo": "tra_total", "label": "Sector Transporte - Consumo Total - UseByTechnology",
                "sub_label": "Modo", "sub_filtros": TRA_SUB,
-               "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
+               "allowed": ["TECNOLOGIA", "FUEL", "TRANSPORTE_GRUPO"], "soporta_pareto": True},
               {"tipo": "tra_uso", "label": "Sector Transporte - ProductionByTechnology",
                "sub_label": "Modo", "sub_filtros": TRA_SUB,
-               "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
+               "allowed": ["TECNOLOGIA", "FUEL", "TRANSPORTE_GRUPO"], "soporta_pareto": True},
           ]},
          {"code": "terciario", "label": "🏢 Terciario",
           "charts": [
@@ -128,6 +128,8 @@ MENU = [
      "charts": [
          {"tipo": "gas_consumo",         "label": "Gas Natural - UseByTechnology",                       "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
          {"tipo": "gas_produccion",      "label": "Gas Natural - ProductionByTechnology",                "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
+         {"tipo": "gas_capacidad",      "label": "Gas Natural — Capacidad de Extracción y Regasificación - TotalCapacityAnnual", "is_capacity": True},
+         {"tipo": "gas_import_export",  "label": "Gas Natural — Importaciones y Exportaciones - ProductionByTechnology", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
          {"tipo": "ref_total",           "label": "Refinerías - ProductionByTechnology",                 "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
          {"tipo": "ref_consumo",         "label": "Refinerías — Consumo Total por Tecnología",           "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
          {"tipo": "ref_import",          "label": "Refinerías - Importaciones - ProductionByTechnology", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
@@ -136,6 +138,9 @@ MENU = [
          {"tipo": "liquidos_prod_import","label": "Líquidos - Producción + Importación",                  "allowed": ["TECNOLOGIA", "FUEL"]},
          {"tipo": "ups_refinacion",      "label": "Upstream Refinación - ProductionByTechnology",        "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
          {"tipo": "saf_produccion",      "label": "SAF - Producción - ProductionByTechnology",           "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
+         {"tipo": "imp_exp_crudo",      "label": "Crudo - Importaciones y Exportaciones - ProductionByTechnology", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
+         {"tipo": "elec_consumo_liquidos", "label": "Consumo de Líquidos - Sector Eléctrico - UseByTechnology", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
+         {"tipo": "ref_produccion_importaciones", "label": "Refinerías + Importaciones de Líquidos - ProductionByTechnology", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
      ]},
     {"code": "mineria", "label": "Minería & Extracción", "icon": "⛏️",
      "charts": [

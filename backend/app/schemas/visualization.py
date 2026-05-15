@@ -40,6 +40,9 @@ class ChartSeries(BaseModel):
     markerRadius: float | None = None
     #: Grosor de línea en px. None = default del renderer.
     lineWidth: float | None = None
+    #: Tipo de chart para esta serie individual (None = usar default del viewMode global).
+    #: "line" = línea, "area" = área, "column" = columna.
+    chart_type: str | None = None
 
 
 class ChartDataResponse(BaseModel):
@@ -156,6 +159,7 @@ class ResultSummaryResponse(BaseModel):
     solver_status: str
     objective_value: float
     coverage_ratio: float
+    reserve_margin_dual: float | None = None
     total_demand: float
     total_dispatch: float
     total_unmet: float

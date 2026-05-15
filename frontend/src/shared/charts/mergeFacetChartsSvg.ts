@@ -74,7 +74,7 @@ function buildSharedLegendSvgBlock(
 
   const parts: string[] = [];
   parts.push(
-    `<text x="${paddingX}" y="${legendHeaderBaselineY}" fill="#64748b" font-size="11" font-weight="bold" font-family="Verdana, sans-serif" letter-spacing="0.06em">LEYENDA (TODAS LAS GRÁFICAS)</text>`,
+    `<text x="${paddingX}" y="${legendHeaderBaselineY}" fill="#64748b" font-size="20" font-weight="bold" font-family="Verdana, sans-serif" letter-spacing="0.06em">LEYENDA (TODAS LAS GRÁFICAS)</text>`,
   );
 
   for (const item of items) {
@@ -96,7 +96,7 @@ function buildSharedLegendSvgBlock(
       `<rect x="${x}" y="${rowY - markerSize + 3}" width="${markerSize}" height="${markerSize}" rx="2" fill="${markFillEsc}" stroke="#cbd5e1" stroke-width="0.75"/>`,
     );
     parts.push(
-      `<text x="${x + markerSize + markerGap}" y="${rowY}" fill="${textFill}" font-size="13" font-family="Verdana, sans-serif"${deco}>${nameEsc}</text>`,
+      `<text x="${x + markerSize + markerGap}" y="${rowY}" fill="${textFill}" font-size="20" font-family="Verdana, sans-serif"${deco}>${nameEsc}</text>`,
     );
     parts.push(`</g>`);
     x += itemW + itemPadX;
@@ -170,7 +170,7 @@ export function buildCombinedFacetSvgDocument(params: {
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}" style="font-family: Verdana, sans-serif; font-size: 1rem;" role="img" aria-label="${titleEsc}">
   <desc>Combined facet export (Highcharts)</desc>
   <rect fill="#FFFFFF" x="0" y="0" width="${totalW}" height="${totalH}" />
-  <text x="${paddingX}" y="${titleBaselineY}" fill="#1e293b" font-size="28" font-weight="bold" font-family="Verdana, sans-serif">${titleEsc}</text>
+  <text x="${paddingX}" y="${titleBaselineY}" fill="#1e293b" font-size="36" font-weight="bold" font-family="Verdana, sans-serif">${titleEsc}</text>
   ${body}
   ${legendFragment}
 </svg>`;

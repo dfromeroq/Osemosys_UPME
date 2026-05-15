@@ -471,6 +471,8 @@ export type ChartSeries = {
   markerRadius?: number | null;
   /** Grosor de línea en px. */
   lineWidth?: number | null;
+  /** Tipo de Highcharts para esta serie individual. "line"|"area"|"column" */
+  chart_type?: string | null;
 };
 
 export type ChartDataResponse = {
@@ -786,6 +788,7 @@ export type ResultSummaryResponse = {
   solver_status: string;
   objective_value: number;
   coverage_ratio: number;
+  reserve_margin_dual: number | null;
   total_demand: number;
   total_dispatch: number;
   total_unmet: number;

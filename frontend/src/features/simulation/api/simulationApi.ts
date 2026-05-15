@@ -376,6 +376,7 @@ export const simulationApi = {
       job_ids: string;
       tipo: string;
       un?: string;
+      es_porcentaje?: string;
       sub_filtro?: string;
       loc?: string;
       variable?: string;
@@ -392,6 +393,7 @@ export const simulationApi = {
       un: params.un ?? "PJ",
       fmt,
     };
+    if (params.es_porcentaje) q.es_porcentaje = params.es_porcentaje;
     if (params.sub_filtro) q.sub_filtro = params.sub_filtro;
     if (params.loc) q.loc = params.loc;
     if (params.variable) q.variable = params.variable;

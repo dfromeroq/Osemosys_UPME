@@ -364,6 +364,50 @@ def _run_infeasibility_diagnostics(instance: pyo.ConcreteModel) -> None:
     }
 
 
+def _extract_reserve_margin_dual(instance: pyo.ConcreteModel) -> float | None:
+    """Extrae el valor dual máximo (absoluto) de la restricción de margen de reserva.
+
+    Intenta primero la restricción nativa ``ReserveMarginConstraint[r, l, y]`` y,
+    si UDC está activo, también ``UDC1_UserDefinedConstraintInequality[r, 'UDC_Margin', y]``.
+    Devuelve el máximo valor absoluto entre todos los índices, o ``None`` si el
+    solver no reportó información dual (e.g. modelo MIP o solver sin soporte).
+    Un valor de 0 indica que la restricción no es binding en ningún período;
+    un valor > 0 indica que es binding (activa con margen nulo) en al menos un período.
+    """
+    dual_suffix = getattr(instance, "dual", None)
+    if dual_suffix is None:
+        return None
+
+    max_abs: float | None = None
+
+    def _update(con_data: object) -> None:
+        nonlocal max_abs
+        try:
+            d = dual_suffix.get(con_data)
+            if d is not None:
+                abs_d = abs(float(d))
+                if max_abs is None or abs_d > max_abs:
+                    max_abs = abs_d
+        except Exception:
+            pass
+
+    native = getattr(instance, "ReserveMarginConstraint", None)
+    if native is not None:
+        for idx in native:
+            _update(native[idx])
+
+    udc = getattr(instance, "UDC1_UserDefinedConstraintInequality", None)
+    if udc is not None:
+        for idx in udc:
+            if isinstance(idx, tuple) and len(idx) >= 2 and idx[1] == "UDC_Margin":
+                _update(udc[idx])
+
+    if max_abs is None:
+        return None
+    logger.info("Dual máximo margen de reserva: %.6f", max_abs)
+    return max_abs
+
+
 def solve_model(
     instance: pyo.ConcreteModel,
     *,
@@ -437,16 +481,19 @@ def solve_model(
         )
 
         diagnostics: dict | None = None
+        reserve_margin_dual: float | None = None
         if "infeasible" in raw_status.lower():
             diagnostics = _run_infeasibility_diagnostics(instance)
         elif "optimal" in raw_status.lower():
             logger.info("SOLUCIÓN ÓPTIMA ENCONTRADA - Objetivo: %.2f", obj)
+            reserve_margin_dual = _extract_reserve_margin_dual(instance)
 
         solution_dict = {
             "solver_name": candidate,
             "solver_status": status_display,
             "objective_value": obj,
             "solver_threads_used": threads_used,
+            "reserve_margin_dual": reserve_margin_dual,
             "infeasibility_diagnostics": diagnostics,
         }
 
