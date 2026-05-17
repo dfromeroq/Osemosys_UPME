@@ -222,6 +222,7 @@ def main() -> None:
                 can_import_official_data=True,
                 can_manage_users=True,
                 can_manage_scenarios=True,
+                is_admin_reports=True,
             )
             session.add(user)
             session.flush()
@@ -237,14 +238,21 @@ def main() -> None:
             user.can_import_official_data = True
             user.can_manage_users = True
             user.can_manage_scenarios = True
+            user.is_admin_reports = True
             session.flush()
 
         cleanup_demo_data(session)
+
+        from app.result_table_seeds import ensure_result_table_seeds
+
+        n_rt_tables = ensure_result_table_seeds(session)
 
         # A partir de este punto no se siembran datos de ejemplo del modelo.
         # Los datos iniciales deben ingresar únicamente por "Carga oficial".
         session.commit()
         print("Seed mínimo completado (usuario/permisos).")
+        if n_rt_tables:
+            print(f"  Plantillas de tabla de resultados: +{n_rt_tables} nueva(s).")
         return
 
         # Catálogos mínimos

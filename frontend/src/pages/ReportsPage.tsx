@@ -28,6 +28,8 @@ import { FavoriteStar } from "@/features/reports/components/FavoriteStar";
 import { ChartPickerModal } from "@/features/reports/components/ChartPickerModal";
 import { IconEye, IconPencil, IconSwap } from "@/features/reports/components/CardActionIcons";
 import { RowScenarioPicker } from "@/features/reports/components/RowScenarioPicker";
+import { ResultTablesAdminTab } from "@/features/reports/components/ResultTablesAdminTab";
+import { ChartSeriesConfigTab } from "@/features/reports/components/ChartSeriesConfigTab";
 import { pickRepresentativeJob } from "@/features/reports/pickRepresentativeJob";
 import {
   loadReportScenarios,
@@ -46,7 +48,7 @@ import {
   reconcileLayout,
 } from "@/features/reports/layout";
 
-type TabId = "saved" | "generator" | "reports";
+type TabId = "saved" | "generator" | "reports" | "result_tables" | "chart_series";
 
 function formatDate(iso: string): string {
   try {
@@ -496,6 +498,12 @@ export function ReportsPage() {
           { id: "reports" as TabId, label: `Mis reportes guardados (${reports.length})` },
           { id: "generator" as TabId, label: "Generador de reporte" },
           { id: "saved" as TabId, label: `Mis gráficas guardadas (${templates.length})` },
+          ...(isAdminReports
+            ? [
+                { id: "chart_series" as TabId, label: "Series por gráfica" },
+                { id: "result_tables" as TabId, label: "Tablas en resultados" },
+              ]
+            : []),
         ].map((t) => {
           const active = t.id === tab;
           return (
@@ -545,6 +553,12 @@ export function ReportsPage() {
           onToggleIncludeOthersPrivate={(v) => setIncludeOthersPrivate(v)}
           onGoToGenerator={() => setTab("generator")}
         />
+      ) : tab === "chart_series" ? (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6">
+          <ChartSeriesConfigTab />
+        </div>
+      ) : tab === "result_tables" ? (
+        <ResultTablesAdminTab />
       ) : (
         <ReportGeneratorTab
           templates={templates}

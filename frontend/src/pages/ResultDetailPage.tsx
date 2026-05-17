@@ -18,11 +18,14 @@ import type {
   CompareChartFacetResponse,
   CompareMode,
   ParetoChartResponse,
+  ResultTableTemplatePublic,
   RunResult,
   SimulationRun,
 } from '../types/domain';
+import { resultTableTemplateColumnPresentation } from '../types/domain';
 import { paths } from '../routes/paths';
 import { RunDisplayNameEditor } from '../features/simulation/components/RunDisplayNameEditor';
+import { FavoriteStarButton } from '../features/simulation/components/FavoriteStarButton';
 import { ChartSelector, getChartLabel, type ChartSelection } from '../shared/charts/ChartSelector';
 import { getDefaultChartSelection } from '../shared/charts/defaultChartSelection';
 import { ScenarioComparer, type CompareViewMode } from '../shared/charts/ScenarioComparer';
@@ -69,7 +72,10 @@ import {
 } from '../shared/charts/syntheticSeriesStorage';
 import type { SyntheticSeries } from '../types/domain';
 import { savedChartsApi } from '@/features/reports/api/savedChartsApi';
-import { FavoriteStarButton } from '../features/simulation/components/FavoriteStarButton';
+import { resultTableTemplatesApi } from '@/features/reports/api/resultTableTemplatesApi';
+import { useCurrentUser } from '@/app/providers/useCurrentUser';
+import { ChartSeriesConfigTab } from '@/features/reports/components/ChartSeriesConfigTab';
+import { Modal } from '@/shared/components/Modal';
 
 const MAX_COMPARE_COLUMNS = 10;
 const EXECUTIONS_TABLE_PAGE_SIZE = 10;
@@ -268,6 +274,62 @@ function ScenarioMetricRow({
   );
 }
 
+function chartSelectionFromResultTableTemplate(
+  t: ResultTableTemplatePublic,
+): ChartSelection {
+  const sel: ChartSelection = {
+    tipo: t.tipo,
+    un: t.un,
+    viewMode: 'table',
+    tableCumulative: Boolean(t.table_cumulative),
+  };
+  if (t.sub_filtro != null && t.sub_filtro !== '') sel.sub_filtro = t.sub_filtro;
+  if (t.loc != null && t.loc !== '') sel.loc = t.loc;
+  if (t.variable != null && t.variable !== '') sel.variable = t.variable;
+  if (t.agrupar_por != null && t.agrupar_por !== '') sel.agrupar_por = t.agrupar_por;
+  if (t.region != null && t.region !== '') sel.region = t.region;
+  if (t.timeslice != null && t.timeslice !== '') sel.timeslice = t.timeslice;
+  if (t.table_period_years != null && t.table_period_years >= 1) {
+    sel.tablePeriodYears = t.table_period_years;
+  }
+  if (t.custom_series_order != null && t.custom_series_order.length > 0) {
+    sel.customSeriesOrder = t.custom_series_order;
+  }
+  if (t.y_axis_min != null && Number.isFinite(t.y_axis_min)) sel.yAxisMin = t.y_axis_min;
+  if (t.y_axis_max != null && Number.isFinite(t.y_axis_max)) sel.yAxisMax = t.y_axis_max;
+  return sel;
+}
+
+/** Parámetros de chart-data sin claves con `undefined` (exactOptionalPropertyTypes). */
+function chartDataParamsFromResultTableTemplate(t: ResultTableTemplatePublic): {
+  tipo: string;
+  un: string;
+  sub_filtro?: string;
+  loc?: string;
+  variable?: string;
+  agrupar_por?: string;
+  region?: string;
+  timeslice?: string;
+} {
+  const p: {
+    tipo: string;
+    un: string;
+    sub_filtro?: string;
+    loc?: string;
+    variable?: string;
+    agrupar_por?: string;
+    region?: string;
+    timeslice?: string;
+  } = { tipo: t.tipo, un: t.un };
+  if (t.sub_filtro != null && t.sub_filtro !== '') p.sub_filtro = t.sub_filtro;
+  if (t.loc != null && t.loc !== '') p.loc = t.loc;
+  if (t.variable != null && t.variable !== '') p.variable = t.variable;
+  if (t.agrupar_por != null && t.agrupar_por !== '') p.agrupar_por = t.agrupar_por;
+  if (t.region != null && t.region !== '') p.region = t.region;
+  if (t.timeslice != null && t.timeslice !== '') p.timeslice = t.timeslice;
+  return p;
+}
+
 export function ResultDetailPage() {
   const { runId } = useParams<{ runId: string }>();
   const currentRunId = Number(runId);
@@ -295,6 +357,14 @@ export function ResultDetailPage() {
 
   // Chart selector (tipo por defecto = primera gráfica del catálogo)
   const [chartSelection, setChartSelection] = useState<ChartSelection>(() => getDefaultChartSelection());
+  const { user } = useCurrentUser();
+  const isAdminReports = Boolean(user?.is_admin_reports ?? user?.can_manage_scenarios);
+  const [seriesConfigOpen, setSeriesConfigOpen] = useState(false);
+  /** Incrementar para forzar re-fetch de chart-data tras editar config global de series. */
+  const [chartConfigVersion, setChartConfigVersion] = useState(0);
+  const bumpChartConfigVersion = useCallback(() => {
+    setChartConfigVersion((v) => v + 1);
+  }, []);
 
   /**
    * Catálogo de gráficas (incluye ``data_explorer_filters`` por chart) para
@@ -333,6 +403,11 @@ export function ResultDetailPage() {
   const [paretoData, setParetoData] = useState<ParetoChartResponse | null>(null);
   const [loadingChart, setLoadingChart] = useState(false);
   const [availableTimeslices, setAvailableTimeslices] = useState<string[]>([]);
+
+  const [autoTableTemplates, setAutoTableTemplates] = useState<ResultTableTemplatePublic[]>([]);
+  const [autoTableData, setAutoTableData] = useState<Record<number, ChartDataResponse>>({});
+  const [autoTableErrors, setAutoTableErrors] = useState<Record<number, string>>({});
+  const [autoTablesLoading, setAutoTablesLoading] = useState(false);
 
   // Cargar los timeslices presentes en los outputs del job actual.
   // Sirve para mostrar el selector de TS en `ChartSelector` cuando hay >1.
@@ -399,8 +474,7 @@ export function ResultDetailPage() {
   // (otro tipo, otra agrupación, otro filtro): el conjunto de series cambia,
   // así que un orden custom anterior dejaría de tener sentido.
   const chartIdentityKey =
-    `${chartSelection.tipo}|${chartSelection.sub_filtro ?? ''}|${chartSelection.loc ?? ''}|${chartSelection.variable ?? ''}|${chartSelection.agrupar_por ?? ''}|${chartSelection.region ?? ''}`;
-    `${chartSelection.tipo}|${chartSelection.sub_filtro ?? ''}|${chartSelection.loc ?? ''}|${chartSelection.variable ?? ''}|${chartSelection.agrupar_por ?? ''}|${chartSelection.timeslice ?? ''}`;
+    `${chartSelection.tipo}|${chartSelection.un}|${chartSelection.sub_filtro ?? ''}|${chartSelection.loc ?? ''}|${chartSelection.variable ?? ''}|${chartSelection.agrupar_por ?? ''}|${chartSelection.region ?? ''}|${chartSelection.timeslice ?? ''}`;
   useEffect(() => {
     setCustomSeriesOrder(null);
     setYAxisMin(null);
@@ -503,6 +577,57 @@ export function ResultDetailPage() {
         setRunMeta(null);
       });
   }, [currentRunId]);
+
+  useEffect(() => {
+    if (!currentRunId || Number.isNaN(currentRunId) || !isOptimal) {
+      setAutoTableTemplates([]);
+      setAutoTableData({});
+      setAutoTableErrors({});
+      setAutoTablesLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setAutoTablesLoading(true);
+    void (async () => {
+      try {
+        const tpls = await resultTableTemplatesApi.listEnabled();
+        if (cancelled) return;
+        setAutoTableTemplates(tpls);
+        const dataMap: Record<number, ChartDataResponse> = {};
+        const errMap: Record<number, string> = {};
+        await Promise.all(
+          tpls.map(async (t) => {
+            try {
+              const d = await simulationApi.getChartData(
+                currentRunId,
+                chartDataParamsFromResultTableTemplate(t),
+              );
+              if (!cancelled) dataMap[t.id] = d;
+            } catch (e) {
+              if (!cancelled) {
+                errMap[t.id] =
+                  e instanceof Error ? e.message : 'Error cargando datos de la tabla.';
+              }
+            }
+          }),
+        );
+        if (cancelled) return;
+        setAutoTableData(dataMap);
+        setAutoTableErrors(errMap);
+      } catch {
+        if (!cancelled) {
+          setAutoTableTemplates([]);
+          setAutoTableData({});
+          setAutoTableErrors({});
+        }
+      } finally {
+        if (!cancelled) setAutoTablesLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentRunId, isOptimal]);
 
   // 2. Fetch all summaries for comparison table
   useEffect(() => {
@@ -716,35 +841,66 @@ export function ResultDetailPage() {
   const isComparing = columnCompareJobIds.length >= 2;
   const chartCompareMode: CompareMode = isComparing ? compareViewMode : 'off';
 
+  const displaySingleChartData = useMemo(
+    () =>
+      singleChartData
+        ? reorderChartSeries(singleChartData, customSeriesOrder)
+        : null,
+    [singleChartData, customSeriesOrder],
+  );
+
+  const displayCompareFacetData = useMemo(
+    () =>
+      compareFacetData
+        ? reorderFacetSeries(compareFacetData, customSeriesOrder)
+        : null,
+    [compareFacetData, customSeriesOrder],
+  );
+
+  const displayCompareChartData = useMemo(
+    () =>
+      compareChartData
+        ? reorderByYearSeries(compareChartData, customSeriesOrder)
+        : null,
+    [compareChartData, customSeriesOrder],
+  );
+
+  const displayCompareLineData = useMemo(
+    () =>
+      compareLineData
+        ? reorderChartSeries(compareLineData, customSeriesOrder)
+        : null,
+    [compareLineData, customSeriesOrder],
+  );
+
   // Lista de series disponibles para el modal de orden, según el modo
   // activo. La unión de nombres permite definir un orden coherente que
   // funcione en cualquier facet/subplot/línea-total/single.
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   const seriesForModal = useMemo<{ name: string; color?: string | null | undefined }[]>(() => {
     const seen = new Map<string, string | null | undefined>();
     const push = (name: string, color?: string | null) => {
       if (!seen.has(name)) seen.set(name, color);
     };
-    if (chartCompareMode === 'facet' && compareFacetData) {
-      for (const f of compareFacetData.facets) {
+    if (chartCompareMode === 'facet' && displayCompareFacetData) {
+      for (const f of displayCompareFacetData.facets) {
         for (const s of f.series) push(s.name, s.color);
       }
-    } else if (chartCompareMode === 'by-year' && compareChartData) {
-      for (const sp of compareChartData.subplots) {
+    } else if (chartCompareMode === 'by-year' && displayCompareChartData) {
+      for (const sp of displayCompareChartData.subplots) {
         for (const s of sp.series) push(s.name, s.color);
       }
-    } else if (chartCompareMode === 'line-total' && compareLineData) {
-      for (const s of compareLineData.series) push(s.name, s.color);
-    } else if (singleChartData) {
-      for (const s of singleChartData.series) push(s.name, s.color);
+    } else if (chartCompareMode === 'line-total' && displayCompareLineData) {
+      for (const s of displayCompareLineData.series) push(s.name, s.color);
+    } else if (displaySingleChartData) {
+      for (const s of displaySingleChartData.series) push(s.name, s.color);
     }
     return Array.from(seen.entries()).map(([name, color]) => ({ name, color }));
   }, [
     chartCompareMode,
-    compareFacetData,
-    compareChartData,
-    compareLineData,
-    singleChartData,
+    displayCompareFacetData,
+    displayCompareChartData,
+    displayCompareLineData,
+    displaySingleChartData,
   ]);
   const chartJobIds = useMemo(() => {
     if (isComparing) return columnCompareJobIds;
@@ -957,6 +1113,7 @@ export function ResultDetailPage() {
     chartJobIds,
     chartYearsToPlot,
     chartDisplayNamesSignature,
+    chartConfigVersion,
   ]);
 
   // Cerrar dropdown al hacer clic fuera
@@ -1585,7 +1742,9 @@ export function ResultDetailPage() {
                           <FavoriteStarButton
                             jobId={Number(s.job_id)}
                             isFavorite={Boolean(s.is_favorite)}
-                            onToggled={(next) => handleFavoriteToggled(Number(s.job_id), next)}
+                            onToggled={(next: boolean) =>
+                              handleFavoriteToggled(Number(s.job_id), next)
+                            }
                             size={16}
                           />
                         </td>
@@ -1856,6 +2015,24 @@ export function ResultDetailPage() {
                   </span>
                 ) : null}
               </button>
+              {isAdminReports ? (
+                <button
+                  type="button"
+                  onClick={() => setSeriesConfigOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700"
+                  title="Nombres, colores, orden y visibilidad globales para este tipo de gráfica y agrupación"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                    />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  Configurar series
+                </button>
+              ) : null}
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] text-slate-500">Eje Y:</span>
                 <input
@@ -1907,9 +2084,9 @@ export function ResultDetailPage() {
               </div>
             )}
 
-            {chartCompareMode === 'facet' && chartJobIds.length > 1 && compareFacetData ? (
+            {chartCompareMode === 'facet' && chartJobIds.length > 1 && displayCompareFacetData ? (
               <CompareChartFacet
-                data={reorderFacetSeries(compareFacetData, customSeriesOrder)}
+                data={displayCompareFacetData}
                 barOrientation={chartBarOrientation}
                 facetPlacement={chartFacetPlacement}
                 legendMode={chartFacetLegendMode}
@@ -1918,25 +2095,25 @@ export function ResultDetailPage() {
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
               />
-            ) : chartCompareMode === 'by-year' && chartJobIds.length > 1 && compareChartData ? (
+            ) : chartCompareMode === 'by-year' && chartJobIds.length > 1 && displayCompareChartData ? (
               <CompareChart
-                data={reorderByYearSeries(compareChartData, customSeriesOrder)}
+                data={displayCompareChartData}
                 barOrientation={chartBarOrientation}
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
                 sharedYAxis={true}
               />
-            ) : chartCompareMode === 'by-year-alt' && chartJobIds.length > 1 && compareChartData ? (
+            ) : chartCompareMode === 'by-year-alt' && chartJobIds.length > 1 && displayCompareChartData ? (
               <CompareChart
-                data={reorderByYearSeries(compareChartData, customSeriesOrder)}
+                data={displayCompareChartData}
                 barOrientation={chartBarOrientation}
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
                 sharedYAxis={true}
               />
-            ) : chartCompareMode === 'line-total' && chartJobIds.length > 1 && compareLineData ? (
+            ) : chartCompareMode === 'line-total' && chartJobIds.length > 1 && displayCompareLineData ? (
               <LineChart
-                data={reorderChartSeries(compareLineData, customSeriesOrder)}
+                data={displayCompareLineData}
                 syntheticSeries={syntheticSeries.filter((s) => s.active !== false)}
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
@@ -1953,11 +2130,11 @@ export function ResultDetailPage() {
                 cumulative={Boolean(chartSelection.tableCumulative)}
                 serverExport={{ jobId: currentRunId, selection: chartSelection }}
               />
-            ) : singleChartData ? (
+            ) : displaySingleChartData ? (
               chartSelection.viewMode === 'line'
                 ? (
                     <LineChart
-                      data={reorderChartSeries(singleChartData, customSeriesOrder)}
+                      data={displaySingleChartData}
                       serverExport={{ jobId: currentRunId, selection: chartSelection }}
                       syntheticSeries={syntheticSeries.filter((s) => s.active !== false)}
                       yAxisMin={yAxisMin}
@@ -1966,7 +2143,7 @@ export function ResultDetailPage() {
                   )
                 : (
                     <HighchartsChart
-                      data={reorderChartSeries(singleChartData, customSeriesOrder)}
+                      data={displaySingleChartData}
                       barOrientation={chartBarOrientation}
                       serverExport={{ jobId: currentRunId, selection: chartSelection }}
                       yAxisMin={yAxisMin}
@@ -1985,6 +2162,58 @@ export function ResultDetailPage() {
               </div>
             ) : null}
           </div>
+
+          {autoTablesLoading || autoTableTemplates.length > 0 ? (
+            <section
+              className="rounded-xl border border-slate-800 bg-slate-900/20 backdrop-blur-sm p-6 space-y-6"
+              aria-label="Tablas configuradas del informe"
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-3">
+                <h2 className="m-0 text-base font-semibold text-white">Tablas del informe</h2>
+                <p className="m-0 text-[11px] text-slate-500 max-w-xl">
+                  Definidas por la administración de reportes. Se muestran para esta ejecución.
+                </p>
+              </div>
+              {autoTablesLoading && autoTableTemplates.length === 0 ? (
+                <div className="flex items-center gap-3 text-sm text-slate-400">
+                  <div className="h-6 w-6 rounded-full border-2 border-slate-700 border-t-emerald-500 animate-spin" />
+                  Cargando tablas…
+                </div>
+              ) : null}
+              {autoTableTemplates.map((t) => {
+                const dat = autoTableData[t.id];
+                const err = autoTableErrors[t.id];
+                return (
+                  <div
+                    key={t.id}
+                    className="rounded-lg border border-slate-800/80 bg-slate-950/40 p-4"
+                  >
+                    <p className="m-0 mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      {t.name}
+                    </p>
+                    {err && !dat ? (
+                      <p className="m-0 text-sm text-rose-400">{err}</p>
+                    ) : dat ? (
+                      <ChartDataTable
+                        data={dat}
+                        periodYears={t.table_period_years ?? null}
+                        cumulative={Boolean(t.table_cumulative)}
+                        presentation={resultTableTemplateColumnPresentation(t)}
+                        customSeriesOrder={t.custom_series_order ?? null}
+                        titleOverride={t.display_title?.trim() || null}
+                        serverExport={{
+                          jobId: currentRunId,
+                          selection: chartSelectionFromResultTableTemplate(t),
+                        }}
+                      />
+                    ) : (
+                      <p className="m-0 text-sm text-slate-500">Cargando…</p>
+                    )}
+                  </div>
+                );
+              })}
+            </section>
+          ) : null}
 
           <ChartSelector
             value={chartSelection}
@@ -2110,6 +2339,20 @@ export function ResultDetailPage() {
           }
         }}
       />
+
+      <Modal
+        open={seriesConfigOpen}
+        title="Configuración global de series"
+        onClose={() => setSeriesConfigOpen(false)}
+        wide
+      >
+        <ChartSeriesConfigTab
+          fixedTipo={chartSelection.tipo}
+          fixedAgruparPor={(chartSelection.agrupar_por ?? 'TECNOLOGIA').toUpperCase()}
+          presentationVariable={chartSelection.variable?.trim() || null}
+          onApplied={bumpChartConfigVersion}
+        />
+      </Modal>
 
       <SeriesOrderModal
         open={seriesOrderOpen}

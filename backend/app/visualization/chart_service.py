@@ -781,6 +781,7 @@ def _color_map_comparison(
 def _build_factor_planta_data(
     db: Session,
     job_id: int,
+    chart_tipo: str,
     cfg: dict,
     title: str,
     sub_filtro: str | None,
@@ -829,16 +830,31 @@ def _build_factor_planta_data(
     años = sorted(df["YEAR"].unique())
     categories = [str(a) for a in años]
 
+    from app.services.chart_series_config_service import (
+        apply_global_series_config,
+        normalize_agrupar_por,
+    )
+
+    ap = normalize_agrupar_por(cfg.get("agrupar_por"), cfg.get("agrupar_por"))
+    stack_items = apply_global_series_config(
+        db,
+        tipo=chart_tipo,
+        agrupar_por=ap,
+        orden_color=orden_color,
+        color_dict=color_dict,
+        default_name=lambda code: get_label(str(code)),
+    )
+
     series: list[ChartSeries] = []
-    for tech in orden_color:
+    for tech, series_color, series_name in stack_items:
         df_tech = df[df["COLOR"] == tech]
         valor_por_año = {int(row["YEAR"]): row["CF"] for _, row in df_tech.iterrows()}
         data = [round(valor_por_año.get(a, 0.0), 4) for a in años]
         series.append(
             ChartSeries(
-                name=get_label(str(tech)),
+                name=series_name,
                 data=data,
-                color=color_dict.get(tech, "#999999"),
+                color=series_color,
                 stack="default",
             )
         )
@@ -1061,7 +1077,7 @@ def build_chart_data(
 
     # ── Factor de Planta: pipeline propio ────────────────────────────────
     if es_factor_planta:
-        return _build_factor_planta_data(db, job_id, cfg, title, sub_filtro, loc)
+        return _build_factor_planta_data(db, job_id, tipo, cfg, title, sub_filtro, loc)
 
     # ── Cargar datos ─────────────────────────────────────────────────────
     df = _load_variable_data(db, job_id, variable_name)
@@ -1223,8 +1239,22 @@ def build_chart_data(
             return f"{get_label(left)} — {get_label(right)}"
         return get_label(code)
 
+    from app.services.chart_series_config_service import (
+        apply_global_series_config,
+        normalize_agrupar_por,
+    )
+
+    stack_items = apply_global_series_config(
+        db,
+        tipo=tipo,
+        agrupar_por=normalize_agrupar_por(agrupar_col, agrupar_col),
+        orden_color=orden_color,
+        color_dict=color_dict,
+        default_name=_composite_label,
+    )
+
     series: list[ChartSeries] = []
-    for tech in orden_color:
+    for tech, series_color, series_name in stack_items:
         df_tech = df_agg[df_agg["COLOR"] == tech]
         valor_por_año = {
             int(row["YEAR"]): row["VALUE"] for _, row in df_tech.iterrows()
@@ -1232,9 +1262,9 @@ def build_chart_data(
         data = [round(valor_por_año.get(a, 0.0), 6) for a in años]
         series.append(
             ChartSeries(
-                name=_composite_label(str(tech)),
+                name=series_name,
                 data=data,
-                color=color_dict.get(tech, "#999999"),
+                color=series_color,
                 stack="default",
             )
         )
@@ -1477,6 +1507,21 @@ def build_comparison_data(
             _palette = get_colores_grupos()
             mapa_colores = {c: _palette.get(c, "#999999") for c in categorias_unicas}
 
+    from app.services.chart_series_config_service import (
+        apply_global_series_config,
+        normalize_agrupar_por,
+    )
+
+    agrup_key = normalize_agrupar_por(agrupacion_usar, agrupacion_usar)
+    ordered_stack = apply_global_series_config(
+        db,
+        tipo=tipo,
+        agrupar_por=agrup_key,
+        orden_color=list(categorias_unicas),
+        color_dict=mapa_colores,
+        default_name=lambda c: get_label(str(c)),
+    )
+
     # ── Construir subplots por año ───────────────────────────────────────
     años_ordenados = sorted(df_final["YEAR"].unique())
     subplots: list[SubplotData] = []
@@ -1486,7 +1531,7 @@ def build_comparison_data(
         escenarios_en_año = sorted(df_año["SCENARIO"].unique())
 
         series: list[ChartSeries] = []
-        for categoria in categorias_unicas:
+        for categoria, col_cat, name_cat in ordered_stack:
             df_cat = df_año[df_año["CATEGORIA"] == categoria]
             if df_cat.empty:
                 continue
@@ -1503,9 +1548,9 @@ def build_comparison_data(
 
             series.append(
                 ChartSeries(
-                    name=get_label(str(categoria)),
+                    name=name_cat,
                     data=data,
-                    color=mapa_colores.get(categoria, "#999999"),
+                    color=col_cat,
                     stack="default",
                 )
             )

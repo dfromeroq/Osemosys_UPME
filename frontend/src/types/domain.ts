@@ -482,6 +482,96 @@ export type ChartDataResponse = {
   yAxisLabel: string;
 };
 
+/** Overrides de presentación para tablas (plantillas admin). */
+export type ResultTableSeriesPresentation = {
+  match: string;
+  display_label?: string | null;
+  color?: string | null;
+  hidden?: boolean;
+  sort_index?: number | null;
+  group_key?: string | null;
+};
+
+export type ResultTableColumnPresentation = {
+  id: string;
+  hidden?: boolean;
+  sort_order?: number | null;
+};
+
+export type ResultTablePresentation = {
+  series?: ResultTableSeriesPresentation[];
+  columns?: ResultTableColumnPresentation[];
+};
+
+export type ResultTableColumnRulePublic = {
+  id: number;
+  category_key: string;
+  hidden: boolean;
+  sort_order: number | null;
+};
+
+export type ResultTableTemplatePublic = {
+  id: number;
+  name: string;
+  /** Clave de siembra; ausente/null si la plantilla se creó a mano en admin. */
+  seed_key?: string | null;
+  display_title: string | null;
+  sort_order: number;
+  is_enabled: boolean;
+
+  tipo: string;
+  un: string;
+  sub_filtro: string | null;
+  loc: string | null;
+  variable: string | null;
+  agrupar_por: string | null;
+  region: string | null;
+  timeslice: string | null;
+  table_period_years: number | null;
+  table_cumulative: boolean | null;
+  custom_series_order: string[] | null;
+  y_axis_min: number | null;
+  y_axis_max: number | null;
+  column_rules: ResultTableColumnRulePublic[];
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ChartTypeInfo = {
+  tipo: string;
+  agrupar_por_default: string;
+  source: string;
+};
+
+export type ChartSeriesConfigPublic = {
+  id: number;
+  tipo: string;
+  agrupar_por: string;
+  series_code: string;
+  display_name: string;
+  color: string | null;
+  hidden: boolean;
+  sort_index: number;
+  group_key: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Solo reglas de columnas (años); las series vienen del chart-data con config global en backend. */
+export function resultTableTemplateColumnPresentation(
+  t: Pick<ResultTableTemplatePublic, 'column_rules'>,
+): ResultTablePresentation | null {
+  const columns = (t.column_rules ?? []).map((c) => ({
+    id: c.category_key,
+    hidden: c.hidden,
+    sort_order: c.sort_order,
+  }));
+  if (columns.length === 0) return null;
+  return { columns };
+}
+
 export type SubplotData = {
   year: number;
   scenario_name?: string | null;
