@@ -17,6 +17,7 @@ class ChartSeriesConfigPublic(BaseModel):
     display_name: str
     color: str | None = None
     hidden: bool = False
+    is_global: bool = False
     sort_index: int = 0
     group_key: str | None = None
     notes: str | None = None
@@ -31,6 +32,7 @@ class ChartSeriesConfigCreate(BaseModel):
     display_name: str | None = Field(None, max_length=512)
     color: str | None = Field(None, max_length=32)
     hidden: bool = False
+    is_global: bool = False
     sort_index: int | None = None
     group_key: str | None = Field(None, max_length=255)
     notes: str | None = None
@@ -40,6 +42,7 @@ class ChartSeriesConfigUpdate(BaseModel):
     display_name: str | None = Field(None, max_length=512)
     color: str | None = Field(None, max_length=32)
     hidden: bool | None = None
+    is_global: bool | None = None
     sort_index: int | None = None
     group_key: str | None = Field(None, max_length=255)
 

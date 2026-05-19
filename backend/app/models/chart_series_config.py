@@ -32,6 +32,7 @@ class ChartSeriesConfig(Base):
     display_name: Mapped[str] = mapped_column(String(512), nullable=False)
     color: Mapped[str | None] = mapped_column(String(32), nullable=True)
     hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_global: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     sort_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     group_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -51,6 +51,7 @@ export const chartSeriesConfigApi = {
       display_name: string;
       color: string | null;
       hidden: boolean;
+      is_global: boolean;
       sort_index: number;
       group_key: string | null;
     }>,

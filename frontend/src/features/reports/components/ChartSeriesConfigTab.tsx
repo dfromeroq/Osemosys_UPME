@@ -49,6 +49,9 @@ export function ChartSeriesConfigTab({
   const [codeCatalog, setCodeCatalog] = useState<{ code: string; label: string }[]>([]);
   const [codeCatalogLoading, setCodeCatalogLoading] = useState(false);
   const [codeMenuOpen, setCodeMenuOpen] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [reordering, setReordering] = useState(false);
 
   const effectiveTipo = (fixedTipo ?? tipo).trim();
   const effectiveAgrupar = (fixedAgruparPor ?? agrupar).trim().toUpperCase();
@@ -222,19 +225,25 @@ export function ChartSeriesConfigTab({
     }
   };
 
-  const move = async (idx: number, delta: number) => {
-    const j = idx + delta;
-    if (j < 0 || j >= rows.length) return;
+  const reorderByDrag = async (from: number, insertAt: number) => {
+    if (from === insertAt || from === insertAt - 1) return;
     const ids = rows.map((r) => r.id);
-    const t = ids[idx]!;
-    ids[idx] = ids[j]!;
-    ids[j] = t;
+    const next = [...ids];
+    const [moved] = next.splice(from, 1);
+    const adjusted = from < insertAt ? insertAt - 1 : insertAt;
+    next.splice(adjusted, 0, moved!);
+    setReordering(true);
+    setError(null);
     try {
-      const next = await chartSeriesConfigApi.reorder(ids);
-      setRows(next);
+      const reordered = await chartSeriesConfigApi.reorder(next);
+      setRows(reordered);
       onApplied?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error reordenando.');
+    } finally {
+      setReordering(false);
+      setDragIndex(null);
+      setHoverIndex(null);
     }
   };
 
@@ -447,23 +456,117 @@ export function ChartSeriesConfigTab({
         </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-slate-800">
+          <p className="m-0 border-b border-slate-800 px-3 py-2 text-[11px] text-slate-500">
+            Arrastra una fila desde el manejador <span className="font-mono">⋮⋮</span> para cambiar la
+            prioridad (orden en gráficas y tablas).
+          </p>
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-slate-800 text-slate-500">
+                <th className="p-2 w-8" aria-label="Arrastrar" />
                 <th className="p-2 w-8">#</th>
                 <th className="p-2">Código</th>
                 <th className="p-2">Nombre visible</th>
                 <th className="p-2">Color</th>
                 <th className="p-2">Oculta</th>
+                <th
+                  className="p-2"
+                  title="Aplica color y nombre en cualquier tipo de gráfica con el mismo código"
+                >
+                  Global
+                </th>
                 <th className="p-2">Grupo</th>
-                <th className="p-2 w-24">Orden</th>
                 <th className="p-2"> </th>
               </tr>
             </thead>
-            <tbody>
-              {rows.map((r, idx) => (
-                <tr key={r.id} className="border-b border-slate-800/80 hover:bg-slate-900/40">
-                  <td className="p-2 text-slate-500">{idx + 1}</td>
+            <tbody
+              onDragOver={(e) => {
+                if (dragIndex !== null) e.preventDefault();
+              }}
+              onDrop={(e) => {
+                if (dragIndex === null) return;
+                e.preventDefault();
+                const insertAt = hoverIndex ?? rows.length;
+                void reorderByDrag(dragIndex, insertAt);
+              }}
+            >
+              {rows.map((r, idx) => {
+                const isDragging = dragIndex === idx;
+                const showTopIndicator =
+                  hoverIndex === idx &&
+                  dragIndex !== null &&
+                  dragIndex !== idx &&
+                  dragIndex !== idx - 1;
+                const showBottomIndicator =
+                  idx === rows.length - 1 &&
+                  hoverIndex === rows.length &&
+                  dragIndex !== null &&
+                  dragIndex !== idx;
+                return (
+                  <tr
+                    key={r.id}
+                    draggable={!reordering}
+                    onDragStart={(e) => {
+                      setDragIndex(idx);
+                      setHoverIndex(idx);
+                      e.dataTransfer.effectAllowed = 'move';
+                      try {
+                        e.dataTransfer.setData('text/plain', String(r.id));
+                      } catch {
+                        /* noop */
+                      }
+                    }}
+                    onDragEnter={(e) => {
+                      if (dragIndex === null) return;
+                      e.preventDefault();
+                    }}
+                    onDragOver={(e) => {
+                      if (dragIndex === null) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      const before = e.clientY < rect.top + rect.height / 2;
+                      setHoverIndex(before ? idx : idx + 1);
+                    }}
+                    onDragEnd={() => {
+                      setDragIndex(null);
+                      setHoverIndex(null);
+                    }}
+                    onDrop={(e) => {
+                      if (dragIndex === null) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const insertAt = hoverIndex ?? idx;
+                      void reorderByDrag(dragIndex, insertAt);
+                    }}
+                    className={[
+                      'relative border-b border-slate-800/80 hover:bg-slate-900/40',
+                      isDragging ? 'opacity-50' : '',
+                    ].join(' ')}
+                    style={{ cursor: dragIndex !== null ? 'grabbing' : undefined }}
+                  >
+                    <td className="relative p-2 align-middle">
+                      {showTopIndicator ? (
+                        <span
+                          aria-hidden
+                          className="pointer-events-none absolute -top-[2px] left-0 right-0 z-10 h-[3px] rounded-full bg-emerald-400"
+                        />
+                      ) : null}
+                      {showBottomIndicator ? (
+                        <span
+                          aria-hidden
+                          className="pointer-events-none absolute -bottom-[2px] left-0 right-0 z-10 h-[3px] rounded-full bg-emerald-400"
+                        />
+                      ) : null}
+                      <span
+                        title="Arrastra para reordenar"
+                        className="inline-flex h-5 w-4 cursor-grab select-none items-center justify-center text-base leading-none text-slate-500 hover:text-slate-200 active:cursor-grabbing"
+                        aria-hidden
+                      >
+                        ⋮⋮
+                      </span>
+                    </td>
+                    <td className="p-2 text-slate-500">{idx + 1}</td>
                   <td className="p-2 font-mono text-[11px] text-slate-400 max-w-[180px] truncate">
                     {r.series_code}
                   </td>
@@ -492,6 +595,14 @@ export function ChartSeriesConfigTab({
                       onChange={(e) => void patchRow(r.id, { hidden: e.target.checked })}
                     />
                   </td>
+                  <td className="p-2 text-center">
+                    <input
+                      type="checkbox"
+                      checked={r.is_global}
+                      title="Aplica en cualquier tipo de gráfica donde aparezca este código"
+                      onChange={(e) => void patchRow(r.id, { is_global: e.target.checked })}
+                    />
+                  </td>
                   <td className="p-2">
                     <input
                       className="w-full min-w-[100px] rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100"
@@ -505,37 +616,18 @@ export function ChartSeriesConfigTab({
                     />
                   </td>
                   <td className="p-2">
-                    <div className="flex flex-col gap-1">
-                      <button
-                        type="button"
-                        className="rounded border border-slate-700 px-1 text-[10px] hover:bg-slate-800 disabled:opacity-30"
-                        disabled={idx === 0}
-                        onClick={() => void move(idx, -1)}
-                      >
-                        ▲
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded border border-slate-700 px-1 text-[10px] hover:bg-slate-800 disabled:opacity-30"
-                        disabled={idx === rows.length - 1}
-                        onClick={() => void move(idx, 1)}
-                      >
-                        ▼
-                      </button>
-                    </div>
-                  </td>
-                  <td className="p-2">
                     <button
                       type="button"
                       className="text-rose-400 hover:underline text-[11px] disabled:opacity-30"
-                      disabled={savingId === r.id}
+                      disabled={savingId === r.id || reordering}
                       onClick={() => void removeRow(r.id)}
                     >
                       Quitar
                     </button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

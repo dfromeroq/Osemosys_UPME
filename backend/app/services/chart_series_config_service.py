@@ -506,6 +506,8 @@ def update_config(
         row.color = str(c).strip()[:32] if c not in (None, "") else None
     if "hidden" in data and data["hidden"] is not None:
         row.hidden = bool(data["hidden"])
+    if "is_global" in data and data["is_global"] is not None:
+        row.is_global = bool(data["is_global"])
     if "sort_index" in data and data["sort_index"] is not None:
         row.sort_index = int(data["sort_index"])
     if "group_key" in data:
@@ -546,6 +548,20 @@ def reorder_configs(
     return list_configs(db, tipo=first.tipo, agrupar_por=first.agrupar_por)
 
 
+def _global_configs_by_code(db: Session) -> dict[str, ChartSeriesConfig]:
+    """Filas marcadas is_global: una entrada por series_code (primera por id)."""
+    rows = db.scalars(
+        select(ChartSeriesConfig)
+        .where(ChartSeriesConfig.is_global.is_(True))
+        .order_by(ChartSeriesConfig.id.asc())
+    ).all()
+    out: dict[str, ChartSeriesConfig] = {}
+    for r in rows:
+        if r.series_code not in out:
+            out[r.series_code] = r
+    return out
+
+
 def apply_global_series_config(
     db: Session,
     *,
@@ -555,11 +571,22 @@ def apply_global_series_config(
     color_dict: Mapping[Any, str],
     default_name: Callable[[Any], str],
 ) -> list[tuple[Any, str, str]]:
-    """Filtra ocultas, reordena y devuelve [(code, color, display_name), ...]."""
+    """Filtra ocultas, reordena y devuelve [(code, color, display_name), ...].
+
+    Resolución por ``series_code``: fila local (tipo+agrupación) gana sobre fila
+    ``is_global`` del mismo código.
+    """
     ap = agrupar_por.strip().upper()
-    rows = list_configs(db, tipo=tipo.strip(), agrupar_por=ap)
-    cmap: dict[str, ChartSeriesConfig] = {r.series_code: r for r in rows}
-    if not cmap:
+    local_rows = list_configs(db, tipo=tipo.strip(), agrupar_por=ap)
+    local_map: dict[str, ChartSeriesConfig] = {r.series_code: r for r in local_rows}
+    global_map = _global_configs_by_code(db)
+
+    def resolve(key: str) -> ChartSeriesConfig | None:
+        if key in local_map:
+            return local_map[key]
+        return global_map.get(key)
+
+    if not local_map and not global_map:
         return [
             (tech, str(color_dict.get(tech, "#999999")), default_name(tech))
             for tech in orden_color
@@ -569,7 +596,7 @@ def apply_global_series_config(
     rest: list[Any] = []
     for orig_i, tech in enumerate(orden_color):
         key = str(tech)
-        r = cmap.get(key)
+        r = resolve(key)
         if r and r.hidden:
             continue
         if r:
@@ -582,7 +609,7 @@ def apply_global_series_config(
     out: list[tuple[Any, str, str]] = []
     for tech in new_order:
         key = str(tech)
-        r = cmap.get(key)
+        r = resolve(key)
         col = str(color_dict.get(tech, "#999999"))
         if r and r.color:
             col = r.color
