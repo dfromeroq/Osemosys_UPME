@@ -115,6 +115,27 @@ def _is_regional_job(db: Session, job_id: int) -> bool:
     return sim_type == "REGIONAL"
 
 
+def _apply_regional_transform(
+    db: Session,
+    job_id: int,
+    df: pd.DataFrame,
+    *,
+    region_filter: str | None = None,
+    agrupar_por: str | None = None,
+) -> pd.DataFrame:
+    """No-op en NACIONAL; aplica ``transform_regional_df`` en REGIONAL.
+
+    Debe llamarse INMEDIATAMENTE después de ``_load_variable_data`` y ANTES
+    de cualquier filtro/alias/groupby que dependa de TECHNOLOGY o FUEL —
+    los filtros de ``CONFIGS`` asumen códigos sin prefijo regional.
+    """
+    if df is None or df.empty or not _is_regional_job(db, job_id):
+        return df
+    return transform_regional_df(
+        df, region_filter=region_filter, agrupar_por=agrupar_por
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 1. DATA LOADING
 # ═══════════════════════════════════════════════════════════════════════════
@@ -798,6 +819,10 @@ def _build_factor_planta_data(
     df_cap = _load_variable_data(db, job_id, "TotalCapacityAnnual")
     df_prd = _load_variable_data(db, job_id, "ProductionByTechnology")
 
+    # Strip prefijos regionales antes del filtro (jobs REGIONAL).
+    df_cap = _apply_regional_transform(db, job_id, df_cap)
+    df_prd = _apply_regional_transform(db, job_id, df_prd)
+
     if filtro_fn is not None:
         df_cap = filtro_fn(df_cap, sub_filtro=sub_filtro, loc=loc)
         df_prd = filtro_fn(df_prd, sub_filtro=sub_filtro, loc=loc)
@@ -911,6 +936,9 @@ def build_recursos_vs_demanda_data(
         return ChartDataResponse(
             categories=[], series=[], title=title, yAxisLabel=un
         )
+
+    # Strip prefijos regionales antes del filtro (jobs REGIONAL).
+    df = _apply_regional_transform(db, job_id, df)
 
     # Filtrar solo tecnologías MINOIL
     df_minoil = df[df["TECHNOLOGY"].str.startswith("MINOIL")].copy()
@@ -1090,18 +1118,19 @@ def build_chart_data(
             yAxisLabel=un,
         )
 
+    # ── Transformación regional (jobs REGIONAL) ──────────────────────────
+    # DEBE ir antes del filtro: los outputs REGIONAL llegan con prefijo
+    # geográfico de 2 letras (p. ej. ``SE_PWRSOLUGE``) y los filtros de
+    # ``CONFIGS`` asumen códigos sin prefijo (``startswith('PWR')``).
+    df = _apply_regional_transform(
+        db, job_id, df, region_filter=region, agrupar_por=agrupar_por
+    )
+
     # ── Filtrar ──────────────────────────────────────────────────────────
     filtro_fn = cfg.get("filtro")
     if filtro_fn is not None:
         df = filtro_fn(df, sub_filtro=sub_filtro, loc=loc)
 
-    # ── Transformación regional (jobs REGIONAL) ──────────────────────────
-    if _is_regional_job(db, job_id):
-        df = transform_regional_df(
-            df,
-            region_filter=region,
-            agrupar_por=agrupar_por,
-        )
     # Filtro por timeslice (opcional): si el DataFrame tiene la columna
     # TIMESLICE y el caller pasa un código, restringimos antes del groupby.
     # Si no se pasa, se agrega por año (suma de todos los TS), que es el
@@ -1412,6 +1441,8 @@ def build_comparison_data(
     if usa_historico and año_historico in years_to_plot and job_ids:
         first_job_id = job_ids[0]
         df_var = _load_variable_data(db, first_job_id, variable_name)
+        # Strip prefijos regionales si el job es REGIONAL (acumulado nacional).
+        df_var = _apply_regional_transform(db, first_job_id, df_var)
 
         if not df_var.empty:
             df_hist = _procesar_bloque_comparacion(
@@ -1436,6 +1467,8 @@ def build_comparison_data(
 
     for jid in job_ids:
         df_var = _load_variable_data(db, jid, variable_name)
+        # Strip prefijos regionales si el job es REGIONAL (acumulado nacional).
+        df_var = _apply_regional_transform(db, jid, df_var)
         if df_var.empty:
             continue
 
@@ -1994,6 +2027,8 @@ def build_comparison_line_data(
 
     for jid in job_ids:
         df = _load_variable_data(db, jid, variable_name)
+        # Strip prefijos regionales si el job es REGIONAL (acumulado nacional).
+        df = _apply_regional_transform(db, jid, df)
         if df.empty:
             totals_per_job[jid] = {}
             continue
@@ -2097,6 +2132,9 @@ def build_pareto_data(
             title=title,
             yAxisLabel=_emi_label if es_emision else un,
         )
+
+    # Strip prefijos regionales antes del filtro (jobs REGIONAL).
+    df = _apply_regional_transform(db, job_id, df)
 
     if filtro_fn is not None:
         df = filtro_fn(df, sub_filtro=sub_filtro, loc=loc)
@@ -4087,6 +4125,8 @@ def build_comparison_data_by_year_alt(
     all_data: list[pd.DataFrame] = []
     for jid in job_ids:
         df_var = _load_variable_data(db, jid, variable_name)
+        # Strip prefijos regionales si el job es REGIONAL (acumulado nacional).
+        df_var = _apply_regional_transform(db, jid, df_var)
         if df_var.empty:
             continue
 

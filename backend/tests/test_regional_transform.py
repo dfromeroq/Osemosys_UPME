@@ -208,3 +208,72 @@ def test_region_filter_invalido_se_comporta_como_acumulado():
     out = transform_regional_df(df, region_filter="XX", agrupar_por=None)
     # No es filtro → strip de todos
     assert set(out["TECHNOLOGY"].unique()) == {"PWRDIST"}
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# transform_regional_df — strip de FUEL
+# ──────────────────────────────────────────────────────────────────────────
+
+
+def _make_df_fuel_prefijado():
+    """DataFrame con FUEL también prefijado (como llegan los outputs REGIONAL)."""
+    return pd.DataFrame(
+        [
+            {"TECHNOLOGY": "AN_PWRDIST", "FUEL": "AN_ELC003", "YEAR": 2025, "VALUE": 10.0},
+            {"TECHNOLOGY": "CA_PWRDIST", "FUEL": "CA_ELC003", "YEAR": 2025, "VALUE": 20.0},
+            {"TECHNOLOGY": "SE_DEMRES_URB", "FUEL": "SE_RESILU_URB", "YEAR": 2025, "VALUE": 30.0},
+        ]
+    )
+
+
+def test_caso_a_strippea_fuel():
+    """Acumulado nacional: FUEL pierde el prefijo regional."""
+    out = transform_regional_df(
+        _make_df_fuel_prefijado(), region_filter=None, agrupar_por=None
+    )
+    assert set(out["FUEL"].unique()) == {"ELC003", "RESILU_URB"}
+
+
+def test_caso_b_strippea_fuel():
+    """Filtro por región: FUEL queda strippeado en las filas que sobreviven."""
+    out = transform_regional_df(
+        _make_df_fuel_prefijado(), region_filter="AN", agrupar_por=None
+    )
+    assert len(out) == 1
+    assert out.iloc[0]["FUEL"] == "ELC003"
+
+
+def test_caso_c_strippea_fuel():
+    """Agrupar por región: FUEL strippeado y columna REGION presente."""
+    out = transform_regional_df(
+        _make_df_fuel_prefijado(), region_filter=None, agrupar_por="REGION"
+    )
+    assert "REGION" in out.columns
+    assert set(out["FUEL"].unique()) == {"ELC003", "RESILU_URB"}
+    assert set(out["REGION"].unique()) == {"AN", "CA", "SE"}
+
+
+def test_strip_fuel_idempotente_global():
+    """FUELs sin prefijo regional (OIL, EMICO2, SAF) se preservan intactos."""
+    df = pd.DataFrame(
+        [
+            {"TECHNOLOGY": "AN_PWRDIST", "FUEL": "OIL", "YEAR": 2025, "VALUE": 1.0},
+            {"TECHNOLOGY": "CA_PWRDIST", "FUEL": "EMICO2", "YEAR": 2025, "VALUE": 2.0},
+            {"TECHNOLOGY": "SE_PWRDIST", "FUEL": "SAF", "YEAR": 2025, "VALUE": 3.0},
+        ]
+    )
+    out = transform_regional_df(df, region_filter=None, agrupar_por=None)
+    assert set(out["FUEL"].unique()) == {"OIL", "EMICO2", "SAF"}
+
+
+def test_df_sin_columna_fuel_no_falla():
+    """DataFrames sin columna FUEL (típico de AnnualEmissions) no rompen."""
+    df = pd.DataFrame(
+        [
+            {"TECHNOLOGY": "AN_PWRDIST", "YEAR": 2025, "VALUE": 1.0},
+            {"TECHNOLOGY": "CA_PWRDIST", "YEAR": 2025, "VALUE": 2.0},
+        ]
+    )
+    out = transform_regional_df(df, region_filter=None, agrupar_por=None)
+    assert "FUEL" not in out.columns
+    assert set(out["TECHNOLOGY"].unique()) == {"PWRDIST"}

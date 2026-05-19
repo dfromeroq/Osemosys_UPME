@@ -108,22 +108,23 @@ def transform_regional_df(
 
     (a) ``region_filter=None`` y ``agrupar_por != 'REGION'``
         → ACUMULADO NACIONAL: excluye transmisión interregional; quita
-        prefijos. El ``groupby`` final de ``chart_service`` colapsará las 7
-        regiones bajo la tecnología base.
+        prefijos de TECHNOLOGY y FUEL. El ``groupby`` final de
+        ``chart_service`` colapsará las 7 regiones bajo la tecnología base.
 
     (b) ``region_filter in REGIONAL_PREFIXES``
         → FILTRO REGIONAL: deja solo filas con ese prefijo; excluye
-        transmisión interregional; quita prefijos para preservar los colores
-        y leyendas estándar.
+        transmisión interregional; quita prefijos de TECHNOLOGY y FUEL para
+        preservar los colores y leyendas estándar.
 
     (c) ``agrupar_por == 'REGION'``
         → AGRUPACIÓN POR REGIÓN: excluye transmisión interregional; añade
-        columna ``REGION`` con el prefijo; ``chart_service`` usará esa
-        columna como ``COLOR``.
+        columna ``REGION`` con el prefijo; quita prefijos de TECHNOLOGY y
+        FUEL; ``chart_service`` usará la columna ``REGION`` como ``COLOR``.
 
     Filas cuya ``TECHNOLOGY`` no tiene prefijo válido se conservan en el
     caso (a) (compat. con tecnologías "globales" que pudieran existir en
-    un job REGIONAL).
+    un job REGIONAL). El strip de FUEL es idempotente: códigos sin prefijo
+    regional válido (``OIL``, ``EMICO2``, ``SAF``…) se preservan intactos.
     """
     if df.empty or "TECHNOLOGY" not in df.columns:
         return df
@@ -138,6 +139,13 @@ def transform_regional_df(
     tech = df["TECHNOLOGY"].astype(str)
 
     region_series = tech.map(extract_region)
+
+    # Strip FUEL común a los 3 casos. Los outputs regionales traen FUEL
+    # también prefijado (p. ej. ``SE_ELC003``, ``CA_RESILU_URB``); los
+    # filtros y agrupaciones por FUEL del chart_service asumen códigos sin
+    # prefijo. ``strip_region`` es idempotente para FUELs globales.
+    if "FUEL" in df.columns:
+        df["FUEL"] = df["FUEL"].astype(str).map(strip_region)
 
     # Caso (c): agrupar por región
     if agrupar_por == "REGION":
