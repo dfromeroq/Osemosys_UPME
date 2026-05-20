@@ -1469,4 +1469,15 @@ CONFIGS = {
         "color_fn": None,
         "variable_default": "ProductionByTechnology",
     },
+    "recursos_vs_demanda_gas": {
+        "titulo": "Recursos y reservas vs Demanda (Gas Natural)",
+        "figura": "Recursos y reservas vs Demanda (Gas Natural)",
+        "filename": "Recursos_Reservas_vs_Demanda_Gas",
+        "print": "RECURSOS Y RESERVAS VS DEMANDA (GAS NATURAL)",
+        "filtro": None,
+        "msg_sin_datos": "Sin datos de extracción de gas natural (MINNGS)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": None,
+        "variable_default": "ProductionByTechnology",
+    },
 }

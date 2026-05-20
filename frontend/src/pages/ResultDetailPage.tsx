@@ -726,9 +726,10 @@ export function ResultDetailPage() {
   const isComparing = columnCompareJobIds.length >= 2;
   const chartCompareMode: CompareMode = isComparing ? compareViewMode : 'off';
 
-  // Forzar disposición vertical para chart mixto (áreas + líneas) como recursos_vs_demanda
+  // Forzar disposición vertical para chart mixto (áreas + líneas)
+  const RECURSOS_CHARTS = new Set(['recursos_vs_demanda', 'recursos_vs_demanda_gas']);
   const effectiveFacetPlacement: ChartFacetPlacement =
-    chartCompareMode === 'facet' && chartSelection.tipo === 'recursos_vs_demanda'
+    chartCompareMode === 'facet' && RECURSOS_CHARTS.has(chartSelection.tipo)
       ? 'stacked'
       : chartFacetPlacement;
 

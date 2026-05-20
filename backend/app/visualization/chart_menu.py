@@ -159,6 +159,11 @@ MENU = [
          {"tipo": "cap_h2",     "label": "Hidrógeno - ProductionByTechnology",   "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
          {"tipo": "h2_consumo", "label": "Hidrógeno - Consumo - UseByTechnology", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
      ]},
+    {"code": "recursos", "label": "Recursos y Reservas", "icon": "🛢️",
+     "charts": [
+         {"tipo": "recursos_vs_demanda", "label": "Crudo — Recursos y Reservas vs Demanda"},
+         {"tipo": "recursos_vs_demanda_gas", "label": "Gas Natural — Recursos y Reservas vs Demanda/Producción"},
+     ]},
     {"code": "comercio", "label": "Comercio Exterior", "icon": "🚢",
      "charts": [{"tipo": "exp_liquidos_gas", "label": "Exportaciones — Líquidos y Gas", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True}]},
     {"code": "emisiones", "label": "Emisiones", "icon": "🌿",

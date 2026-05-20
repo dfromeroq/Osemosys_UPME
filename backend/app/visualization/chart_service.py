@@ -966,6 +966,144 @@ _REMAINING_COLORS: dict[str, str] = {
     "MINOIL": "#581c87",
 }
 
+_GAS_TECH_DISPLAY: dict[str, str] = {
+    "MINNGS": "Gas natural nacional",
+}
+
+_GAS_PRODUCTION_COLORS: dict[str, str] = {
+    "MINNGS": "#10b981",
+}
+
+_GAS_REMAINING_COLORS: dict[str, str] = {
+    "MINNGS": "#065f46",
+}
+
+
+def _build_recursos_vs_demanda_gas_df(
+    db: Session, job_id: int, un: str = "PJ",
+) -> pd.DataFrame | None:
+    """Helper que retorna un DataFrame con columnas:
+    YEAR, TECHNOLOGY, PRODUCTION, REMAINING, HAS_RESOURCE
+
+    Retorna None si no hay datos.
+    """
+    resource_caps = _load_resource_cap_input(db, job_id, "MINNGS")
+
+    df = _load_variable_data(db, job_id, "ProductionByTechnology")
+    if df.empty:
+        return None
+
+    df = _apply_regional_transform(db, job_id, df)
+    df_gas = df[df["TECHNOLOGY"].str.startswith("MINNGS")].copy()
+    if df_gas.empty:
+        return None
+
+    df_agg = df_gas.groupby(["TECHNOLOGY", "YEAR"], as_index=False)["VALUE"].sum()
+    all_techs = sorted(df_agg["TECHNOLOGY"].unique())
+
+    prod_totals = df_agg.groupby("TECHNOLOGY")["VALUE"].sum().to_dict()
+
+    initial: dict[str, float] = {}
+    for tech in all_techs:
+        if tech in resource_caps:
+            initial[tech] = resource_caps[tech]
+        else:
+            initial[tech] = prod_totals.get(tech, 0.0)
+
+    factor = _unit_conversion_factor(un)
+    años = sorted(df_agg["YEAR"].unique())
+
+    rows: list[dict] = []
+    for tech in all_techs:
+        tech_rows = df_agg[df_agg["TECHNOLOGY"] == tech]
+        prod_by_year = dict(zip(tech_rows["YEAR"], tech_rows["VALUE"]))
+        cap = initial.get(tech, 0.0)
+        cum = 0.0
+        for a in años:
+            prod = prod_by_year.get(a, 0.0)
+            cum += prod
+            rem = max(0.0, cap - cum)
+            rows.append({
+                "YEAR": a,
+                "TECHNOLOGY": tech,
+                "PRODUCTION": round(prod * factor, 6),
+                "REMAINING": round(rem * factor, 6) if cap > 0 else 0.0,
+                "HAS_RESOURCE": 1.0 if cap > 0 else 0.0,
+            })
+
+    return pd.DataFrame(rows)
+
+
+def build_recursos_vs_demanda_gas_data(
+    db: Session,
+    job_id: int,
+    un: str = "PJ",
+) -> ChartDataResponse:
+    """Construye datos para Recursos y reservas vs Demanda (Gas Natural).
+
+    Para la tecnología MINNGS:
+      1. Carga el recurso inicial desde
+         TotalTechnologyModelPeriodActivityUpperLimit (input param).
+      2. Carga la producción anual desde ProductionByTechnology (output).
+      3. Calcula ``remaining[t] = initial - cumulative_production[t]``.
+
+    Retorna 2 series:
+      - 1 barra apilada (stack="produccion"): producción anual.
+      - 1 línea (chart_type="line", sin stack): recurso remanente.
+    """
+    title = f"Recursos y reservas vs Demanda (Gas Natural) ({un})"
+
+    df_gas = _build_recursos_vs_demanda_gas_df(db, job_id, un=un)
+    if df_gas is None or df_gas.empty:
+        return ChartDataResponse(
+            categories=[], series=[], title=title, yAxisLabel=un
+        )
+
+    años = sorted(df_gas["YEAR"].unique())
+    categories = [str(a) for a in años]
+    all_techs = sorted(df_gas["TECHNOLOGY"].unique())
+
+    series: list[ChartSeries] = []
+
+    for tech in all_techs:
+        tech_display = _GAS_TECH_DISPLAY.get(tech, tech).lower()
+        tech_rows = df_gas[df_gas["TECHNOLOGY"] == tech]
+
+        prod_by_year = dict(zip(tech_rows["YEAR"], tech_rows["PRODUCTION"]))
+        rem_by_year = dict(zip(tech_rows["YEAR"], tech_rows["REMAINING"]))
+        has_res = tech_rows["HAS_RESOURCE"].iloc[0] > 0
+
+        # Serie de producción
+        prod_data = [prod_by_year.get(a, 0.0) for a in años]
+        series.append(
+            ChartSeries(
+                name=f"Producción {tech_display}",
+                data=prod_data,
+                color=_GAS_PRODUCTION_COLORS.get(tech, "#10b981"),
+                stack="produccion",
+            )
+        )
+
+        # Serie de recurso remanente
+        if has_res:
+            rem_data = [rem_by_year.get(a, 0.0) for a in años]
+            series.append(
+                ChartSeries(
+                    name=f"Recurso remanente {tech_display}",
+                    data=rem_data,
+                    color=_GAS_REMAINING_COLORS.get(tech, "#065f46"),
+                    stack=None,
+                    chart_type="line",
+                )
+            )
+
+    return ChartDataResponse(
+        categories=categories,
+        series=series,
+        title=title,
+        yAxisLabel=un,
+    )
+
 
 def build_recursos_vs_demanda_data(
     db: Session,
@@ -1120,6 +1258,8 @@ def build_chart_data(
     # ── Ruta especial: recursos vs demanda ────────────────────────────────
     if tipo == "recursos_vs_demanda":
         return build_recursos_vs_demanda_data(db, job_id, un=un)
+    if tipo == "recursos_vs_demanda_gas":
+        return build_recursos_vs_demanda_gas_data(db, job_id, un=un)
 
     if tipo not in CONFIGS:
         raise ValueError(f"tipo='{tipo}' no existe en CONFIGS.")
@@ -1369,6 +1509,74 @@ def build_chart_data(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Helper: comparación gas por año
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _build_comparison_gas_by_year(
+    db: Session,
+    job_ids: list[int],
+    years_to_plot: list[int] | None,
+    scenario_names: dict[int, str],
+    un: str = "PJ",
+) -> CompareChartResponse:
+    """Construye comparación by-year para recursos_vs_demanda_gas.
+
+    Subplot por año clave, cada barra = producción de un escenario.
+    """
+    if years_to_plot is None:
+        years_to_plot = [2024, 2030, 2050]
+
+    title = f"Recursos y reservas vs Demanda (Gas Natural) — Comparación ({un})"
+
+    # Recolectar producción por job y año
+    prod_by_job_year: dict[int, dict[int, float]] = {}  # job_id -> {year -> value}
+    has_data = False
+    for jid in job_ids:
+        df_gas = _build_recursos_vs_demanda_gas_df(db, jid, un=un)
+        if df_gas is None or df_gas.empty:
+            prod_by_job_year[jid] = {}
+            continue
+        has_data = True
+        tech_rows = df_gas.groupby("YEAR", as_index=False)["PRODUCTION"].sum()
+        prod_by_job_year[jid] = dict(
+            zip(tech_rows["YEAR"], tech_rows["PRODUCTION"])
+        )
+
+    if not has_data:
+        return CompareChartResponse(title=title, subplots=[], yAxisLabel=un)
+
+    subplots: list[SubplotData] = []
+    color = "#10b981"
+    name = "Producción gas natural nacional"
+
+    for año in years_to_plot:
+        data = [
+            round(prod_by_job_year.get(jid, {}).get(año, 0.0), 6)
+            for jid in job_ids
+        ]
+        categories = [scenario_names.get(jid, f"Job {jid}") for jid in job_ids]
+
+        subplots.append(
+            SubplotData(
+                year=año,
+                categories=categories,
+                series=[
+                    ChartSeries(
+                        name=name,
+                        data=data,
+                        color=color,
+                        stack="default",
+                    )
+                ],
+            )
+        )
+
+    return CompareChartResponse(
+        title=title, subplots=subplots, yAxisLabel=un
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 4. build_comparison_data — MULTI-ESCENARIO
 # ═══════════════════════════════════════════════════════════════════════════
 def build_comparison_data(
@@ -1494,6 +1702,12 @@ def build_comparison_data(
             scenario_names[jid] = ov.strip()
 
     variable_name = cfg["variable_default"]
+
+    # ── Ruta especial: recursos vs demanda (Gas Natural) ─────────────────
+    if tipo == "recursos_vs_demanda_gas":
+        return _build_comparison_gas_by_year(
+            db, job_ids, years_to_plot, scenario_names, un,
+        )
 
     # ── Procesar datos ───────────────────────────────────────────────────
     all_data: list[pd.DataFrame] = []
@@ -2064,12 +2278,11 @@ def build_comparison_line_data(
     title += f" — Total ({un})"
 
     # Cargar nombres de escenarios
+    from app.models import Scenario
     scenario_names: dict[int, str] = {}
     for jid in job_ids:
         job = db.query(SimulationJob).filter(SimulationJob.id == jid).first()
         if job:
-            from app.models import Scenario
-
             scenario = (
                 db.query(Scenario).filter(Scenario.id == job.scenario_id).first()
                 if job.scenario_id
@@ -4111,6 +4324,82 @@ def export_results_csv_zip(
     return buffer
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Helper: comparación gas por escenario (by-year-alt)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _build_comparison_gas_by_year_alt(
+    db: Session,
+    job_ids: list[int],
+    years_to_plot: list[int] | None,
+    un: str = "PJ",
+) -> CompareChartResponse:
+    """Construye comparación by-year-alt para recursos_vs_demanda_gas.
+
+    Subplot por escenario, categories = años, serie = producción.
+    """
+    if years_to_plot is None:
+        years_to_plot = [2024, 2030, 2050]
+
+    title = (
+        "Recursos y reservas vs Demanda (Gas Natural) — "
+        f"Por Años (Alternativo) ({un})"
+    )
+
+    # Cargar nombres de escenarios
+    scenario_names: dict[int, str] = {}
+    for jid in job_ids:
+        job = db.query(SimulationJob).filter(SimulationJob.id == jid).first()
+        if job:
+            from app.models import Scenario
+            scenario = (
+                db.query(Scenario).filter(Scenario.id == job.scenario_id).first()
+                if job.scenario_id
+                else None
+            )
+            base = scenario.name if scenario else (job.input_name or f"Job {jid}")
+            disp = (getattr(job, "display_name", None) or "").strip()
+            scenario_names[jid] = disp if disp else base
+        else:
+            scenario_names[jid] = f"Job {jid}"
+
+    subplots: list[SubplotData] = []
+    color = "#10b981"
+    name = "Producción gas natural nacional"
+
+    for jid in job_ids:
+        df_gas = _build_recursos_vs_demanda_gas_df(db, jid, un=un)
+        if df_gas is None or df_gas.empty:
+            continue
+
+        tech_rows = df_gas.groupby("YEAR", as_index=False)["PRODUCTION"].sum()
+        prod_by_year = dict(zip(tech_rows["YEAR"], tech_rows["PRODUCTION"]))
+
+        data = [round(prod_by_year.get(a, 0.0), 6) for a in years_to_plot]
+        subplots.append(
+            SubplotData(
+                year=jid,
+                scenario_name=scenario_names.get(jid, f"Job {jid}"),
+                categories=[str(a) for a in years_to_plot],
+                series=[
+                    ChartSeries(
+                        name=name,
+                        data=data,
+                        color=color,
+                        stack="default",
+                    )
+                ],
+            )
+        )
+
+    if not subplots:
+        return CompareChartResponse(title=title, subplots=[], yAxisLabel=un)
+
+    return CompareChartResponse(
+        title=title, subplots=subplots, yAxisLabel=un
+    )
+
+
 def build_comparison_data_by_year_alt(
     db: Session,
     job_ids: list[int],
@@ -4147,6 +4436,12 @@ def build_comparison_data_by_year_alt(
 
     if years_to_plot is None:
         years_to_plot = [2024, 2030, 2050]
+
+    # ── Ruta especial: recursos vs demanda (Gas Natural) ─────────────────
+    if tipo == "recursos_vs_demanda_gas":
+        return _build_comparison_gas_by_year_alt(
+            db, job_ids, years_to_plot, un,
+        )
 
     # Resolver configuración
     if tipo in CONFIGS_COMPARACION:
