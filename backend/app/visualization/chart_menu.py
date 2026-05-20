@@ -150,6 +150,7 @@ MENU = [
          {"tipo": "solidos_extraccion",  "label": "Sólidos - Extracción - ProductionByTechnology",        "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
          {"tipo": "solidos_import",      "label": "Sólidos - Importación - ProductionByTechnology",       "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
          {"tipo": "solidos_flujos",      "label": "Sólidos - Importación/Exportación - ProductionByTechnology", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
+         {"tipo": "exp_carbon",          "label": "Carbón - Exportación - ProductionByTechnology",              "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
      ]},
     {"code": "hidrogeno", "label": "Hidrógeno", "icon": "💧",
      "charts": [

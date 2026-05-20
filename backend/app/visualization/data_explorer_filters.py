@@ -241,6 +241,10 @@ DATA_EXPLORER_FILTERS: dict[str, dict[str, Any]] = {
         "variable_names": ["ProductionByTechnology"],
         "technology_prefixes": ["MINCOA", "IMPCOA", "EXPCOA"],
     },
+    "exp_carbon": {
+        "variable_names": ["ProductionByTechnology"],
+        "technology_prefixes": ["EXPCOA"],
+    },
     "oferta_bioenergia": {
         "variable_names": ["ProductionByTechnology"],
         "technology_prefixes": ["MINWAS", "MINOPL", "MINSGC", "MINWOO", "MINBAG"],

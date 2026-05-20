@@ -391,6 +391,7 @@ const MENU: Module[] = [
       { id: 'solidos_extraccion', label: 'Sólidos - Extracción - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
       { id: 'solidos_import',     label: 'Sólidos - Importación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
       { id: 'solidos_flujos',     label: 'Sólidos - Importación/Exportación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+      { id: 'exp_carbon',         label: 'Carbón — Exportación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
     ],
   },
     {

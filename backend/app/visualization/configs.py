@@ -494,6 +494,11 @@ def _filtro_solidos_flujos(df, **kw):
     ]
 
 
+def _filtro_exp_carbon(df, **kw):
+    """Exportaciones de carbón (EXPCOA)."""
+    return df[df["TECHNOLOGY"].str.startswith("EXPCOA")]
+
+
 def _filtro_saf_produccion(df, **kw):
     return df[
         df["TECHNOLOGY"].str.startswith("UPSSAF")
@@ -757,6 +762,20 @@ CONFIGS = {
         "print": "CRUDO: IMPORTACIONES Y EXPORTACIONES",
         "filtro": _filtro_crudo_flujos,
         "msg_sin_datos": "Sin datos de importación/exportación de crudo (IMPOIL/EXPOIL)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_liquidos_import,
+        "variable_default": "ProductionByTechnology",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
+        "soportaPareto": True,
+        "soportaPorcentaje": True,
+    },
+    "exp_carbon": {
+        "titulo": "Carbón - Exportación - ProductionByTechnology",
+        "figura": "Figura CAR-EXP",
+        "filename": "Fig_Carbon_Export",
+        "print": "CARBÓN: EXPORTACIÓN",
+        "filtro": _filtro_exp_carbon,
+        "msg_sin_datos": "Sin exportaciones de carbón (EXPCOA)",
         "agrupar_por": "TECNOLOGIA",
         "color_fn": _color_liquidos_import,
         "variable_default": "ProductionByTechnology",

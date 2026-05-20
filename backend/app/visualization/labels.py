@@ -290,6 +290,8 @@ DISPLAY_NAMES: dict[str, str] = {
     "IMPLNG": "Imp. GNL",
     "IMPLPG": "Imp. GLP",
     "IMPOIL": "Imp. Petróleo",
+    "IMPCOA": "Imp. Carbón",
+    "EXPCOA": "Exp. Carbón",
     "IMPURN": "Imp. Uranio",
     "EXPOIL": "Exp. Petróleo",
     # ── Extracción / Recursos ─────────────────────────────────────────────
