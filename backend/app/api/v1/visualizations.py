@@ -267,12 +267,18 @@ def export_comparison_facet_image(
         description="Lista de nombres de series separados por coma — define el "
                     "orden custom (la primera queda arriba del stack).",
     ),
+    facet_placement: str = Query(
+        "inline",
+        description="inline (horizontal) o stacked (vertical).",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Exporta comparación por facetas en una sola imagen (mismo criterio que compare-facet)."""
     if fmt not in ("png", "svg"):
         raise HTTPException(status_code=400, detail="fmt debe ser 'png' o 'svg'")
+    if facet_placement not in ("inline", "stacked"):
+        raise HTTPException(status_code=400, detail="facet_placement debe ser 'inline' o 'stacked'")
     filename_mode = _normalize_compare_facet_filename_mode(filename_mode)
     if filename_mode not in _COMPARE_FACET_FILENAME_MODES:
         raise HTTPException(
@@ -309,10 +315,13 @@ def export_comparison_facet_image(
             for facet in facet_payload.facets:
                 chart_service.reorder_chart_series(facet, order_list)
 
+    layout = "vertical" if facet_placement == "stacked" else "horizontal"
+
     try:
         img_bytes = chart_service.render_comparison_facet_figure_bytes(
             facet_payload,
             fmt=fmt,
+            layout=layout,
             legend_title=legend_title,
             series_order=order_list,
         )

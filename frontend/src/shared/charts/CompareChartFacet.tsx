@@ -335,28 +335,21 @@ function FacetChart({
   }, [hoveredSeriesName, facet, hiddenSeriesNames, chartGeneration]);
 
   const options = useMemo<Highcharts.Options>(() => {
-    const isLine = viewMode === "line";
-    const series = facet.series.map((s) =>
-      isLine
-        ? {
-            type: "line" as const,
-            name: s.name,
-            data: s.data,
-            color: s.color,
-            visible: !hiddenSeriesNames.has(s.name),
-            marker: { enabled: true, radius: 3 },
-          }
-        : {
-            type: "column" as const,
-            name: s.name,
-            data: s.data,
-            color: s.color,
-            stacking: "normal" as const,
-            stack: s.stack,
-            visible: !hiddenSeriesNames.has(s.name),
-            borderWidth: 0,
-          },
-    );
+    const series = facet.series.map((s) => {
+      const effectiveType = s.chart_type ?? (viewMode === "line" ? "line" : "column");
+      const isLine = effectiveType === "line";
+      return {
+        type: effectiveType as "column" | "line",
+        name: s.name,
+        data: s.data,
+        color: s.color,
+        stacking: isLine ? undefined : "normal" as const,
+        stack: isLine ? undefined : s.stack,
+        visible: !hiddenSeriesNames.has(s.name),
+        marker: isLine ? { enabled: true, radius: 3 } : undefined,
+        borderWidth: isLine ? undefined : 0,
+      };
+    });
 
     const xLabelFontPx = facetXLabelFontPx(facetCount);
     const xLabelStep = facetXLabelStep(facetCount, facet.categories.length);
@@ -451,7 +444,7 @@ function FacetChart({
           },
         },
         gridLineColor: "#334155",
-        stackLabels: isLine
+        stackLabels: viewMode === "line"
           ? { enabled: false }
           : {
               enabled: true,
@@ -464,7 +457,7 @@ function FacetChart({
               formatter: stackLabelFormatter,
             },
       },
-      tooltip: isLine
+      tooltip: viewMode === "line"
         ? buildLineTooltipOptions({ unitLabel: yAxisLabel })
         : buildStackedTooltipOptions({
             unitLabel: yAxisLabel,
@@ -515,7 +508,7 @@ function FacetChart({
       },
       series: series as Highcharts.SeriesOptionsType[],
       chart: {
-        type: isLine ? "line" : "column",
+        type: viewMode === "line" ? "line" : "column",
         height: chartHeight,
         inverted,
         ...(marginBottomVert !== undefined ? { marginBottom: marginBottomVert } : {}),
@@ -775,6 +768,7 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
       if (sel.customSeriesOrder && sel.customSeriesOrder.length > 0) {
         payload.series_order = sel.customSeriesOrder.join(",");
       }
+      payload.facet_placement = facetPlacement;
       const { blob, filename } = await simulationApi.exportCompareFacet(payload, "png");
       downloadBlob(blob, filename);
       push("PNG descargado (todas las facetas en una imagen).", "success");

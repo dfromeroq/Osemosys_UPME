@@ -386,6 +386,7 @@ export const simulationApi = {
       legend_title?: string;
       filename_mode?: CompareFacetExportFilenameMode;
       series_order?: string;
+      facet_placement?: string;
     },
     fmt: "png" | "svg" = "png",
   ): Promise<{ blob: Blob; filename: string }> {
@@ -403,6 +404,7 @@ export const simulationApi = {
     if (params.legend_title) q.legend_title = params.legend_title;
     if (params.filename_mode) q.filename_mode = params.filename_mode;
     if (params.series_order) q.series_order = params.series_order;
+    if (params.facet_placement) q.facet_placement = params.facet_placement;
 
     const response = await httpClient.get("/visualizations/export-compare-facet", {
       params: q,

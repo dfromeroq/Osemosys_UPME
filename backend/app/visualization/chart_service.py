@@ -2546,6 +2546,11 @@ def _legend_ncols_for_labels(labels: list[str], hard_cap: int = 5) -> int:
     return max(1, min(cap, hard_cap, n))
 
 
+def _is_line_series(s: Any) -> bool:
+    """True si la serie tiene ``chart_type == 'line'``."""
+    return bool(getattr(s, "chart_type", None) == "line")
+
+
 def _render_stacked_bar(
     chart: ChartDataResponse,
     title: str,
@@ -2554,13 +2559,18 @@ def _render_stacked_bar(
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
 ) -> "io.BytesIO":
-    """Renderiza un ChartDataResponse como gráfica de barras apiladas con matplotlib."""
+    """Renderiza un ChartDataResponse como gráfica de barras apiladas con matplotlib.
+
+    Soporta **series mixtas**: las series con ``chart_type='line'`` se dibujan
+    como líneas sobre las barras en lugar de apilarse.
+    """
     import io
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import numpy as np
+    from matplotlib.lines import Line2D as _Line2D
 
     categories = chart.categories
     n_cats = len(categories)
@@ -2568,35 +2578,49 @@ def _render_stacked_bar(
 
     fig, ax = plt.subplots(figsize=(max(12, n_cats * 0.5), 7))
 
-    bottom = np.zeros(n_cats)
+    # Separar series en barras y líneas (respetando chart_type)
+    all_series = list(chart.series)
+    bar_series = [s for s in all_series if not _is_line_series(s)]
+    line_series = [s for s in all_series if _is_line_series(s)]
 
-    # Convención visual igual a Highcharts: la PRIMERA serie de
-    # ``chart.series`` queda en la parte de ARRIBA del stack. Iteramos en
-    # orden inverso para acumular.
-    # NaN/None → 0 antes de acumular para no contaminar ``bottom`` (los
-    # ``None`` pueden venir de synthetic series con huecos o de filtros).
-    for s in reversed(chart.series):
+    # ── Barras apiladas ────────────────────────────────────────────────
+    bottom = np.zeros(n_cats)
+    for s in reversed(bar_series):
         raw = np.array(s.data, dtype=float)
         values = np.nan_to_num(raw, nan=0.0, posinf=0.0, neginf=0.0)
         ax.bar(x, values, bottom=bottom, color=s.color, width=0.7)
         bottom += values
-    # Markers circulares estilo Highcharts para la leyenda (orden top→bottom).
-    from matplotlib.lines import Line2D as _Line2D
 
-    bar_handles = [
-        _Line2D(
-            [0],
-            [0],
-            marker="o",
-            color=s.color,
-            linestyle="None",
-            markersize=10,
-            markerfacecolor=s.color,
-            markeredgecolor=s.color,
+    # ── Líneas sobre las barras ────────────────────────────────────────
+    for s in line_series:
+        raw = np.array(s.data, dtype=float)
+        values = np.nan_to_num(raw, nan=float("nan"), posinf=float("nan"), neginf=float("nan"))
+        ax.plot(x, values, color=s.color, linewidth=2.5, marker="o", markersize=4)
+
+    # ── Handles de leyenda mixtos ──────────────────────────────────────
+    legend_handles: list[_Line2D] = []
+    legend_labels: list[str] = []
+
+    # Barras: círculos (orden invertido = primero arriba del stack)
+    for s in reversed(bar_series):
+        legend_handles.append(
+            _Line2D(
+                [0], [0],
+                marker="o", color=s.color, linestyle="None",
+                markersize=10, markerfacecolor=s.color, markeredgecolor=s.color,
+            )
         )
-        for s in chart.series
-    ]
-    bar_labels = [s.name for s in chart.series]
+        legend_labels.append(s.name)
+    # Líneas: segmento de línea con marcador
+    for s in line_series:
+        legend_handles.append(
+            _Line2D(
+                [0], [0],
+                color=s.color, linewidth=2.5, marker="o", markersize=5,
+                markeredgecolor=s.color, markerfacecolor=s.color,
+            )
+        )
+        legend_labels.append(s.name)
 
     # Stack totals on top — 1 decimal máx, cada 2 categorías (0, 2, 4, …).
     for i, total in enumerate(bottom):
@@ -2617,14 +2641,12 @@ def _render_stacked_bar(
     ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
     ax.set_ylabel(chart.yAxisLabel, fontsize=24, fontweight="bold")
     ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
-    # Leyenda invertida respecto al stack: la primera serie (top del stack)
-    # aparece al final de la leyenda → lectura abajo→arriba como las barras.
     ax.legend(
-        list(reversed(bar_handles)),
-        list(reversed(bar_labels)),
+        legend_handles,
+        legend_labels,
         loc="upper center",
         bbox_to_anchor=(0.5, -0.15),
-        ncol=_legend_ncols_for_labels(bar_labels),
+        ncol=_legend_ncols_for_labels(legend_labels),
         fontsize=20,
         frameon=False,
         handlelength=1.0,
@@ -2639,12 +2661,23 @@ def _render_stacked_bar(
     ax.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+
+    # Ajustar límite Y superior para que las líneas no queden cortadas
+    if not line_series:
+        y_top = bottom.max() if len(bottom) > 0 else 1.0
+    else:
+        line_max = max(
+            np.nanmax(np.array(s.data, dtype=float)) for s in line_series
+        ) if line_series else 0.0
+        y_top = max(bottom.max(), line_max) if len(bottom) > 0 else line_max
+    y_top = max(y_top, 1.0) * 1.08  # 8% headroom
+
     if y_axis_min is not None or y_axis_max is not None:
-        cur_lo, cur_hi = ax.get_ylim()
-        ax.set_ylim(
-            float(y_axis_min) if y_axis_min is not None else cur_lo,
-            float(y_axis_max) if y_axis_max is not None else cur_hi,
-        )
+        cur_lo = float(y_axis_min) if y_axis_min is not None else 0.0
+        cur_hi = float(y_axis_max) if y_axis_max is not None else y_top
+        ax.set_ylim(cur_lo, cur_hi)
+    else:
+        ax.set_ylim(0.0, y_top)
 
     fig.tight_layout()
 
@@ -3422,12 +3455,16 @@ def render_comparison_facet_figure_bytes(
     data: CompareChartFacetResponse,
     fmt: str = "png",
     *,
+    layout: str = "horizontal",
     legend_title: str | None = None,
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
     series_order: list[str] | None = None,
 ) -> bytes:
-    """Una sola figura: facetas en fila, título global, leyenda inferior (Matplotlib).
+    """Una sola figura: facetas en fila/columna, título global, leyenda inferior (Matplotlib).
+
+    ``layout`` puede ser ``"horizontal"`` (1 fila × N columnas) o
+    ``"vertical"`` (N filas × 1 columna).
 
     Prioriza **legibilidad**: misma escala Y entre escenarios, tipografía clara, leyenda
     con marco y números formateados en ejes y totales de barra cuando aportan.
@@ -3435,6 +3472,8 @@ def render_comparison_facet_figure_bytes(
     import io
 
     import matplotlib
+
+    assert layout in ("horizontal", "vertical"), f"layout inválido: {layout}"
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -3460,22 +3499,6 @@ def render_comparison_facet_figure_bytes(
                 legend_order.append((s.name, s.color))
 
     # Ordenamiento de la leyenda compartida.
-    #
-    # Sin esta lógica, la leyenda se construye por "primera aparición" recorriendo
-    # las facetas en orden — y como cada escenario suele tener un subconjunto
-    # distinto de tecnologías, las series exclusivas de las últimas facetas
-    # quedan al final aunque pertenezcan a una familia que ya estaba al inicio.
-    # El resultado en pantalla es una leyenda visualmente desordenada respecto
-    # al orden natural / al stack.
-    #
-    # Estrategia:
-    #   1. ``rank_natural``  = mínima posición observada en cualquier faceta.
-    #      Esto recupera el orden canónico de ``_color_electricidad`` (o el
-    #      orden de la color_fn correspondiente) aunque la primera faceta no
-    #      contenga todas las tecnologías.
-    #   2. Si el usuario configuró un ``series_order`` custom, ese orden tiene
-    #      prioridad absoluta; el resto se ordena por ``rank_natural`` como
-    #      desempate (mismo orden que el stack de los subplots).
     rank_natural: dict[str, int] = {}
     for facet in facets:
         for i, s in enumerate(facet.series):
@@ -3501,8 +3524,6 @@ def render_comparison_facet_figure_bytes(
     max_leg_label_len = max((len(lab) for lab in legend_labels_full), default=0)
 
     # Leyenda: **siempre** texto completo; menos columnas si los nombres son largos.
-    # Cap duro de **5 columnas** para evitar que figuras con muchas series
-    # corten demasiado ancho horizontal con leyendas extremadamente anchas.
     LEG_NCOL_MAX = 5
     if max_leg_label_len > 48:
         leg_ncol = max(1, min(2, n_leg_items))
@@ -3514,32 +3535,21 @@ def render_comparison_facet_figure_bytes(
         leg_ncol = max(1, min(LEG_NCOL_MAX, n_leg_items))
     n_leg_rows = max(1, (n_leg_items + leg_ncol - 1) // leg_ncol)
 
-    # Ancho por panel: aprovechamos un "presupuesto" total horizontal de ~26″
-    # repartido entre los `n` paneles, con un mínimo de 5.0″ y un máximo de
-    # 9.0″ por panel. Así con pocos escenarios cada panel es bien ancho, y
-    # con muchos escenarios mantenemos legibilidad sin estirar la figura
-    # más de lo necesario.
+    # Ancho por panel: presupuesto horizontal de ~26″ repartido entre `n` paneles.
     inter_panel = 0.55
     fig_w_target = 26.0
     w_per_facet = max(
         5.0,
         min(9.0, (fig_w_target - inter_panel * max(0, n - 1)) / n),
     )
-    fig_w = w_per_facet * n + inter_panel * max(0, n - 1)
-    fig_w = max(9.0, fig_w)
-    # Leyenda más ancha en figuras anchas — pero respetando el cap de 5 cols.
+    # Leyenda más ancha en figuras anchas — respetando cap de 5 cols.
     if max_leg_label_len <= 40:
         leg_ncol = min(
             n_leg_items,
-            max(leg_ncol, min(LEG_NCOL_MAX, 3 + max(0, int(fig_w // 2.6)))),
+            max(leg_ncol, min(LEG_NCOL_MAX, 3 + max(0, int(fig_w_target // 2.6)))),
         )
         n_leg_rows = max(1, (n_leg_items + leg_ncol - 1) // leg_ncol)
 
-    # `leg_font` se usa abajo para el cálculo de altura; lo derivamos aquí.
-    # Bump perceptual: la figura del facet es ~3× más ancha que un single,
-    # así que la leyenda visualmente se siente pequeña aunque su tamaño en pt
-    # sea mayor. Subimos +4pt sobre el cálculo previo para que en perspectiva
-    # se vea similar a la leyenda de los single-chart.
     leg_font_estimate = (
         21.0
         if max_leg_label_len > 52 or n_leg_items > 14
@@ -3547,48 +3557,46 @@ def render_comparison_facet_figure_bytes(
     )
     leg_font_estimate = float(min(leg_font_estimate, 23.5))
 
-    # Geometría en PULGADAS — las fracciones de figura se derivan de aquí
-    # para que paneles, x-labels y leyenda no se superpongan nunca.
-    title_band_inch = 1.25  # suptitle (32pt) + aire respecto a títulos de panel (28pt)
-    x_label_inch = 1.10  # años rotados 90° (≈20pt) + padding
-    gap_inch = 0.24  # separación x-labels ↔ leyenda
-    legend_pad_inch = 0.12  # padding leyenda ↔ borde inferior figura
+    title_band_inch = 1.25
+    x_label_inch = 1.10
+    gap_inch = 0.24
+    legend_pad_inch = 0.12
     line_h_inch = leg_font_estimate * 1.35 / 72.0
     legend_h_inch = line_h_inch * n_leg_rows + 0.12
-
     bottom_margin_inch = legend_pad_inch + legend_h_inch + gap_inch + x_label_inch
 
-    # Altura objetivo del panel (axes): ~55% del ancho del panel ⇒ ratio
-    # ancho:alto ≈ 1.8:1 (claramente más ancho que alto). Floor de 4.0″ para
-    # mantener legibilidad cuando hay muchos escenarios.
     panel_h_inch = max(4.0, w_per_facet * 0.55)
 
-    fig_h = panel_h_inch + title_band_inch + bottom_margin_inch
-    fig_h = float(min(max(fig_h, 6.0), 14.0))
-
-    fig, axes = plt.subplots(1, n, figsize=(fig_w, fig_h), squeeze=False)
-    row_axes = axes[0]
+    if layout == "vertical":
+        fig_w = max(9.0, w_per_facet)
+        fig_h = panel_h_inch * n + inter_panel * max(0, n - 1) + title_band_inch + bottom_margin_inch
+        fig_h = float(min(max(fig_h, 6.0), 20.0))
+        fig, axes = plt.subplots(n, 1, figsize=(fig_w, fig_h), squeeze=False)
+        facet_axes = axes[:, 0]
+    else:
+        fig_w = w_per_facet * n + inter_panel * max(0, n - 1)
+        fig_w = max(9.0, fig_w)
+        fig_h = panel_h_inch + title_band_inch + bottom_margin_inch
+        fig_h = float(min(max(fig_h, 6.0), 14.0))
+        fig, axes = plt.subplots(1, n, figsize=(fig_w, fig_h), squeeze=False)
+        facet_axes = axes[0]
 
     y_label = data.yAxisLabel or "Valor"
     stack_tops: list[np.ndarray] = []
+    line_maxes: list[float] = []
 
-    for ax, facet in zip(row_axes, facets):
+    for idx, (ax, facet) in enumerate(zip(facet_axes, facets)):
         categories = list(facet.categories)
         n_cats = len(categories)
         x = np.arange(n_cats, dtype=float)
-        bottom = np.zeros(n_cats, dtype=float)
 
-        # Iteramos en reverso: primer elemento de ``facet.series`` queda
-        # arriba del stack (igual a Highcharts).
-        #
-        # NOTA: ``s.data`` puede contener ``None`` (NaN al convertir a float)
-        # cuando ``_align_facet_x_axis`` rellenó años faltantes en facets de
-        # rango distinto. Si propagamos NaN al ``bottom`` cumulado, ``np.max``
-        # del stack devuelve NaN, ``global_max`` queda NaN, ``y_top = NaN`` y
-        # ``set_ylim(0, NaN)`` deja que matplotlib auto-ajuste a una altura
-        # menor — cortando visualmente los datos. Convertimos NaN→0 ANTES
-        # del stack (zero-height bar = invisible, equivalente a "sin dato").
-        for s in reversed(facet.series):
+        facet_series = list(facet.series)
+        bar_series = [s for s in facet_series if not _is_line_series(s)]
+        line_series = [s for s in facet_series if _is_line_series(s)]
+
+        # Barras apiladas
+        bottom = np.zeros(n_cats, dtype=float)
+        for s in reversed(bar_series):
             raw = np.array(s.data, dtype=float)
             if raw.size < n_cats:
                 raw = np.pad(raw, (0, n_cats - int(raw.size)))
@@ -3608,6 +3616,21 @@ def render_comparison_facet_figure_bytes(
 
         stack_tops.append(bottom.copy())
 
+        # Líneas sobre las barras
+        facet_line_max = 0.0
+        for s in line_series:
+            raw = np.array(s.data, dtype=float)
+            if raw.size < n_cats:
+                raw = np.pad(raw, (0, n_cats - int(raw.size)))
+            elif raw.size > n_cats:
+                raw = raw[:n_cats]
+            values = np.nan_to_num(raw, nan=float("nan"), posinf=float("nan"), neginf=float("nan"))
+            ax.plot(x, values, color=s.color, linewidth=2.5, marker="o", markersize=4)
+            clean = values[np.isfinite(values)]
+            if clean.size:
+                facet_line_max = max(facet_line_max, float(clean.max()))
+        line_maxes.append(facet_line_max)
+
         ax.set_xticks(x)
         x_step = _facet_x_axis_label_step(categories)
         x_labels = _facet_x_ticklabels_thinned(categories, x_step)
@@ -3624,13 +3647,17 @@ def render_comparison_facet_figure_bytes(
             fontsize=x_fs,
             color="#1e293b",
         )
-        ax.set_ylabel(
-            y_label,
-            fontsize=22,
-            color="#0f172a",
-            fontweight="bold",
-            labelpad=8,
-        )
+        # Y-label: en vertical solo en el primer subplot (shared Y)
+        if layout == "vertical" and idx > 0:
+            ax.set_ylabel("")
+        else:
+            ax.set_ylabel(
+                y_label,
+                fontsize=22,
+                color="#0f172a",
+                fontweight="bold",
+                labelpad=8,
+            )
         sim_lbl = (
             facet.display_name or facet.scenario_name or f"Job {facet.job_id}"
         ).strip()
@@ -3668,67 +3695,38 @@ def render_comparison_facet_figure_bytes(
         ax.set_facecolor("#ffffff")
 
     global_max = 0.0
-    # Línea ~2809
-    global_max = 0.0
     for b in stack_tops:
         if b.size:
-            b_clean = b[np.isfinite(b)]  # ← ignorar nan/inf
+            b_clean = b[np.isfinite(b)]
             if b_clean.size:
                 global_max = max(global_max, float(b_clean.max()))
+    for lm in line_maxes:
+        global_max = max(global_max, lm)
     if global_max <= 0:
         global_max = 1.0
     y_top = global_max * 1.12
 
     show_stack_totals = all(len(b) <= 18 for b in stack_tops)
 
-    # Override del rango Y por usuario (aplica a TODOS los facets para que
-    # mantengan misma escala — la idea del facet es comparar visualmente).
     effective_y_lo = float(y_axis_min) if y_axis_min is not None else 0.0
     effective_y_hi = float(y_axis_max) if y_axis_max is not None else y_top
 
-    for ax, bottom in zip(row_axes, stack_tops):
+    for ax, bottom in zip(facet_axes, stack_tops):
         ax.set_ylim(effective_y_lo, effective_y_hi)
         ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _p: format_axis_3sig(v)))
         ax.yaxis.set_major_locator(
             MaxNLocator(nbins=7, min_n_ticks=5, steps=[1, 2, 2.5, 5, 10]),
         )
-        # Líneas horizontales intermedias entre marcas principales
         ax.yaxis.set_minor_locator(AutoMinorLocator(2))
 
-        # Rejilla: lectura de valores (horizontales mayor + menor; verticales por categoría)
-        ax.grid(
-            which="major",
-            axis="y",
-            linestyle="-",
-            linewidth=0.95,
-            color="#64748b",
-            alpha=0.55,
-            zorder=0,
-        )
-        ax.grid(
-            which="minor",
-            axis="y",
-            linestyle=":",
-            linewidth=0.7,
-            color="#94a3b8",
-            alpha=0.5,
-            zorder=0,
-        )
-        ax.grid(
-            which="major",
-            axis="x",
-            linestyle="-",
-            linewidth=0.75,
-            color="#94a3b8",
-            alpha=0.42,
-            zorder=0,
-        )
+        ax.grid(which="major", axis="y", linestyle="-", linewidth=0.95, color="#64748b", alpha=0.55, zorder=0)
+        ax.grid(which="minor", axis="y", linestyle=":", linewidth=0.7, color="#94a3b8", alpha=0.5, zorder=0)
+        ax.grid(which="major", axis="x", linestyle="-", linewidth=0.75, color="#94a3b8", alpha=0.42, zorder=0)
 
         if not show_stack_totals:
             continue
         n_cats = len(bottom)
         for i in range(n_cats):
-            # Mostrar el total solo cada 2 categorías (0, 2, 4, …).
             if i % 2 != 0:
                 continue
             total = float(bottom[i])
@@ -3747,9 +3745,6 @@ def render_comparison_facet_figure_bytes(
             t.set_path_effects([pe.withStroke(linewidth=2.5, foreground="white")])
 
     fig.patch.set_facecolor("#ffffff")
-    # Suptitle: lo posicionamos ~0.30" desde el borde superior, lo que deja
-    # un aire claro respecto a los títulos por panel (que viven dentro de la
-    # banda reservada arriba).
     suptitle_y = 1.0 - 0.28 / fig_h
     fig.suptitle(
         data.title,
@@ -3759,35 +3754,38 @@ def render_comparison_facet_figure_bytes(
         y=suptitle_y,
     )
 
-    # Markers circulares (estilo Highcharts) para coincidir con el chart
-    # individual y evitar la barra/cuadrado.
     from matplotlib.lines import Line2D as _Line2D
 
-    handles = [
-        _Line2D(
-            [0],
-            [0],
-            marker="o",
-            color=c,
-            linestyle="None",
-            markersize=10,
-            markerfacecolor=c,
-            markeredgecolor=c,
-        )
-        for _name, c in legend_order
-    ]
+    line_names: set[str] = set()
+    for facet in facets:
+        for s in facet.series:
+            if _is_line_series(s):
+                line_names.add(s.name)
+
+    handles = []
+    for name, c in legend_order:
+        if name in line_names:
+            handles.append(
+                _Line2D(
+                    [0], [0],
+                    color=c, linewidth=2.5, marker="o", markersize=5,
+                    markeredgecolor=c, markerfacecolor=c,
+                )
+            )
+        else:
+            handles.append(
+                _Line2D(
+                    [0], [0],
+                    marker="o", color=c, linestyle="None",
+                    markersize=10, markerfacecolor=c, markeredgecolor=c,
+                )
+            )
     leg_font = leg_font_estimate
 
-    # Las fracciones de figura derivan directo de las pulgadas calculadas
-    # arriba — así el cálculo es coherente y no quedan superposiciones.
     bottom_margin = bottom_margin_inch / fig_h
     top_margin = 1.0 - title_band_inch / fig_h
     legend_anchor_y = legend_pad_inch / fig_h
 
-    # Leyenda al estilo de las gráficas individuales: sin marco, sin título.
-    # Orden directo: coincide con el orden de las series (primera serie = primera
-    # entrada de la leyenda) — así la leyenda exportada corresponde con el orden
-    # configurado por el usuario y con el panel de leyenda compartida en la UI.
     fig.legend(
         handles=handles,
         labels=legend_labels_full,
@@ -3803,16 +3801,24 @@ def render_comparison_facet_figure_bytes(
         labelspacing=0.45,
     )
 
-    # `wspace` se reduce con menos paneles para que la separación entre
-    # paneles no domine la figura (el ojo percibe huecos enormes con n=2-3).
-    wspace = 0.20 if n >= 4 else 0.16
-    plt.subplots_adjust(
-        left=0.07,
-        right=0.995,
-        top=top_margin,
-        bottom=bottom_margin,
-        wspace=wspace,
-    )
+    if layout == "vertical":
+        hspace = 0.20 if n >= 4 else 0.16
+        plt.subplots_adjust(
+            left=0.10,
+            right=0.995,
+            top=top_margin,
+            bottom=bottom_margin,
+            hspace=hspace,
+        )
+    else:
+        wspace = 0.20 if n >= 4 else 0.16
+        plt.subplots_adjust(
+            left=0.07,
+            right=0.995,
+            top=top_margin,
+            bottom=bottom_margin,
+            wspace=wspace,
+        )
 
     buf = io.BytesIO()
     fig.savefig(
