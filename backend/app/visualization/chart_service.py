@@ -1777,21 +1777,6 @@ def _build_comparison_recursos_by_year(
     )
 
 
-def _select_historical_job(
-    job_ids: list[int], scenario_names: dict[int, str]
-) -> int:
-    """Selecciona el job para el año histórico según prioridad:
-
-    1. Escenario cuyo nombre contenga "PD" (case-insensitive).
-    2. Primer escenario como fallback.
-    """
-    for jid in job_ids:
-        name = scenario_names.get(jid, "")
-        if "PD" in name.upper():
-            return jid
-    return job_ids[0]
-
-
 # ═══════════════════════════════════════════════════════════════════════════
 # 4. build_comparison_data — MULTI-ESCENARIO
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1928,9 +1913,9 @@ def build_comparison_data(
     # ── Procesar datos ───────────────────────────────────────────────────
     all_data: list[pd.DataFrame] = []
 
-    # Paso 1: Año histórico (solo del escenario seleccionado por prioridad PD)
+    # Paso 1: Año histórico (solo del escenario primario — el primero en la lista)
     if usa_historico and año_historico in years_to_plot and job_ids:
-        first_job_id = _select_historical_job(job_ids, scenario_names)
+        first_job_id = job_ids[0]
         df_var = _load_variable_data(db, first_job_id, variable_name)
         # Strip prefijos regionales si el job es REGIONAL (acumulado nacional).
         df_var = _apply_regional_transform(db, first_job_id, df_var)
@@ -2056,9 +2041,7 @@ def build_comparison_data(
         if año == years_to_plot[0]:
             # Año histórico: mostrar una sola barra
             if not usa_historico:
-                historical_job_id = _select_historical_job(
-                    job_ids, scenario_names
-                )
+                historical_job_id = job_ids[0]
                 historical_name = scenario_names.get(
                     historical_job_id, f"Job {historical_job_id}"
                 )
