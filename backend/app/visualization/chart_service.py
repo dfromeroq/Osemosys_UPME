@@ -76,6 +76,7 @@ from app.visualization.colors import (
     _color_por_emision,
     _color_por_region,
     _color_transporte_grupo,
+    _color_por_modo,
 )
 from app.visualization.labels import get_label
 from app.visualization.regional import REGION_LABELS, transform_regional_df
@@ -688,6 +689,54 @@ def _map_transporte_grupo(tech_code: str) -> str:
     return "Otros"
 
 
+# Mapeo de código de uso de transporte a modo (agrupación MODO)
+_MODOS_TRANSPORTE_MAP: dict[str, str] = {
+    "MOT": "CARRETERA",
+    "LDV": "CARRETERA",
+    "TAX": "CARRETERA",
+    "FWD": "CARRETERA",
+    "BUS": "CARRETERA",
+    "MIC": "CARRETERA",
+    "TCK": "CARRETERA",
+    "STT": "CARRETERA",
+    "AVI": "AVI",
+    "AIR": "AVI",
+    "BOT": "BOT",
+    "SHP": "BOT",
+    "MET": "MET",
+}
+
+
+def _map_transporte_modo(tech_code: str) -> str:
+    """Clasifica un código DEMTRA en modo de transporte (CARRETERA, AVI, BOT, MET)."""
+    if not isinstance(tech_code, str) or not tech_code.startswith("DEMTRA"):
+        return "Otros"
+    rest = tech_code[len("DEMTRA"):]
+
+    # Eliminar sufijos de eficiencia y área
+    from app.visualization.labels import _EFIC, _AREA  # lazy: evita circular
+    for suffix in _EFIC:
+        if rest.endswith(suffix):
+            rest = rest[:-len(suffix)]
+            break
+    for suffix in _AREA:
+        if rest.endswith(suffix):
+            rest = rest[:-len(suffix)]
+            break
+
+    # Buscar código de modo al final del restante
+    for modo_code in _MODOS_TRANSPORTE_MAP:
+        if rest.endswith(modo_code):
+            return _MODOS_TRANSPORTE_MAP[modo_code]
+
+    # Fallback: buscar cualquier código conocido en cualquier posición
+    for modo_code in _MODOS_TRANSPORTE_MAP:
+        if modo_code in rest:
+            return _MODOS_TRANSPORTE_MAP[modo_code]
+
+    return "Otros"
+
+
 def _sector_labels(tech_series: pd.Series) -> pd.Series:
     """Asignación vectorizada de sector, incluyendo PWR → Generación Electricidad.
 
@@ -733,6 +782,9 @@ def _asignar_categoria(
 
     elif agrupacion == "TRANSPORTE_GRUPO":
         df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_grupo)
+
+    elif agrupacion == "MODO":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_modo)
 
     return df
 
@@ -1189,6 +1241,8 @@ def build_chart_data(
         df["COLOR"] = df["TECHNOLOGY"].apply(_map_h2_verde_azul_gris)
     elif agrupar_col == "TRANSPORTE_GRUPO":
         df["COLOR"] = df["TECHNOLOGY"].apply(_map_transporte_grupo)
+    elif agrupar_col == "MODO":
+        df["COLOR"] = df["TECHNOLOGY"].apply(_map_transporte_modo)
     elif agrupar_col == "REGION":
         # transform_regional_df ya añadió la columna REGION con prefijos AN..SO.
         df["COLOR"] = df["REGION"] if "REGION" in df.columns else df["TECHNOLOGY"]
@@ -1236,6 +1290,8 @@ def build_chart_data(
             color_fn = _color_por_emision
         elif agrupar_col == "TRANSPORTE_GRUPO":
             color_fn = _color_transporte_grupo
+        elif agrupar_col == "MODO":
+            color_fn = _color_por_modo
         elif agrupar_col == "REGION":
             color_fn = _color_por_region
         else:
@@ -1389,6 +1445,7 @@ def build_comparison_data(
             "COMBUSTIBLE": "Combustibles",
             "FUEL": "Combustibles",
             "SECTOR": "Sectores",
+            "MODO": "Modo",
         }.get(agrupacion_usar, agrupacion_usar)
         title_base = f"{cfg['titulo_base']} por {label_agrupacion}"
     else:
@@ -1890,6 +1947,8 @@ def _procesar_bloque_single(
         df["CATEGORIA"] = df["FUEL"] if "FUEL" in df.columns else "?"
     elif agrupar_col == "TRANSPORTE_GRUPO":
         df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_grupo)
+    elif agrupar_col == "MODO":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_modo)
     elif agrupar_col == "YEAR":
         df["CATEGORIA"] = "Total"
     else:

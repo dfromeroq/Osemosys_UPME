@@ -234,6 +234,12 @@ COLORES_GRUPOS = {
     "Metro":       "#008080",
     "Aviación":    "#e6beff",
     "Otros":       "#808080",
+
+    # Transporte — modo de transporte (agrupación MODO)
+    "CARRETERA":   "#e6194b",
+    "AVI":         "#e6beff",
+    "BOT":         "#f032e6",
+    "MET":         "#008080",
 }
 
 
@@ -449,6 +455,9 @@ _color_liquidos_import = _make_color_fn_fija(COLOR_MAP_LIQUIDOS_IMPORT)
 
 # Paleta fija para agrupación TRANSPORTE_GRUPO
 _color_transporte_grupo = _make_color_fn_fija(COLORES_GRUPOS)
+
+# Paleta fija para agrupación MODO
+_color_por_modo = _make_color_fn_fija(COLORES_GRUPOS)
 
 
 # ══════════════════════════════════════════════════════════════════════════

@@ -20,6 +20,7 @@ from app.visualization.colors import (
     _color_bioenergia,
     _color_gas_produccion,
     _color_liquidos_import,
+    _color_por_modo,
     _color_ref_import,
 )
 
@@ -333,6 +334,16 @@ def _filtro_transporte(df, sub_filtro=None, **kw):
         mask &= road_mask
     elif sub_filtro:
         mask &= df["TECHNOLOGY"].str.contains(sub_filtro)
+    return df[mask]
+
+
+def _filtro_transporte_por_modo(df, **kw):
+    mask = df["TECHNOLOGY"].str.startswith("DEMTRA")
+    road_mask = df["TECHNOLOGY"].str.contains(_ROAD_TRANSPORT_PATTERN, regex=True)
+    avi_mask = df["TECHNOLOGY"].str.contains("AVI")
+    bot_mask = df["TECHNOLOGY"].str.contains("BOT") | df["TECHNOLOGY"].str.contains("SHP")
+    met_mask = df["TECHNOLOGY"].str.contains("MET")
+    mask &= (road_mask | avi_mask | bot_mask | met_mask)
     return df[mask]
 
 
@@ -875,6 +886,17 @@ CONFIGS = {
         "allowedGroupings": ["TECNOLOGIA", "FUEL", "TRANSPORTE_GRUPO"],
         "color_fn": generar_colores_tecnologias,
         "variable_default": "ProductionByTechnology",
+    },
+    "tra_por_modo": {
+        "titulo": "Sector Transporte - Consumo Por Modo - UseByTechnology",
+        "figura": "Figura X",
+        "filename": "Tra_Por_Modo",
+        "print": "SECTOR TRANSPORTE (POR MODO)",
+        "filtro": _filtro_transporte_por_modo,
+        "msg_sin_datos": "Sin tecnologías de transporte (DEMTRA)",
+        "agrupar_por": "MODO",
+        "color_fn": _color_por_modo,
+        "variable_default": "UseByTechnology",
     },
     # ═══════════════════════════════════════════════════════════════════
     # TERCIARIO

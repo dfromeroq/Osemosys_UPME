@@ -219,6 +219,10 @@ _GRUPO: dict[str, str] = {
     "Metro": "Metro",
     "Aviación": "Aviación",
     "Otros": "Otros",
+    "CARRETERA": "CARRETERA",
+    "AVI": "AVI",
+    "BOT": "BOT",
+    "MET": "MET",
 }
 
 # ══════════════════════════════════════════════════════════════════════════

@@ -197,6 +197,11 @@ const AGRUPACION_OPTIONS: { value: string; label: string; description: string }[
     description: 'Agrupa por tipo de vehículo (motos, livianos, carga, buses, etc.)',
   },
   {
+    value: 'MODO',
+    label: 'Por Modo',
+    description: 'Agrupa por modo de transporte (CARRETERA, AVI, BOT, MET)',
+  },
+  {
     value: 'REGION',
     label: 'Por Región',
     description: 'Agrupa por las 7 regiones del SIN (solo jobs REGIONAL)',
@@ -302,7 +307,9 @@ const MENU: Module[] = [
         charts: [
           { id: 'tra_total', label: 'Sector Transporte - Consumo Total - UseByTechnology', hasSub: true, subFiltroLabel: 'Modo', subFiltros: ['CARRETERA','AVI','BOT','SHP','LDV','FWD','BUS','TCK_C2P','TCK_CSG','MOT','MIC','TAX','STT','MET'], allowedGroupings: ['TECNOLOGIA', 'FUEL', 'TRANSPORTE_GRUPO'], soportaPareto: true, soportaPorcentaje: true },
           { id: 'tra_uso',   label: 'Sector Transporte - ProductionByTechnology',           hasSub: true, subFiltroLabel: 'Modo', subFiltros: ['CARRETERA','AVI','BOT','SHP','LDV','FWD','BUS','TCK_C2P','TCK_CSG','MOT','MIC','TAX','STT','MET'], allowedGroupings: ['TECNOLOGIA', 'FUEL', 'TRANSPORTE_GRUPO'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'tra_por_modo', label: 'Sector Transporte - Consumo Por Modo - UseByTechnology', allowedGroupings: ['MODO'], defaultGrouping: 'MODO', soportaPareto: true, soportaPorcentaje: true },
         ],
+
       },
       {
         id: 'terciario', label: '🏢 Terciario',
@@ -832,6 +839,7 @@ export function ChartSelector({
                         : opt.value === 'FUEL' ? '⛽'
                         : opt.value === 'SECTOR' ? '🏢'
                         : opt.value === 'REGION' ? '🗺️'
+                        : opt.value === 'MODO' ? '🚗'
                         : '🔗'}
                     </span>
                     <span>{opt.label}</span>
