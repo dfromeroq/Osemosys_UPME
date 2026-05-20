@@ -633,8 +633,8 @@ export function ChartSelector({
     if (newViewMode === 'table' && item.soportaTabla === false) {
       newViewMode = 'column';
     }
-    // Charts mixtos (áreas+lineas) solo funcionan en modo columna
-    if (CHARTS_SOLO_COLUMNAS.has(item.id) && newViewMode !== 'column') {
+    // Charts mixtos (áreas+lineas): solo columna o área
+    if (CHARTS_SOLO_COLUMNAS.has(item.id) && newViewMode !== 'column' && newViewMode !== 'area') {
       newViewMode = 'column';
     }
 
@@ -946,6 +946,18 @@ export function ChartSelector({
                       style={{ ...viewBtnStyle, ...(isHorizontalBars ? viewBtnActiveStyle : viewBtnInactiveStyle) }}
                     >
                       ☰ Barras horizontales
+                    </button>
+                  )}
+                  {currentItem && CHARTS_SOLO_COLUMNAS.has(currentItem.id) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onChange({ ...value, viewMode: 'area' });
+                        onChangeBarOrientation?.('vertical');
+                      }}
+                      style={{ ...viewBtnStyle, ...(currentVm === 'area' ? viewBtnActiveStyle : viewBtnInactiveStyle) }}
+                    >
+                      ▨ Área
                     </button>
                   )}
                   {currentItem && !CHARTS_SOLO_COLUMNAS.has(currentItem.id) && (

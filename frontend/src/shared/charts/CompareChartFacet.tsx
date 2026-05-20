@@ -222,7 +222,7 @@ interface CompareChartFacetProps {
    *   - `line`: una línea por serie; sin stacking. Útil para ver la evolución
    *     por año de cada serie dentro de cada escenario.
    */
-  viewMode?: 'column' | 'line';
+  viewMode?: 'column' | 'line' | 'area';
   /** Si se define, permite descargar PNG (y parámetros) desde el backend sin Highcharts. */
   serverFacetExport?: {
     jobIds: number[];
@@ -293,7 +293,7 @@ function FacetChart({
   inverted: boolean;
   chartHeight: number;
   showHighchartsLegend: boolean;
-  viewMode: 'column' | 'line';
+  viewMode: 'column' | 'line' | 'area';
   /** Cantidad de facetas en el grupo. Define responsive de font y step del eje X. */
   facetCount: number;
   /** Resaltado sincronizado con leyenda compartida (hover). */
@@ -336,18 +336,21 @@ function FacetChart({
 
   const options = useMemo<Highcharts.Options>(() => {
     const series = facet.series.map((s) => {
-      const effectiveType = s.chart_type ?? (viewMode === "line" ? "line" : "column");
+      const effectiveType = s.chart_type ?? (viewMode === "line" ? "line" : viewMode === "area" ? "area" : "column");
       const isLine = effectiveType === "line";
+      const isArea = effectiveType === "area";
       return {
-        type: effectiveType as "column" | "line",
+        type: effectiveType as "column" | "area" | "line",
         name: s.name,
         data: s.data,
         color: s.color,
         stacking: isLine ? undefined : "normal" as const,
         stack: isLine ? undefined : s.stack,
         visible: !hiddenSeriesNames.has(s.name),
-        marker: isLine ? { enabled: true, radius: 3 } : undefined,
+        marker: isLine ? { enabled: true, radius: 3 } : (isArea ? { enabled: false } : undefined),
         borderWidth: isLine ? undefined : 0,
+        fillOpacity: isArea ? 0.85 : undefined,
+        lineWidth: isArea ? 0.5 : (isLine ? 2 : undefined),
       };
     });
 
@@ -501,6 +504,13 @@ function FacetChart({
           groupPadding: 0.08,
           dataLabels: { enabled: false },
         },
+        area: {
+          stacking: "normal",
+          lineWidth: 0.5,
+          fillOpacity: 0.85,
+          marker: { enabled: false },
+          dataLabels: { enabled: false },
+        },
         line: {
           dataLabels: { enabled: false },
           marker: { enabled: true, radius: 3 },
@@ -508,7 +518,7 @@ function FacetChart({
       },
       series: series as Highcharts.SeriesOptionsType[],
       chart: {
-        type: viewMode === "line" ? "line" : "column",
+        type: viewMode === "line" ? "line" : viewMode === "area" ? "area" : "column",
         height: chartHeight,
         inverted,
         ...(marginBottomVert !== undefined ? { marginBottom: marginBottomVert } : {}),

@@ -1982,7 +1982,11 @@ export function ResultDetailPage() {
                 barOrientation={chartBarOrientation}
                 facetPlacement={effectiveFacetPlacement}
                 legendMode={chartFacetLegendMode}
-                viewMode={chartSelection.viewMode === 'line' ? 'line' : 'column'}
+                viewMode={
+                  chartSelection.viewMode === 'line' ? 'line'
+                  : chartSelection.viewMode === 'area' ? 'area'
+                  : 'column'
+                }
                 serverFacetExport={{ jobIds: chartJobIds, selection: chartSelection }}
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
@@ -2033,15 +2037,26 @@ export function ResultDetailPage() {
                       yAxisMax={yAxisMax}
                     />
                   )
-                : (
-                    <HighchartsChart
-                      data={displaySingleChartData}
-                      barOrientation={chartBarOrientation}
-                      serverExport={{ jobId: currentRunId, selection: chartSelection }}
-                      yAxisMin={yAxisMin}
-                      yAxisMax={yAxisMax}
-                    />
-                  )
+                : chartSelection.viewMode === 'area'
+                  ? (
+                      <HighchartsChart
+                        data={displaySingleChartData}
+                        stackType="area"
+                        barOrientation="vertical"
+                        serverExport={{ jobId: currentRunId, selection: chartSelection }}
+                        yAxisMin={yAxisMin}
+                        yAxisMax={yAxisMax}
+                      />
+                    )
+                  : (
+                      <HighchartsChart
+                        data={displaySingleChartData}
+                        barOrientation={chartBarOrientation}
+                        serverExport={{ jobId: currentRunId, selection: chartSelection }}
+                        yAxisMin={yAxisMin}
+                        yAxisMax={yAxisMax}
+                      />
+                    )
             ) : !loadingChart ? (
               <div className="flex h-[400px] flex-col items-center justify-center px-4 text-center text-slate-500">
                 <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-slate-800 bg-slate-900/50">

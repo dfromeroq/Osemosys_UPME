@@ -3524,14 +3524,18 @@ def _render_stacked_area(
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
 ) -> "io.BytesIO":
-    """Renderiza un ChartDataResponse como áreas apiladas."""
-    import io
+    """Renderiza un ChartDataResponse como áreas apiladas con matplotlib.
 
+    Soporta **series mixtas**: las series con ``chart_type='line'`` se dibujan
+    como líneas sobre las áreas en lugar de apilarse.
+    """
+    import io
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import numpy as np
+    from matplotlib.lines import Line2D as _Line2D
 
     categories = chart.categories
     n_cats = len(categories)
@@ -3539,12 +3543,17 @@ def _render_stacked_area(
 
     fig, ax = plt.subplots(figsize=(max(12, n_cats * 0.5), 7))
 
-    if chart.series:
+    # Separar series en áreas y líneas (respetando chart_type)
+    all_series = list(chart.series)
+    area_series = [s for s in all_series if not _is_line_series(s)]
+    line_series = [s for s in all_series if _is_line_series(s)]
+
+    # ── Áreas apiladas ────────────────────────────────────────────────
+    if area_series:
         # stackplot dibuja la primera serie al fondo. Para que la convención
         # coincida con Highcharts (primera serie del array → arriba),
         # invertimos el orden antes de pasarlo a stackplot.
-        # ``nan_to_num`` evita que NaN propague y rompa el stackplot.
-        rev_series = list(reversed(chart.series))
+        rev_series = list(reversed(area_series))
         ys = [
             np.nan_to_num(
                 np.array(s.data, dtype=float),
@@ -3566,6 +3575,37 @@ def _render_stacked_area(
             edgecolor="white",
         )
 
+    # ── Líneas sobre las áreas ────────────────────────────────────────
+    for s in line_series:
+        raw = np.array(s.data, dtype=float)
+        values = np.nan_to_num(raw, nan=float("nan"), posinf=float("nan"), neginf=float("nan"))
+        ax.plot(x, values, color=s.color, linewidth=2.5, marker="o", markersize=4)
+
+    # ── Handles de leyenda mixtos ─────────────────────────────────────
+    legend_handles: list[_Line2D] = []
+    legend_labels: list[str] = []
+
+    # Áreas: círculos (orden invertido = primero arriba del stack)
+    for s in reversed(area_series):
+        legend_handles.append(
+            _Line2D(
+                [0], [0],
+                marker="o", color=s.color, linestyle="None",
+                markersize=10, markerfacecolor=s.color, markeredgecolor=s.color,
+            )
+        )
+        legend_labels.append(s.name)
+    # Líneas: segmento de línea con marcador
+    for s in line_series:
+        legend_handles.append(
+            _Line2D(
+                [0], [0],
+                color=s.color, linewidth=2.5, marker="o", markersize=5,
+                markeredgecolor=s.color, markerfacecolor=s.color,
+            )
+        )
+        legend_labels.append(s.name)
+
     ax.set_xticks(x)
     ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
     ax.tick_params(axis="y", labelsize=18)
@@ -3574,25 +3614,8 @@ def _render_stacked_area(
     ax.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
     ax.set_ylabel(chart.yAxisLabel, fontsize=24, fontweight="bold")
     ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
-    # Markers circulares en la leyenda (estilo Highcharts), orden top→bottom.
-    from matplotlib.lines import Line2D as _Line2D
 
-    legend_handles = [
-        _Line2D(
-            [0],
-            [0],
-            marker="o",
-            color=s.color or "#999999",
-            linestyle="None",
-            markersize=10,
-            markerfacecolor=s.color or "#999999",
-            markeredgecolor=s.color or "#999999",
-        )
-        for s in chart.series
-    ]
-    legend_labels = [s.name for s in chart.series]
-    # Orden de leyenda: naturales en orden invertido (lectura abajo→arriba)
-    # y series manuales (sintéticas) SIEMPRE al final.
+    # Orden de leyenda: naturales invertidos + sintéticas al final.
     _synth_flags = [bool(getattr(s, "is_synthetic", False)) for s in chart.series]
     _natural = [
         (h, l)
@@ -3620,12 +3643,26 @@ def _render_stacked_area(
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.set_xlim(x.min() if n_cats > 0 else 0, x.max() if n_cats > 0 else 0)
+
+    # Ajustar límite Y para que las líneas no queden cortadas
+    if not area_series:
+        area_top = 0.0
+    else:
+        area_top = np.sum(ys, axis=0).max() if len(ys) > 1 else ys[0].max()
+    if not line_series:
+        line_max = 0.0
+    else:
+        line_max = max(
+            np.nanmax(np.array(s.data, dtype=float)) for s in line_series
+        ) if line_series else 0.0
+    y_top = max(area_top, line_max, 1.0) * 1.08
+
     if y_axis_min is not None or y_axis_max is not None:
-        cur_lo, cur_hi = ax.get_ylim()
-        ax.set_ylim(
-            float(y_axis_min) if y_axis_min is not None else cur_lo,
-            float(y_axis_max) if y_axis_max is not None else cur_hi,
-        )
+        cur_lo = float(y_axis_min) if y_axis_min is not None else 0.0
+        cur_hi = float(y_axis_max) if y_axis_max is not None else y_top
+        ax.set_ylim(cur_lo, cur_hi)
+    else:
+        ax.set_ylim(0.0, y_top)
 
     fig.tight_layout()
 
