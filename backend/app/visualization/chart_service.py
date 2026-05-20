@@ -972,7 +972,7 @@ def build_recursos_vs_demanda_data(
     job_id: int,
     un: str = "PJ",
 ) -> ChartDataResponse:
-    """Construye datos para Figura 18. Recursos y reservas contra demanda.
+    """Construye datos para Recursos y reservas vs Demanda (Crudo).
 
     Para cada categoría MINOIL (1LIV, 2MID, 3PES):
       1. Carga el recurso inicial desde
@@ -984,7 +984,7 @@ def build_recursos_vs_demanda_data(
       - 3 áreas/barras apiladas (stack="produccion"): producción anual por tipo.
       - 3 líneas (chart_type="line", sin stack): recurso remanente por tipo.
     """
-    title = f"Figura 18. Recursos y reservas contra demanda ({un})"
+    title = f"Recursos y reservas vs Demanda (Crudo) ({un})"
 
     # 1. Cargar recursos iniciales desde input params (si existen)
     resource_caps = _load_resource_cap_input(db, job_id, "MINOIL")

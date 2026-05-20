@@ -439,7 +439,7 @@ const MENU: Module[] = [
     emoji: '🛢️',
     label: 'Recursos y Reservas',
     charts: [
-      { id: 'recursos_vs_demanda', label: 'Figura 18. Recursos y Reservas vs Demanda', soportaPareto: false, soportaPorcentaje: false },
+      { id: 'recursos_vs_demanda', label: 'Recursos y reservas vs Demanda (Crudo)', soportaPareto: false, soportaPorcentaje: false },
     ],
   },
   {

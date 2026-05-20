@@ -1459,10 +1459,10 @@ CONFIGS = {
     # RECURSOS Y RESERVAS
     # ═══════════════════════════════════════════════════════════════════════
     "recursos_vs_demanda": {
-        "titulo": "Figura 18. Recursos y reservas contra demanda",
-        "figura": "Figura 18",
-        "filename": "Fig18_Recursos_Reservas_vs_Demanda",
-        "print": "RECURSOS Y RESERVAS CONTRA DEMANDA",
+        "titulo": "Recursos y reservas vs Demanda (Crudo)",
+        "figura": "Recursos y reservas vs Demanda (Crudo)",
+        "filename": "Recursos_Reservas_vs_Demanda_Crudo",
+        "print": "RECURSOS Y RESERVAS VS DEMANDA (CRUDO)",
         "filtro": None,
         "msg_sin_datos": "Sin datos de extracción de petróleo (MINOIL)",
         "agrupar_por": "TECNOLOGIA",
