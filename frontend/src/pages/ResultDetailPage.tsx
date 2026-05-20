@@ -18,11 +18,9 @@ import type {
   CompareChartFacetResponse,
   CompareMode,
   ParetoChartResponse,
-  ResultTableTemplatePublic,
   RunResult,
   SimulationRun,
 } from '../types/domain';
-import { resultTableTemplateColumnPresentation } from '../types/domain';
 import { paths } from '../routes/paths';
 import { RunDisplayNameEditor } from '../features/simulation/components/RunDisplayNameEditor';
 import { FavoriteStarButton } from '../features/simulation/components/FavoriteStarButton';
@@ -72,7 +70,6 @@ import {
 } from '../shared/charts/syntheticSeriesStorage';
 import type { SyntheticSeries } from '../types/domain';
 import { savedChartsApi } from '@/features/reports/api/savedChartsApi';
-import { resultTableTemplatesApi } from '@/features/reports/api/resultTableTemplatesApi';
 import { useCurrentUser } from '@/app/providers/useCurrentUser';
 import { ChartSeriesConfigTab } from '@/features/reports/components/ChartSeriesConfigTab';
 import { Modal } from '@/shared/components/Modal';
@@ -274,62 +271,6 @@ function ScenarioMetricRow({
   );
 }
 
-function chartSelectionFromResultTableTemplate(
-  t: ResultTableTemplatePublic,
-): ChartSelection {
-  const sel: ChartSelection = {
-    tipo: t.tipo,
-    un: t.un,
-    viewMode: 'table',
-    tableCumulative: Boolean(t.table_cumulative),
-  };
-  if (t.sub_filtro != null && t.sub_filtro !== '') sel.sub_filtro = t.sub_filtro;
-  if (t.loc != null && t.loc !== '') sel.loc = t.loc;
-  if (t.variable != null && t.variable !== '') sel.variable = t.variable;
-  if (t.agrupar_por != null && t.agrupar_por !== '') sel.agrupar_por = t.agrupar_por;
-  if (t.region != null && t.region !== '') sel.region = t.region;
-  if (t.timeslice != null && t.timeslice !== '') sel.timeslice = t.timeslice;
-  if (t.table_period_years != null && t.table_period_years >= 1) {
-    sel.tablePeriodYears = t.table_period_years;
-  }
-  if (t.custom_series_order != null && t.custom_series_order.length > 0) {
-    sel.customSeriesOrder = t.custom_series_order;
-  }
-  if (t.y_axis_min != null && Number.isFinite(t.y_axis_min)) sel.yAxisMin = t.y_axis_min;
-  if (t.y_axis_max != null && Number.isFinite(t.y_axis_max)) sel.yAxisMax = t.y_axis_max;
-  return sel;
-}
-
-/** Parámetros de chart-data sin claves con `undefined` (exactOptionalPropertyTypes). */
-function chartDataParamsFromResultTableTemplate(t: ResultTableTemplatePublic): {
-  tipo: string;
-  un: string;
-  sub_filtro?: string;
-  loc?: string;
-  variable?: string;
-  agrupar_por?: string;
-  region?: string;
-  timeslice?: string;
-} {
-  const p: {
-    tipo: string;
-    un: string;
-    sub_filtro?: string;
-    loc?: string;
-    variable?: string;
-    agrupar_por?: string;
-    region?: string;
-    timeslice?: string;
-  } = { tipo: t.tipo, un: t.un };
-  if (t.sub_filtro != null && t.sub_filtro !== '') p.sub_filtro = t.sub_filtro;
-  if (t.loc != null && t.loc !== '') p.loc = t.loc;
-  if (t.variable != null && t.variable !== '') p.variable = t.variable;
-  if (t.agrupar_por != null && t.agrupar_por !== '') p.agrupar_por = t.agrupar_por;
-  if (t.region != null && t.region !== '') p.region = t.region;
-  if (t.timeslice != null && t.timeslice !== '') p.timeslice = t.timeslice;
-  return p;
-}
-
 export function ResultDetailPage() {
   const { runId } = useParams<{ runId: string }>();
   const currentRunId = Number(runId);
@@ -403,11 +344,6 @@ export function ResultDetailPage() {
   const [paretoData, setParetoData] = useState<ParetoChartResponse | null>(null);
   const [loadingChart, setLoadingChart] = useState(false);
   const [availableTimeslices, setAvailableTimeslices] = useState<string[]>([]);
-
-  const [autoTableTemplates, setAutoTableTemplates] = useState<ResultTableTemplatePublic[]>([]);
-  const [autoTableData, setAutoTableData] = useState<Record<number, ChartDataResponse>>({});
-  const [autoTableErrors, setAutoTableErrors] = useState<Record<number, string>>({});
-  const [autoTablesLoading, setAutoTablesLoading] = useState(false);
 
   // Cargar los timeslices presentes en los outputs del job actual.
   // Sirve para mostrar el selector de TS en `ChartSelector` cuando hay >1.
@@ -577,57 +513,6 @@ export function ResultDetailPage() {
         setRunMeta(null);
       });
   }, [currentRunId]);
-
-  useEffect(() => {
-    if (!currentRunId || Number.isNaN(currentRunId) || !isOptimal) {
-      setAutoTableTemplates([]);
-      setAutoTableData({});
-      setAutoTableErrors({});
-      setAutoTablesLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setAutoTablesLoading(true);
-    void (async () => {
-      try {
-        const tpls = await resultTableTemplatesApi.listEnabled();
-        if (cancelled) return;
-        setAutoTableTemplates(tpls);
-        const dataMap: Record<number, ChartDataResponse> = {};
-        const errMap: Record<number, string> = {};
-        await Promise.all(
-          tpls.map(async (t) => {
-            try {
-              const d = await simulationApi.getChartData(
-                currentRunId,
-                chartDataParamsFromResultTableTemplate(t),
-              );
-              if (!cancelled) dataMap[t.id] = d;
-            } catch (e) {
-              if (!cancelled) {
-                errMap[t.id] =
-                  e instanceof Error ? e.message : 'Error cargando datos de la tabla.';
-              }
-            }
-          }),
-        );
-        if (cancelled) return;
-        setAutoTableData(dataMap);
-        setAutoTableErrors(errMap);
-      } catch {
-        if (!cancelled) {
-          setAutoTableTemplates([]);
-          setAutoTableData({});
-          setAutoTableErrors({});
-        }
-      } finally {
-        if (!cancelled) setAutoTablesLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [currentRunId, isOptimal]);
 
   // 2. Fetch all summaries for comparison table
   useEffect(() => {
@@ -2162,58 +2047,6 @@ export function ResultDetailPage() {
               </div>
             ) : null}
           </div>
-
-          {autoTablesLoading || autoTableTemplates.length > 0 ? (
-            <section
-              className="rounded-xl border border-slate-800 bg-slate-900/20 backdrop-blur-sm p-6 space-y-6"
-              aria-label="Tablas configuradas del informe"
-            >
-              <div className="flex flex-wrap items-baseline justify-between gap-3">
-                <h2 className="m-0 text-base font-semibold text-white">Tablas del informe</h2>
-                <p className="m-0 text-[11px] text-slate-500 max-w-xl">
-                  Definidas por la administración de reportes. Se muestran para esta ejecución.
-                </p>
-              </div>
-              {autoTablesLoading && autoTableTemplates.length === 0 ? (
-                <div className="flex items-center gap-3 text-sm text-slate-400">
-                  <div className="h-6 w-6 rounded-full border-2 border-slate-700 border-t-emerald-500 animate-spin" />
-                  Cargando tablas…
-                </div>
-              ) : null}
-              {autoTableTemplates.map((t) => {
-                const dat = autoTableData[t.id];
-                const err = autoTableErrors[t.id];
-                return (
-                  <div
-                    key={t.id}
-                    className="rounded-lg border border-slate-800/80 bg-slate-950/40 p-4"
-                  >
-                    <p className="m-0 mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      {t.name}
-                    </p>
-                    {err && !dat ? (
-                      <p className="m-0 text-sm text-rose-400">{err}</p>
-                    ) : dat ? (
-                      <ChartDataTable
-                        data={dat}
-                        periodYears={t.table_period_years ?? null}
-                        cumulative={Boolean(t.table_cumulative)}
-                        presentation={resultTableTemplateColumnPresentation(t)}
-                        customSeriesOrder={t.custom_series_order ?? null}
-                        titleOverride={t.display_title?.trim() || null}
-                        serverExport={{
-                          jobId: currentRunId,
-                          selection: chartSelectionFromResultTableTemplate(t),
-                        }}
-                      />
-                    ) : (
-                      <p className="m-0 text-sm text-slate-500">Cargando…</p>
-                    )}
-                  </div>
-                );
-              })}
-            </section>
-          ) : null}
 
           <ChartSelector
             value={chartSelection}
