@@ -219,6 +219,11 @@ const CHARTS_SIN_AGRUPACION = new Set([
   'h2_produccion_verde',     // H2_PRODUCCION fijo en backend
 ]);
 
+/** Charts mixtos (áreas + líneas) que solo funcionan en modo columna. */
+const CHARTS_SOLO_COLUMNAS = new Set([
+  'recursos_vs_demanda',     // producción (áreas) + recurso remanente (líneas)
+]);
+
 // ─── Estructura del menú ─────────────────────────────────────────────────────
 
 interface ChartItem {
@@ -624,6 +629,10 @@ export function ChartSelector({
     if (newViewMode === 'table' && item.soportaTabla === false) {
       newViewMode = 'column';
     }
+    // Charts mixtos (áreas+lineas) solo funcionan en modo columna
+    if (CHARTS_SOLO_COLUMNAS.has(item.id) && newViewMode !== 'column') {
+      newViewMode = 'column';
+    }
 
     let newUn = rest.un;
     if (GEI_CHART_IDS.has(item.id) && !EMISSION_UNIT_VALUES.has(rest.un)) {
@@ -935,13 +944,15 @@ export function ChartSelector({
                       ☰ Barras horizontales
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => onChange({ ...value, viewMode: 'line' })}
-                    style={{ ...viewBtnStyle, ...(currentVm === 'line' ? viewBtnActiveStyle : viewBtnInactiveStyle) }}
-                  >
-                    ∿ Línea
-                  </button>
+                  {currentItem && !CHARTS_SOLO_COLUMNAS.has(currentItem.id) && (
+                    <button
+                      type="button"
+                      onClick={() => onChange({ ...value, viewMode: 'line' })}
+                      style={{ ...viewBtnStyle, ...(currentVm === 'line' ? viewBtnActiveStyle : viewBtnInactiveStyle) }}
+                    >
+                      ∿ Línea
+                    </button>
+                  )}
                   {currentItem?.soportaPorcentaje === true && (
                     <button
                       type="button"

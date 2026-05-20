@@ -726,6 +726,12 @@ export function ResultDetailPage() {
   const isComparing = columnCompareJobIds.length >= 2;
   const chartCompareMode: CompareMode = isComparing ? compareViewMode : 'off';
 
+  // Forzar disposición vertical para chart mixto (áreas + líneas) como recursos_vs_demanda
+  const effectiveFacetPlacement: ChartFacetPlacement =
+    chartCompareMode === 'facet' && chartSelection.tipo === 'recursos_vs_demanda'
+      ? 'stacked'
+      : chartFacetPlacement;
+
   const displaySingleChartData = useMemo(
     () =>
       singleChartData
@@ -1838,7 +1844,7 @@ export function ResultDetailPage() {
                       ? compareYearsToPlot
                       : undefined,
                   facetPlacement:
-                    chartCompareMode === "facet" ? chartFacetPlacement : undefined,
+                    chartCompareMode === "facet" ? effectiveFacetPlacement : undefined,
                   facetLegendMode:
                     chartCompareMode === "facet" ? chartFacetLegendMode : undefined,
                 });
@@ -1973,7 +1979,7 @@ export function ResultDetailPage() {
               <CompareChartFacet
                 data={displayCompareFacetData}
                 barOrientation={chartBarOrientation}
-                facetPlacement={chartFacetPlacement}
+                facetPlacement={effectiveFacetPlacement}
                 legendMode={chartFacetLegendMode}
                 viewMode={chartSelection.viewMode === 'line' ? 'line' : 'column'}
                 serverFacetExport={{ jobIds: chartJobIds, selection: chartSelection }}
@@ -2106,7 +2112,7 @@ export function ResultDetailPage() {
         yearsToPlot={chartCompareMode === 'by-year' || chartCompareMode === 'by-year-alt' ? chartYearsToPlot : null}
         syntheticSeries={syntheticSeries.length > 0 ? syntheticSeries : null}
         barOrientation={chartBarOrientation}
-        facetPlacement={chartFacetPlacement}
+        facetPlacement={effectiveFacetPlacement}
         facetLegendMode={chartFacetLegendMode}
         chartLabel={getChartLabel(chartSelection.tipo) ?? null}
         saveButtonLabel={isAddToReportFlow ? "Guardar gráfica y agregar al reporte" : undefined}

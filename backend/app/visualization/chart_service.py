@@ -952,11 +952,18 @@ _TECH_DISPLAY: dict[str, str] = {
     "MINOIL": "Crudo genérico",
 }
 
-_TECH_COLORS: dict[str, str] = {
-    "MINOIL_3PES": "#2d2d2d",
-    "MINOIL_2MID": "#5c5c5c",
-    "MINOIL_1LIV": "#8c8c8c",
-    "MINOIL": "#b0b0b0",
+_PRODUCTION_COLORS: dict[str, str] = {
+    "MINOIL_1LIV": "#3b82f6",
+    "MINOIL_2MID": "#f59e0b",
+    "MINOIL_3PES": "#6b7280",
+    "MINOIL": "#a855f7",
+}
+
+_REMAINING_COLORS: dict[str, str] = {
+    "MINOIL_1LIV": "#1e3a5f",
+    "MINOIL_2MID": "#92400e",
+    "MINOIL_3PES": "#374151",
+    "MINOIL": "#581c87",
 }
 
 
@@ -973,9 +980,9 @@ def build_recursos_vs_demanda_data(
       2. Carga la producción anual desde ProductionByTechnology (output).
       3. Calcula ``remaining[t] = initial - cumulative_production[t]``.
 
-    Retorna 4 series:
-      - 3 áreas apiladas (stack="recurso"): recurso restante por categoría.
-      - 1 línea (chart_type="line", sin stack): producción anual total.
+    Retorna 6 series por categoría de crudo:
+      - 3 áreas/barras apiladas (stack="produccion"): producción anual por tipo.
+      - 3 líneas (chart_type="line", sin stack): recurso remanente por tipo.
     """
     title = f"Figura 18. Recursos y reservas contra demanda ({un})"
 
@@ -1020,52 +1027,49 @@ def build_recursos_vs_demanda_data(
     años = sorted(df_agg["YEAR"].unique())
     categories = [str(a) for a in años]
 
-    # Producción anual total (demanda)
-    annual_demand = df_agg.groupby("YEAR")["VALUE"].sum().to_dict()
-
-    # 4. Construir series de recurso restante (apiladas)
     series: list[ChartSeries] = []
     factor = _unit_conversion_factor(un)
 
+    # 4. Construir series: producción (área) + recurso remanente (línea) por tipo
     for tech in all_techs:
-        cap = initial.get(tech, 0.0)
-        if cap <= 0:
-            continue
-
+        tech_display = _TECH_DISPLAY.get(tech, tech).lower()
         tech_rows = df_agg[df_agg["TECHNOLOGY"] == tech]
         prod_by_year = dict(
             zip(tech_rows["YEAR"], tech_rows["VALUE"])
         )
 
-        cum = 0.0
-        remaining = []
-        for a in años:
-            cum += prod_by_year.get(a, 0.0)
-            rem = max(0.0, cap - cum)
-            remaining.append(round(rem * factor, 6))
-
+        # 4a. Serie de producción como área/barra
+        prod_data = [
+            round(prod_by_year.get(a, 0.0) * factor, 6) for a in años
+        ]
         series.append(
             ChartSeries(
-                name=_TECH_DISPLAY.get(tech, tech),
-                data=remaining,
-                color=_TECH_COLORS.get(tech, "#999999"),
-                stack="recurso",
+                name=f"Producción {tech_display}",
+                data=prod_data,
+                color=_PRODUCTION_COLORS.get(tech, "#999999"),
+                stack="produccion",
             )
         )
 
-    # 5. Serie de producción anual (línea)
-    demand_data = [
-        round(annual_demand.get(a, 0.0) * factor, 6) for a in años
-    ]
-    series.append(
-        ChartSeries(
-            name="Producción anual",
-            data=demand_data,
-            color="#e11d48",
-            stack=None,
-            chart_type="line",
-        )
-    )
+        # 4b. Serie de recurso remanente como línea
+        cap = initial.get(tech, 0.0)
+        if cap > 0:
+            cum = 0.0
+            remaining = []
+            for a in años:
+                cum += prod_by_year.get(a, 0.0)
+                rem = max(0.0, cap - cum)
+                remaining.append(round(rem * factor, 6))
+
+            series.append(
+                ChartSeries(
+                    name=f"Recurso remanente {tech_display}",
+                    data=remaining,
+                    color=_REMAINING_COLORS.get(tech, "#666666"),
+                    stack=None,
+                    chart_type="line",
+                )
+            )
 
     return ChartDataResponse(
         categories=categories,
