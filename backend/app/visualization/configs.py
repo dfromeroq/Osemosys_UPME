@@ -1480,4 +1480,15 @@ CONFIGS = {
         "color_fn": None,
         "variable_default": "ProductionByTechnology",
     },
+    "recursos_vs_demanda_carbon": {
+        "titulo": "Recursos y reservas vs Demanda (Carbón)",
+        "figura": "Recursos y reservas vs Demanda (Carbón)",
+        "filename": "Recursos_Reservas_vs_Demanda_Carbon",
+        "print": "RECURSOS Y RESERVAS VS DEMANDA (CARBÓN)",
+        "filtro": None,
+        "msg_sin_datos": "Sin datos de carbón (COA/EXPCOA/MINCOA)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": None,
+        "variable_default": "UseByTechnology",
+    },
 }

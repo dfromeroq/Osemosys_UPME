@@ -727,7 +727,7 @@ export function ResultDetailPage() {
   const chartCompareMode: CompareMode = isComparing ? compareViewMode : 'off';
 
   // Forzar disposición vertical para chart mixto (áreas + líneas)
-  const RECURSOS_CHARTS = new Set(['recursos_vs_demanda', 'recursos_vs_demanda_gas']);
+  const RECURSOS_CHARTS = new Set(['recursos_vs_demanda', 'recursos_vs_demanda_gas', 'recursos_vs_demanda_carbon']);
   const effectiveFacetPlacement: ChartFacetPlacement =
     chartCompareMode === 'facet' && RECURSOS_CHARTS.has(chartSelection.tipo)
       ? 'stacked'

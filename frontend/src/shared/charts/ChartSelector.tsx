@@ -223,6 +223,7 @@ const CHARTS_SIN_AGRUPACION = new Set([
 const CHARTS_SOLO_COLUMNAS = new Set([
   'recursos_vs_demanda',         // producción (áreas) + recurso remanente (líneas)
   'recursos_vs_demanda_gas',     // producción (áreas) + recurso remanente (líneas)
+  'recursos_vs_demanda_carbon',  // demanda (áreas) + límite producción (línea)
 ]);
 
 // ─── Estructura del menú ─────────────────────────────────────────────────────
@@ -442,6 +443,7 @@ const MENU: Module[] = [
     charts: [
       { id: 'recursos_vs_demanda', label: 'Recursos y reservas vs Demanda (Crudo)', soportaPareto: false, soportaPorcentaje: false },
       { id: 'recursos_vs_demanda_gas', label: 'Recursos y reservas vs Demanda (Gas Natural)', soportaPareto: false, soportaPorcentaje: false },
+      { id: 'recursos_vs_demanda_carbon', label: 'Recursos y reservas vs Demanda (Carbón)', soportaPareto: false, soportaPorcentaje: false },
     ],
   },
   {

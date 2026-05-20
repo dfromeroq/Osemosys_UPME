@@ -163,6 +163,7 @@ MENU = [
      "charts": [
          {"tipo": "recursos_vs_demanda", "label": "Crudo — Recursos y Reservas vs Demanda"},
          {"tipo": "recursos_vs_demanda_gas", "label": "Gas Natural — Recursos y Reservas vs Demanda/Producción"},
+         {"tipo": "recursos_vs_demanda_carbon", "label": "Carbón — Recursos y Reservas vs Demanda/Producción"},
      ]},
     {"code": "comercio", "label": "Comercio Exterior", "icon": "🚢",
      "charts": [{"tipo": "exp_liquidos_gas", "label": "Exportaciones — Líquidos y Gas", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True}]},
