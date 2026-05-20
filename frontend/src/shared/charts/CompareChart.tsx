@@ -98,6 +98,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
     );
 
     let cumulativeLeft = 0;
+    const legendNamesSeen = new Set<string>();
 
     data.subplots.forEach((subplot, idx) => {
       const barFraction = subplot.categories.length / totalBars;
@@ -180,6 +181,8 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       });
 
       subplot.series.forEach((s) => {
+        const isNew = !legendNamesSeen.has(s.name);
+        if (isNew) legendNamesSeen.add(s.name);
         series.push({
           type: 'column',
           name: s.name,
@@ -189,7 +192,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
           yAxis: `y-${idx}`,
           stacking: 'normal',
           borderWidth: 0,
-          showInLegend: idx === 0,
+          showInLegend: isNew,
           visible: !hiddenNames.has(s.name),
           custom: {
             subplotYear: subplot.year,

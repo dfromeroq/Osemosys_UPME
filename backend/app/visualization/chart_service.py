@@ -2057,6 +2057,14 @@ def build_comparison_data(
         for categoria, col_cat, name_cat in ordered_stack:
             df_cat = df_año[df_año["CATEGORIA"] == categoria]
             if df_cat.empty:
+                series.append(
+                    ChartSeries(
+                        name=name_cat,
+                        data=[0.0] * len(escenarios_en_año),
+                        color=col_cat,
+                        stack="default",
+                    )
+                )
                 continue
 
             valor_por_escenario = {
@@ -4874,6 +4882,14 @@ def build_comparison_data_by_year_alt(
         for categoria in categorias_unicas:
             df_cat = df_escenario[df_escenario["CATEGORIA"] == categoria]
             if df_cat.empty:
+                series.append(
+                    ChartSeries(
+                        name=get_label(str(categoria)),
+                        data=[0.0] * len(years_to_plot),
+                        color=mapa_colores.get(categoria, "#999999"),
+                        stack="default",
+                    )
+                )
                 continue
 
             valor_por_año = {
