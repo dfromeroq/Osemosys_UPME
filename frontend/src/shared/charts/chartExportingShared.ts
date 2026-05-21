@@ -79,8 +79,8 @@ export function buildChartExportMenuItems(serverExport?: {
     return [...INDIVIDUAL_CHART_EXPORT_MENU_ITEMS];
   }
   const { jobId, selection } = serverExport;
-  const run = (fmt: "png" | "svg" | "csv", clean?: boolean) => {
-    void downloadChartFromServer(jobId, selection, fmt, undefined, clean).catch((e: unknown) => {
+  const run = (fmt: "png" | "svg" | "csv") => {
+    void downloadChartFromServer(jobId, selection, fmt).catch((e: unknown) => {
       console.error(e);
       window.alert(
         "No se pudo descargar desde el servidor. Comprueba la sesión o que el escenario tenga datos para esta gráfica.",
@@ -88,12 +88,9 @@ export function buildChartExportMenuItems(serverExport?: {
     });
   };
   return [
-    { text: "Descargar PNG (completo)", onclick: () => run("png") },
-    { text: "Descargar SVG (completo)", onclick: () => run("svg") },
+    { text: "Descargar PNG", onclick: () => run("png") },
+    { text: "Descargar SVG", onclick: () => run("svg") },
     { text: "Descargar CSV", onclick: () => run("csv") },
-    "_separator_",
-    { text: "Descargar PNG (sin título/números)", onclick: () => run("png", true) },
-    { text: "Descargar SVG (sin título/números)", onclick: () => run("svg", true) },
   ];
 }
 

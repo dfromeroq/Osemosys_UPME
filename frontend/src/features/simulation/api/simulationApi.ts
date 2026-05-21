@@ -275,7 +275,6 @@ export const simulationApi = {
       series?: string[];
       years?: (string | number)[];
     },
-    clean?: boolean,
   ): Promise<{ blob: Blob; filename: string }> {
     const params: Record<string, string> = {
       tipo: selection.tipo,
@@ -283,7 +282,6 @@ export const simulationApi = {
       fmt,
       view_mode: selection.viewMode ?? "column",
     };
-    if (clean) params.clean = "true";
     if (selection.sub_filtro) params.sub_filtro = selection.sub_filtro;
     if (selection.loc) params.loc = selection.loc;
     if (selection.variable) params.variable = selection.variable;
@@ -389,7 +387,6 @@ export const simulationApi = {
       filename_mode?: CompareFacetExportFilenameMode;
       series_order?: string;
       facet_placement?: string;
-      clean?: boolean;
     },
     fmt: "png" | "svg" = "png",
   ): Promise<{ blob: Blob; filename: string }> {
@@ -408,7 +405,6 @@ export const simulationApi = {
     if (params.filename_mode) q.filename_mode = params.filename_mode;
     if (params.series_order) q.series_order = params.series_order;
     if (params.facet_placement) q.facet_placement = params.facet_placement;
-    if (params.clean) q.clean = "true";
 
     const response = await httpClient.get("/visualizations/export-compare-facet", {
       params: q,
