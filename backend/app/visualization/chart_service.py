@@ -310,16 +310,13 @@ def _safe_int(val: Any) -> int | None:
 
 
 def format_axis_3sig(v: Any) -> str:
-    """Formatea un valor numérico con **mínimo 3 cifras significativas**.
+    """Formatea un valor numérico como **entero** con separador de miles.
 
     Uso típico: ``ax.yaxis.set_major_formatter(FuncFormatter(format_axis_3sig))``.
 
     Reglas:
-      * ``|v| >= 100``  → entero con separador de miles ("1,234")
-      * ``10 <= |v| < 100`` → 1 decimal ("12.3")
-      * ``1 <= |v| < 10``  → 2 decimales ("1.23")
-      * ``|v| < 1`` → tantos decimales como sean necesarios para 3 cifras
-        significativas ("0.123", "0.0123", "0.00123", …)
+      * ``|v| >= 1`` → entero con separador de miles ("1,234")
+      * ``|v| < 1`` y ≠ 0 → "0" (se trunca la parte decimal)
       * cero → "0"
     """
     import math
@@ -334,17 +331,7 @@ def format_axis_3sig(v: Any) -> str:
         return str(v)
     if v == 0:
         return "0"
-    abs_v = abs(v)
-    if abs_v >= 100:
-        decimals = 0
-    elif abs_v >= 10:
-        decimals = 1
-    elif abs_v >= 1:
-        decimals = 2
-    else:
-        order = math.floor(math.log10(abs_v))  # negativo
-        decimals = min(8, -order + 2)
-    return f"{v:,.{decimals}f}"
+    return f"{v:,.0f}"
 
 
 def _year_keep_indices(
@@ -3157,58 +3144,10 @@ def _render_stacked_bar(
     fig.tight_layout()
 
     buf = io.BytesIO()
-    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight")
+    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight", pad_inches=0.3)
     plt.close(fig)
     buf.seek(0)
     return buf
-
-
-_SYNTH_LINESTYLE_MAP: dict[str, Any] = {
-    "Solid": "-",
-    "Dash": "--",
-    "Dot": ":",
-    "DashDot": "-.",
-    "ShortDash": (0, (3, 3)),
-}
-
-_SYNTH_MARKER_MAP: dict[str, str] = {
-    "circle": "o",
-    "diamond": "D",
-    "square": "s",
-    "triangle": "^",
-    "triangle-down": "v",
-    "none": "",
-}
-
-
-def _series_style_for_render(s: Any) -> dict[str, Any]:
-    """Resuelve los kwargs de ``ax.plot`` para una serie (sintética o no).
-
-    Para series no-sintéticas: defaults del renderer (`o`, ms=4, lw=2, sólida).
-    Para sintéticas: usa los campos opcionales de la serie con fallback.
-    """
-    is_synth = bool(getattr(s, "is_synthetic", False))
-    if not is_synth:
-        return {"marker": "o", "markersize": 4, "linewidth": 2, "linestyle": "-"}
-
-    raw_marker = getattr(s, "markerSymbol", None) or "diamond"
-    marker = _SYNTH_MARKER_MAP.get(raw_marker, "D")
-    raw_ls = getattr(s, "lineStyle", None) or "ShortDash"
-    linestyle = _SYNTH_LINESTYLE_MAP.get(raw_ls, (0, (3, 3)))
-    radius = getattr(s, "markerRadius", None)
-    markersize = float(radius) if radius is not None else 5.0
-    width = getattr(s, "lineWidth", None)
-    linewidth = float(width) if width is not None else 2.0
-    style: dict[str, Any] = {
-        "marker": marker,
-        "markersize": markersize,
-        "linewidth": linewidth,
-        "linestyle": linestyle,
-    }
-    if marker == "":
-        style.pop("marker")
-        style["markersize"] = 0
-    return style
 
 
 def _render_line_chart(
@@ -3294,297 +3233,10 @@ def _render_line_chart(
     fig.tight_layout()
 
     buf = io.BytesIO()
-    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight")
+    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight", pad_inches=0.3)
     plt.close(fig)
     buf.seek(0)
     return buf
-
-
-def render_chart_visualization_bytes(
-    chart: ChartDataResponse,
-    fmt: str,
-    view_mode: str = "column",
-    *,
-    y_axis_min: float | None = None,
-    y_axis_max: float | None = None,
-    clean: bool = False,
-) -> bytes:
-    """Genera PNG o SVG con Matplotlib.
-
-    ``view_mode``: ``column`` | ``line`` | ``area`` | ``table``.
-    ``y_axis_min`` / ``y_axis_max``: override del rango del eje Y. ``None`` = auto.
-    ``clean``: si ``True``, omite título y etiquetas sobre las barras.
-    """
-    if fmt not in ("png", "svg"):
-        raise ValueError("fmt debe ser 'png' o 'svg'")
-    title = chart.title
-    if view_mode == "line":
-        buf = _render_line_chart(
-            chart,
-            title,
-            fmt=fmt,
-            y_axis_min=y_axis_min,
-            y_axis_max=y_axis_max,
-            clean=clean,
-        )
-    elif view_mode == "area":
-        buf = _render_stacked_area(
-            chart,
-            title,
-            fmt=fmt,
-            y_axis_min=y_axis_min,
-            y_axis_max=y_axis_max,
-            clean=clean,
-        )
-    elif view_mode == "table":
-        buf = _render_table_image(chart, title, fmt=fmt, clean=clean)
-    else:
-        buf = _render_stacked_bar(
-            chart,
-            title,
-            fmt=fmt,
-            y_axis_min=y_axis_min,
-            y_axis_max=y_axis_max,
-            clean=clean,
-        )
-    return buf.getvalue()
-
-
-def _render_table_image(
-    chart: ChartDataResponse,
-    title: str,
-    fmt: str = "png",
-    *,
-    clean: bool = False,
-) -> "io.BytesIO":
-    """Renderiza un ChartDataResponse como **tabla** (matplotlib ``ax.table``).
-
-    Layout:
-      * Header: categorías (años o periodos) en columnas.
-      * Primera columna: nombre de serie.
-      * Cuerpo: valores formateados con ``format_axis_3sig`` (≥ 3 cifras sig).
-      * Última fila: "Total" con suma vertical por columna.
-
-    El swatch de color por serie se aplica como ``cellColours`` en la
-    primera columna (celda con el color de la serie + texto blanco).
-    """
-    import io
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import textwrap
-
-    categories = list(chart.categories)
-    series = list(chart.series)
-    n_cols = 1 + len(categories)  # 1 columna para "Tecnología/Categoría"
-    n_rows_body = len(series)
-
-    # Wrap del nombre en hasta 2 líneas para evitar el clipping en la primera
-    # columna (matplotlib no hace wrap automático).
-    def _wrap_name(name: str, width: int = 22) -> str:
-        wrapped = textwrap.wrap(name, width=width, break_long_words=False) or [name]
-        if len(wrapped) > 2:
-            wrapped = [wrapped[0], " ".join(wrapped[1:])]
-        return "\n".join(wrapped)
-
-    name_max_chars = max((len(s.name) for s in series), default=12)
-    wrap_width = max(16, min(28, int(name_max_chars * 0.65)))
-
-    # Cuerpo de la tabla
-    cell_text: list[list[str]] = []
-    for s in series:
-        row = [_wrap_name(s.name, wrap_width)]
-        for i in range(len(categories)):
-            v = s.data[i] if i < len(s.data) else None
-            row.append(format_axis_3sig(v))
-        cell_text.append(row)
-
-    # Fila Total (suma vertical por columna)
-    totals: list[float] = []
-    for i in range(len(categories)):
-        col_total = 0.0
-        for s in series:
-            try:
-                f = float(s.data[i]) if i < len(s.data) else 0.0
-                if f != f:  # NaN
-                    f = 0.0
-            except (TypeError, ValueError):
-                f = 0.0
-            col_total += f
-        totals.append(col_total)
-    if n_rows_body > 0:
-        cell_text.append(["Total"] + [format_axis_3sig(t) for t in totals])
-
-    # Cabecera
-    col_labels = ["Tecnología"] + [str(c) for c in categories]
-
-    # Colores de celdas
-    header_color = "#1e293b"  # fondo cabecera (slate)
-    header_text_color = "#ffffff"
-    alt_row = "#f8fafc"
-    base_row = "#ffffff"
-    total_row = "#e2e8f0"
-
-    # Cell colours: misma forma que cell_text (filas × columnas).
-    n_total_rows = len(cell_text)
-    cell_colours: list[list[str]] = []
-    for r_idx in range(n_total_rows):
-        is_total = r_idx == n_total_rows - 1 and n_rows_body > 0
-        if is_total:
-            row_colors = [total_row] * n_cols
-        else:
-            base = alt_row if r_idx % 2 == 1 else base_row
-            row_colors = [base] * n_cols
-            # Primera columna con color de la serie.
-            if r_idx < n_rows_body:
-                row_colors[0] = series[r_idx].color or "#94a3b8"
-        cell_colours.append(row_colors)
-
-    # Tamaño dinámico de figura. La altura se ajusta a las filas reales para
-    # evitar que `loc="upper center"` deje espacio sobrante bajo la tabla.
-    # Cuenta líneas máximas en la columna 0 (puede haber wrap a 2 líneas).
-    max_lines_col0 = max(
-        (row[0].count("\n") + 1 for row in cell_text if row), default=1
-    )
-    fig_w = max(9.0, min(26.0, 2.4 + 1.4 * n_cols))
-    fig_h = max(2.0, min(22.0, 1.0 + 0.5 * (n_total_rows + 1) * max(1, max_lines_col0)))
-
-    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
-    ax.axis("off")
-    if not clean:
-        ax.set_title(title, fontsize=28, fontweight="bold", pad=14)
-
-    # Reparte ancho: primera columna ~22-30% según largo de nombres; el resto
-    # se reparte entre las columnas de año/categoría.
-    name_col_share = max(0.18, min(0.32, wrap_width / 90.0))
-    rest_share = (1.0 - name_col_share) / max(1, len(categories))
-    col_widths = [name_col_share] + [rest_share] * len(categories)
-
-    # ``loc="upper center"`` ancla la tabla justo bajo el título, evitando el
-    # gran hueco vertical que aparecía con ``loc="center"`` cuando la tabla
-    # tiene pocas filas.
-    table = ax.table(
-        cellText=cell_text if cell_text else [[""]],
-        colLabels=col_labels,
-        cellColours=cell_colours if cell_colours else None,
-        colColours=[header_color] * n_cols,
-        cellLoc="center",
-        loc="upper center",
-        colWidths=col_widths,
-    )
-    table.auto_set_font_size(False)
-    table.set_fontsize(18)
-    # Escala vertical mayor para acomodar wrap de 2 líneas en col 0.
-    table.scale(1.0, 1.4 + 0.4 * (max_lines_col0 - 1))
-
-    # Estilo: cabecera bold, texto blanco; primera columna con texto blanco
-    # contra el color de la serie. Si el color es muy claro, matplotlib
-    # mostrará el texto en negro — pero los colores de serie tienden a ser
-    # saturados así que blanco suele leerse bien.
-    for (row, col), cell in table.get_celld().items():
-        # row=0 → cabecera (porque colLabels existe).
-        if row == 0:
-            cell.set_text_props(color=header_text_color, fontweight="bold")
-            cell.set_edgecolor("#0f172a")
-        else:
-            cell.set_edgecolor("#cbd5e1")
-        # Primera columna del cuerpo (no la cabecera): texto blanco bold sobre
-        # el color de la serie.
-        if col == 0 and 0 < row <= n_rows_body:
-            cell.set_text_props(color="#ffffff", fontweight="bold")
-        # Fila Total: texto bold.
-        if n_rows_body > 0 and row == n_total_rows:
-            cell.set_text_props(fontweight="bold")
-
-    fig.tight_layout()
-    buf = io.BytesIO()
-    fig.savefig(buf, format=fmt, dpi=200, bbox_inches="tight", facecolor="#ffffff")
-    plt.close(fig)
-    buf.seek(0)
-    return buf
-
-
-def chart_data_to_xlsx_bytes(chart: ChartDataResponse) -> bytes:
-    """Serializa ``ChartDataResponse`` a un workbook XLSX (wide format).
-
-    Hoja única "Datos" con:
-      * cabecera = ``["Categoría"] + [serie.name]``
-      * filas    = una por categoría, valores numéricos.
-      * fila final "Total" con suma vertical.
-    """
-    import io
-    from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font, PatternFill
-    from openpyxl.utils import get_column_letter
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Datos"
-
-    headers = ["Categoría"] + [s.name for s in chart.series]
-    ws.append(headers)
-    header_fill = PatternFill("solid", fgColor="1e293b")
-    header_font = Font(bold=True, color="ffffff")
-    for col_idx, _ in enumerate(headers, start=1):
-        cell = ws.cell(row=1, column=col_idx)
-        cell.fill = header_fill
-        cell.font = header_font
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-
-    # Filas
-    for i, cat in enumerate(chart.categories):
-        row = [cat]
-        for s in chart.series:
-            v = s.data[i] if i < len(s.data) else None
-            row.append(v)
-        ws.append(row)
-
-    # Fila Total
-    if chart.categories and chart.series:
-        totals_row: list = ["Total"]
-        for s in chart.series:
-            total = 0.0
-            for v in s.data:
-                try:
-                    f = float(v)
-                    if f != f:
-                        f = 0.0
-                except (TypeError, ValueError):
-                    f = 0.0
-                total += f
-            totals_row.append(total)
-        ws.append(totals_row)
-        last_row_idx = ws.max_row
-        bold = Font(bold=True)
-        total_fill = PatternFill("solid", fgColor="e2e8f0")
-        for col_idx in range(1, len(totals_row) + 1):
-            c = ws.cell(row=last_row_idx, column=col_idx)
-            c.font = bold
-            c.fill = total_fill
-
-    # Auto-ajuste de ancho de columnas
-    for col_idx, header in enumerate(headers, start=1):
-        max_len = len(str(header))
-        for row in ws.iter_rows(
-            min_row=2, max_row=ws.max_row, min_col=col_idx, max_col=col_idx
-        ):
-            for cell in row:
-                v = cell.value
-                if v is None:
-                    continue
-                if isinstance(v, float):
-                    s = f"{v:,.2f}"
-                else:
-                    s = str(v)
-                if len(s) > max_len:
-                    max_len = len(s)
-        ws.column_dimensions[get_column_letter(col_idx)].width = min(40, max_len + 2)
-
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return buf.getvalue()
 
 
 def _render_stacked_area(
@@ -3740,7 +3392,7 @@ def _render_stacked_area(
     fig.tight_layout()
 
     buf = io.BytesIO()
-    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight")
+    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight", pad_inches=0.3)
     plt.close(fig)
     buf.seek(0)
     return buf
@@ -3775,10 +3427,11 @@ def render_comparison_by_year_bytes(
         ax.text(0.5, 0.5, "Sin datos", ha="center", va="center")
         ax.set_axis_off()
         buf = io.BytesIO()
-        fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight")
+        fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight", pad_inches=0.3)
         plt.close(fig)
         buf.seek(0)
         return buf.getvalue()
+
 
     n = len(subplots)
     cols = min(3, n)
@@ -3861,7 +3514,7 @@ def render_comparison_by_year_bytes(
     fig.tight_layout(rect=[0, 0.02, 1, 0.96])
 
     buf = io.BytesIO()
-    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight")
+    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight", pad_inches=0.3)
     plt.close(fig)
     buf.seek(0)
     return buf.getvalue()
@@ -3896,7 +3549,7 @@ def render_pareto_chart_bytes(
         ax.text(0.5, 0.5, "Sin datos", ha="center", va="center")
         ax.set_axis_off()
         buf = io.BytesIO()
-        fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight")
+        fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight", pad_inches=0.3)
         plt.close(fig)
         buf.seek(0)
         return buf.getvalue()
@@ -3936,7 +3589,7 @@ def render_pareto_chart_bytes(
     fig.tight_layout()
 
     buf = io.BytesIO()
-    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight")
+    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight", pad_inches=0.3)
     plt.close(fig)
     buf.seek(0)
     return buf.getvalue()
@@ -4362,7 +4015,7 @@ def render_comparison_facet_figure_bytes(
         facecolor="#ffffff",
         edgecolor="none",
         bbox_inches="tight",
-        pad_inches=0.18,
+        pad_inches=0.3,
     )
     plt.close(fig)
     return buf.getvalue()

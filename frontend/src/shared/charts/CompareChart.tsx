@@ -374,7 +374,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         fallbackToExportServer: false,
         error: onHighchartsExportError,
         chartOptions: {
-          chart: { backgroundColor: '#FFFFFF' },
+          chart: { backgroundColor: '#FFFFFF', spacingTop: 50 },
           title: { style: { color: '#1e293b', fontSize: '28pt' } },
           legend: { itemStyle: { color: '#334155', fontSize: '20pt' } },
           // X-axis overrides for export — matching HighchartsChart.tsx pattern
