@@ -2416,6 +2416,8 @@ def _procesar_bloque_single(
         df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_modo)
     elif agrupar_col == "ELECTROLISIS":
         df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_electrolisis_verde)
+    elif agrupar_col == "H2_PRODUCCION":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_h2_verde_azul_gris)
     elif agrupar_col == "YEAR":
         df["CATEGORIA"] = "Total"
     else:
@@ -4158,9 +4160,9 @@ def render_comparison_facet_figure_bytes(
                 raw = raw[:n_cats]
             values = np.nan_to_num(raw, nan=float("nan"), posinf=float("nan"), neginf=float("nan"))
             ax.plot(x, values, color=s.color, linewidth=2.5, marker="o", markersize=4)
-            clean = values[np.isfinite(values)]
-            if clean.size:
-                facet_line_max = max(facet_line_max, float(clean.max()))
+            finite_values = values[np.isfinite(values)]
+            if finite_values.size:
+                facet_line_max = max(facet_line_max, float(finite_values.max()))
         line_maxes.append(facet_line_max)
 
         ax.set_xticks(x)
