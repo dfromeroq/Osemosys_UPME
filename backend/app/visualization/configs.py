@@ -443,6 +443,14 @@ def _filtro_electrolisis_verde(df, **kw):
     ]
 
 
+def _map_electrolisis_verde(tech):
+    """Map electrolyzer technologies to unified 'Electrólisis Verde' label."""
+    t = str(tech)
+    if t.startswith("UPSALK") or t.startswith("UPSPEM"):
+        return "Electrólisis Verde"
+    return t
+
+
 def _map_h2_verde_azul_gris(tech):
     """Map technology to H2 verde/azul/gris label."""
     t = str(tech)

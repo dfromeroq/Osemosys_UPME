@@ -206,6 +206,11 @@ const AGRUPACION_OPTIONS: { value: string; label: string; description: string }[
     label: 'Por Región',
     description: 'Agrupa por las 7 regiones del SIN (solo jobs REGIONAL)',
   },
+  {
+    value: 'ELECTROLISIS',
+    label: 'Electrólisis Verde',
+    description: 'Agrupa electrolizadores (UPSALK + UPSPEM) en una sola categoría',
+  },
 ];
 
 // IDs de charts que NO deben mostrar el selector de agrupación
@@ -415,7 +420,7 @@ const MENU: Module[] = [
       charts: [
         { id: 'cap_h2',     label: 'Hidrógeno - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true , soportaPorcentaje: true },
         { id: 'h2_consumo', label: 'Hidrógeno - Consumo - UseByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
-        { id: 'cap_electrolisis_verde', label: 'Capacidad Total de Electrólisis Verde', isCapacity: true },
+        { id: 'cap_electrolisis_verde', label: 'Capacidad Total de Electrólisis Verde', isCapacity: true, allowedGroupings: ['TECNOLOGIA', 'ELECTROLISIS'], defaultGrouping: 'TECNOLOGIA' },
         { id: 'h2_produccion_verde', label: 'Hidrógeno Producción (Verde/Azul/Gris)', soportaPareto: true, soportaPorcentaje: true },
       ],
     },
@@ -536,7 +541,7 @@ function chartTipoBelongsToModule(tipo: string, moduleId: string): boolean {
 /** Determina si la gráfica activa debe mostrar el selector de agrupación */
 function showsAgrupacion(item: ChartItem | undefined): boolean {
   if (!item) return false;
-  if (item.isCapacity) return false;                    // fijo en backend
+  if (item.isCapacity && !item.allowedGroupings) return false; // si declaró allowedGroupings, sí muestra selector
   if (CHARTS_SIN_AGRUPACION.has(item.id)) return false; // porcentaje / emisiones
   return true;
 }
@@ -853,6 +858,7 @@ export function ChartSelector({
                         : opt.value === 'SECTOR' ? '🏢'
                         : opt.value === 'REGION' ? '🗺️'
                         : opt.value === 'MODO' ? '🚗'
+                        : opt.value === 'ELECTROLISIS' ? '🧪'
                         : '🔗'}
                     </span>
                     <span>{opt.label}</span>

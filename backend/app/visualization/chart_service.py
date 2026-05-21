@@ -71,6 +71,7 @@ from app.visualization.colors import (
     asignar_grupo,
     generar_colores_tecnologias,
     _color_electricidad,
+    _color_electrolisis,
     _color_por_grupo_fijo,
     _color_por_sector,
     _color_por_emision,
@@ -86,6 +87,7 @@ from app.visualization.configs import (
     PWR_TECH_ALIASES,
     TITULOS_VARIABLES_CAPACIDAD,
     NOMBRES_COMBUSTIBLES,
+    _map_electrolisis_verde,
     _map_h2_verde_azul_gris,
 )
 from app.visualization.configs_comparacion import CONFIGS_COMPARACION
@@ -785,6 +787,9 @@ def _asignar_categoria(
 
     elif agrupacion == "MODO":
         df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_modo)
+
+    elif agrupacion == "ELECTROLISIS":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_electrolisis_verde)
 
     return df
 
@@ -1576,6 +1581,8 @@ def build_chart_data(
         df["COLOR"] = _sector_labels(df["TECHNOLOGY"])
     elif agrupar_col == "EMISION":
         df["COLOR"] = df["FUEL"] if "FUEL" in df.columns else "?"
+    elif agrupar_col == "ELECTROLISIS":
+        df["COLOR"] = df["TECHNOLOGY"].apply(_map_electrolisis_verde)
     elif agrupar_col == "H2_PRODUCCION":
         df["COLOR"] = df["TECHNOLOGY"].apply(_map_h2_verde_azul_gris)
     elif agrupar_col == "TRANSPORTE_GRUPO":
@@ -1633,6 +1640,8 @@ def build_chart_data(
             color_fn = _color_por_modo
         elif agrupar_col == "REGION":
             color_fn = _color_por_region
+        elif agrupar_col == "ELECTROLISIS":
+            color_fn = _color_electrolisis
         else:
             color_fn = (
                 cfg.get("color_fn")
@@ -2004,6 +2013,8 @@ def build_comparison_data(
                 color_fn = _color_por_sector
             elif agrupacion_usar == "EMISION":
                 color_fn = _color_por_emision
+            elif agrupacion_usar == "ELECTROLISIS":
+                color_fn = _color_electrolisis
             else:
                 color_fn = cfg.get("color_fn") or generar_colores_tecnologias
         else:
@@ -2403,6 +2414,8 @@ def _procesar_bloque_single(
         df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_grupo)
     elif agrupar_col == "MODO":
         df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_modo)
+    elif agrupar_col == "ELECTROLISIS":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_electrolisis_verde)
     elif agrupar_col == "YEAR":
         df["CATEGORIA"] = "Total"
     else:
@@ -4902,6 +4915,8 @@ def build_comparison_data_by_year_alt(
                 color_fn = _color_por_sector
             elif agrupacion_usar == "EMISION":
                 color_fn = _color_por_emision
+            elif agrupacion_usar == "ELECTROLISIS":
+                color_fn = _color_electrolisis
             else:
                 color_fn = cfg.get("color_fn") or generar_colores_tecnologias
         else:
