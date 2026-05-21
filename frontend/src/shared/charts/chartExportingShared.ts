@@ -68,8 +68,33 @@ export const INDIVIDUAL_CHART_EXPORT_MENU_ITEMS = [
 ] as const satisfies readonly string[];
 
 /**
+ * Overrides de Highcharts para exportación "limpia" (sin título ni stackLabels).
+ * Adecuado para charts con un solo yAxis (HighchartsChart, LineChart, FacetChart).
+ */
+export const CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS: Partial<Highcharts.Options> = {
+  title: { text: '' },
+  yAxis: { stackLabels: { enabled: false } },
+  plotOptions: { series: { dataLabels: { enabled: false } as any } },
+};
+
+/**
+ * Overrides de Highcharts para exportación "limpia" en charts con múltiples yAxis.
+ * `count` = número de subplots/ejes Y.
+ */
+export function buildCleanExportOverridesMultiYAxis(count: number): Partial<Highcharts.Options> {
+  return {
+    title: { text: '' },
+    yAxis: Array.from({ length: count }, () => ({
+      stackLabels: { enabled: false },
+    })),
+    plotOptions: { series: { dataLabels: { enabled: false } as any } },
+  };
+}
+
+/**
  * Menú de exportación: si hay job y selección, PNG/SVG/CSV vía API (servidor).
  * Si no, usa offline-exporting en el navegador.
+ * Cuando hay servidor, se agregan ítems para descarga "limpia".
  */
 export function buildChartExportMenuItems(serverExport?: {
   jobId: number;
@@ -79,8 +104,8 @@ export function buildChartExportMenuItems(serverExport?: {
     return [...INDIVIDUAL_CHART_EXPORT_MENU_ITEMS];
   }
   const { jobId, selection } = serverExport;
-  const run = (fmt: "png" | "svg" | "csv") => {
-    void downloadChartFromServer(jobId, selection, fmt).catch((e: unknown) => {
+  const run = (fmt: "png" | "svg" | "csv", options?: { clean?: boolean }) => {
+    void downloadChartFromServer(jobId, selection, fmt, options).catch((e: unknown) => {
       console.error(e);
       window.alert(
         "No se pudo descargar desde el servidor. Comprueba la sesión o que el escenario tenga datos para esta gráfica.",
@@ -91,6 +116,9 @@ export function buildChartExportMenuItems(serverExport?: {
     { text: "Descargar PNG", onclick: () => run("png") },
     { text: "Descargar SVG", onclick: () => run("svg") },
     { text: "Descargar CSV", onclick: () => run("csv") },
+    "_separator_",
+    { text: "Descargar PNG (limpia)", onclick: () => run("png", { clean: true }) },
+    { text: "Descargar SVG (limpia)", onclick: () => run("svg", { clean: true }) },
   ];
 }
 
@@ -107,4 +135,21 @@ export function onHighchartsExportError(
   window.alert(
     "No se pudo exportar la gráfica desde el navegador (PNG, SVG o CSV). Si usas un navegador muy antiguo, prueba con uno actual o descarga el ZIP desde Exportar en la página de resultados.",
   );
+}
+
+/**
+ * Helper para generar un item de menú de exportación "limpia" (client-side).
+ * Usa `this.exportChart()` que Highcharts vincula al Chart en handlers del menú contextual.
+ */
+export function createCleanExportMenuItem(
+  fmt: 'png' | 'svg',
+  cleanOverrides: Partial<Highcharts.Options>,
+): Highcharts.ExportingMenuObject {
+  const typeMap = { png: 'image/png' as const, svg: 'image/svg+xml' as const };
+  return {
+    text: fmt === 'png' ? 'Descargar PNG (limpia)' : 'Descargar SVG (limpia)',
+    onclick(this: Highcharts.Chart) {
+      (this as any).exportChartLocal({ type: typeMap[fmt] }, cleanOverrides);
+    },
+  };
 }

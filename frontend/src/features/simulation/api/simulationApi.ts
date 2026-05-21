@@ -271,9 +271,12 @@ export const simulationApi = {
     jobId: number,
     selection: ChartSelection,
     fmt: "png" | "svg" | "csv" | "xlsx",
-    tableExportFilters?: {
-      series?: string[];
-      years?: (string | number)[];
+    options?: {
+      clean?: boolean;
+      tableExportFilters?: {
+        series?: string[];
+        years?: (string | number)[];
+      };
     },
   ): Promise<{ blob: Blob; filename: string }> {
     const params: Record<string, string> = {
@@ -286,6 +289,7 @@ export const simulationApi = {
     if (selection.loc) params.loc = selection.loc;
     if (selection.variable) params.variable = selection.variable;
     if (selection.agrupar_por) params.agrupar_por = selection.agrupar_por;
+    if (options?.clean) params.clean = "true";
     // Solo aplican cuando view_mode === 'table'
     if (selection.viewMode === "table") {
       if (typeof selection.tablePeriodYears === "number" && selection.tablePeriodYears >= 1) {
@@ -294,11 +298,11 @@ export const simulationApi = {
       if (selection.tableCumulative) {
         params.table_cumulative = "true";
       }
-      if (tableExportFilters?.series && tableExportFilters.series.length > 0) {
-        params.table_series = tableExportFilters.series.join(",");
+      if (options?.tableExportFilters?.series && options.tableExportFilters.series.length > 0) {
+        params.table_series = options.tableExportFilters.series.join(",");
       }
-      if (tableExportFilters?.years && tableExportFilters.years.length > 0) {
-        params.table_years = tableExportFilters.years.map(String).join(",");
+      if (options?.tableExportFilters?.years && options.tableExportFilters.years.length > 0) {
+        params.table_years = options.tableExportFilters.years.map(String).join(",");
       }
     }
     // Modificadores universales: orden custom de series + rango Y.
@@ -383,6 +387,7 @@ export const simulationApi = {
       loc?: string;
       variable?: string;
       agrupar_por?: string;
+      clean?: boolean;
       legend_title?: string;
       filename_mode?: CompareFacetExportFilenameMode;
       series_order?: string;
@@ -397,6 +402,7 @@ export const simulationApi = {
       fmt,
     };
     if (params.es_porcentaje) q.es_porcentaje = params.es_porcentaje;
+    if (params.clean) q.clean = "true";
     if (params.sub_filtro) q.sub_filtro = params.sub_filtro;
     if (params.loc) q.loc = params.loc;
     if (params.variable) q.variable = params.variable;
@@ -415,6 +421,53 @@ export const simulationApi = {
     const disposition = response.headers["content-disposition"];
     const ext = fmt === "svg" ? "svg" : "png";
     let filename = `comparativa_facet.${ext}`;
+    if (typeof disposition === "string") {
+      const match = /filename="?([^";\n]+)"?/i.exec(disposition);
+      if (match?.[1]) filename = match[1].trim();
+    }
+    return { blob, filename };
+  },
+
+  async exportCompareByYear(
+    params: {
+      job_ids: string;
+      tipo: string;
+      un?: string;
+      years_to_plot?: string;
+      group_by?: string;
+      agrupacion?: string;
+      sub_filtro?: string;
+      loc?: string;
+      es_porcentaje?: string;
+      clean?: boolean;
+      series_order?: string;
+    },
+    fmt: "png" | "svg" = "png",
+  ): Promise<{ blob: Blob; filename: string }> {
+    const q: Record<string, string> = {
+      job_ids: params.job_ids,
+      tipo: params.tipo,
+      un: params.un ?? "PJ",
+      fmt,
+    };
+    if (params.years_to_plot) q.years_to_plot = params.years_to_plot;
+    if (params.group_by) q.group_by = params.group_by;
+    if (params.agrupacion) q.agrupacion = params.agrupacion;
+    if (params.sub_filtro) q.sub_filtro = params.sub_filtro;
+    if (params.loc) q.loc = params.loc;
+    if (params.es_porcentaje) q.es_porcentaje = params.es_porcentaje;
+    if (params.clean) q.clean = "true";
+    if (params.series_order) q.series_order = params.series_order;
+
+    const response = await httpClient.get("/visualizations/export-compare-by-year", {
+      params: q,
+      responseType: "blob",
+      timeout: 5 * 60 * 1000,
+    });
+    const blob = response.data as Blob;
+    const disposition = response.headers["content-disposition"];
+    const ext = fmt === "svg" ? "svg" : "png";
+    let filename = `comparativa_anual.${ext}`;
     if (typeof disposition === "string") {
       const match = /filename="?([^";\n]+)"?/i.exec(disposition);
       if (match?.[1]) filename = match[1].trim();

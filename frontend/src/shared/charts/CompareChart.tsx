@@ -3,6 +3,7 @@ import Highcharts from './highchartsSetup';
 import {
   EXPORTING_CONTEXT_BUTTON_DARK,
   INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
+  createCleanExportMenuItem,
   onHighchartsExportError,
 } from './chartExportingShared';
 import { buildStackedSinglePointTooltipOptions } from './chartTooltips';
@@ -202,6 +203,62 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       });
     });
 
+    const exportChartYAxisOptions = (() => {
+      const totalBarsExport = Math.max(
+        data.subplots.reduce((sum, sp) => sum + sp.categories.length, 0),
+        1,
+      );
+      let cumulativeLeftExport = 0;
+      return data.subplots.map((sp, idx) => {
+        const barFraction = sp.categories.length / totalBarsExport;
+        const width = barFraction * 100;
+        const rightMargin = idx < numSubplots - 1 ? 2 : 0;
+        const effectiveWidth = width - rightMargin;
+        const leftStr = `${cumulativeLeftExport}%`;
+        const widthStr = `${effectiveWidth}%`;
+        cumulativeLeftExport += width;
+        return {
+          left: leftStr,
+          width: widthStr,
+          top: '0%',
+          height: '86%',
+          gridLineColor: '#e2e8f0',
+          gridLineWidth: 1,
+          lineWidth: (!sharedYAxis || idx === 0) ? 1 : 0,
+          lineColor: (!sharedYAxis || idx === 0) ? '#64748b' : 'transparent',
+          tickWidth: (!sharedYAxis || idx === 0) ? 1 : 0,
+          tickLength: (!sharedYAxis || idx === 0) ? 6 : 0,
+          tickColor: (!sharedYAxis || idx === 0) ? '#64748b' : 'transparent',
+          labels: {
+            enabled: !sharedYAxis || idx === 0,
+            style: { color: '#334155', fontSize: '20pt' },
+          },
+          title: {
+            text: idx === 0 ? data.yAxisLabel : null,
+            style: { color: '#334155', fontSize: '28pt' },
+          },
+          stackLabels: {
+            enabled: true,
+            style: {
+              fontWeight: 'bold',
+              color: '#1e293b',
+              textOutline: 'none',
+              fontSize: '20pt',
+            },
+          },
+        };
+      });
+    })();
+
+    const cleanExportOverrides: Partial<Highcharts.Options> = {
+      title: { text: '' },
+      yAxis: exportChartYAxisOptions.map(cfg => ({
+        ...cfg,
+        stackLabels: { enabled: false },
+      })),
+      plotOptions: { series: { dataLabels: { enabled: false } } },
+    };
+
     return {
       chart: {
         type: 'column',
@@ -272,56 +329,16 @@ export const CompareChart: React.FC<CompareChartProps> = ({
             tickColor: '#cbd5e1',
           })),
           // Preserve Y-axis configuration for all subplots during export
-          yAxis: (() => {
-            const totalBarsExport = Math.max(
-              data.subplots.reduce((sum, sp) => sum + sp.categories.length, 0),
-              1,
-            );
-            let cumulativeLeftExport = 0;
-            return data.subplots.map((sp, idx) => {
-              const barFraction = sp.categories.length / totalBarsExport;
-              const width = barFraction * 100;
-              const rightMargin = idx < numSubplots - 1 ? 2 : 0;
-              const effectiveWidth = width - rightMargin;
-              const leftStr = `${cumulativeLeftExport}%`;
-              const widthStr = `${effectiveWidth}%`;
-              cumulativeLeftExport += width;
-              return {
-                left: leftStr,
-                width: widthStr,
-                top: '0%',
-                height: '86%',
-              gridLineColor: '#e2e8f0',
-              gridLineWidth: 1,
-              lineWidth: (!sharedYAxis || idx === 0) ? 1 : 0,
-              lineColor: (!sharedYAxis || idx === 0) ? '#64748b' : 'transparent',
-              tickWidth: (!sharedYAxis || idx === 0) ? 1 : 0,
-              tickLength: (!sharedYAxis || idx === 0) ? 6 : 0,
-              tickColor: (!sharedYAxis || idx === 0) ? '#64748b' : 'transparent',
-              labels: {
-                enabled: !sharedYAxis || idx === 0,
-                style: { color: '#334155', fontSize: '20pt' },
-              },
-              title: {
-                text: idx === 0 ? data.yAxisLabel : null,
-                style: { color: '#334155', fontSize: '28pt' },
-              },
-              stackLabels: {
-                enabled: true,
-                style: {
-                  fontWeight: 'bold',
-                  color: '#1e293b',
-                  textOutline: 'none',
-                  fontSize: '20pt',
-                },
-              },
-            };
-          });
-          })(),
+          yAxis: exportChartYAxisOptions,
         },
         buttons: {
           contextButton: {
-            menuItems: [...INDIVIDUAL_CHART_EXPORT_MENU_ITEMS],
+            menuItems: [
+              ...INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
+              '_separator_',
+              createCleanExportMenuItem('png', cleanExportOverrides),
+              createCleanExportMenuItem('svg', cleanExportOverrides),
+            ] as unknown as string[],
             ...EXPORTING_CONTEXT_BUTTON_DARK,
           },
         },

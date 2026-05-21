@@ -6,9 +6,11 @@ import { Button } from "@/shared/components/Button";
 import { downloadBlob } from "@/shared/utils/downloadBlob";
 import Highcharts from "./highchartsSetup";
 import {
+  CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS,
   EXPORTING_CONTEXT_BUTTON_DARK,
   HIGHCHARTS_GETSVG_MERGE_OPTIONS,
   INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
+  createCleanExportMenuItem,
   onHighchartsExportError,
 } from "./chartExportingShared";
 import {
@@ -142,6 +144,8 @@ function FacetExportKebab({
   onExportSvg,
   exportingPng,
   exportingSvg,
+  exportClean,
+  onToggleClean,
 }: {
   disabled: boolean;
   showServerPng: boolean;
@@ -149,6 +153,8 @@ function FacetExportKebab({
   onExportSvg: () => Promise<void> | void;
   exportingPng: boolean;
   exportingSvg: boolean;
+  exportClean: boolean;
+  onToggleClean: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -192,6 +198,15 @@ function FacetExportKebab({
               {exportingPng ? "Generando PNG…" : "Descargar PNG"}
             </button>
           ) : null}
+          <label className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800/80">
+            <input
+              type="checkbox"
+              checked={exportClean}
+              onChange={onToggleClean}
+              className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500"
+            />
+            Sin título / valores
+          </label>
           <button
             type="button"
             disabled={disabled}
@@ -547,7 +562,12 @@ function FacetChart({
         chartOptions: HIGHCHARTS_GETSVG_MERGE_OPTIONS as Highcharts.Options,
         buttons: {
           contextButton: {
-            menuItems: [...INDIVIDUAL_CHART_EXPORT_MENU_ITEMS],
+            menuItems: [
+              ...INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
+              '_separator_',
+              createCleanExportMenuItem('png', CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS),
+              createCleanExportMenuItem('svg', CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS),
+            ] as unknown as string[],
             ...EXPORTING_CONTEXT_BUTTON_DARK,
           },
         },
@@ -747,6 +767,7 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
   const { push } = useToast();
   const [exportingFacetSvg, setExportingFacetSvg] = useState(false);
   const [exportingFacetPng, setExportingFacetPng] = useState(false);
+  const [facetExportClean, setFacetExportClean] = useState(false);
   const [facetExportFilenameMode, setFacetExportFilenameMode] =
     useState<CompareFacetExportFilenameMode>("result");
   const exportBusy = exportingFacetSvg || exportingFacetPng;
@@ -774,6 +795,7 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
       if (sel.variable) payload.variable = sel.variable;
       if (sel.agrupar_por) payload.agrupar_por = sel.agrupar_por;
       if (legend_title) payload.legend_title = legend_title;
+      if (facetExportClean) payload.clean = true;
       payload.filename_mode = facetExportFilenameMode;
       if (sel.customSeriesOrder && sel.customSeriesOrder.length > 0) {
         payload.series_order = sel.customSeriesOrder.join(",");
@@ -895,6 +917,7 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
         sliceW,
         sliceH,
         ...(exportLegendItems ? { legendItems: exportLegendItems } : {}),
+        ...(facetExportClean ? { clean: true } : {}),
       });
       const base = compareFacetClientFilenameBase(data, facetExportFilenameMode);
       const filename = `comparativa-facet-${base}-${new Date().toISOString().slice(0, 10)}.svg`;
@@ -924,6 +947,8 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
                 onExportSvg={handleExportCombinedSvg}
                 exportingPng={exportingFacetPng}
                 exportingSvg={exportingFacetSvg}
+                exportClean={facetExportClean}
+                onToggleClean={() => setFacetExportClean((v) => !v)}
               />
             ) : (
               <>
@@ -949,6 +974,16 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
                         <option value="tags">Etiquetas (sin etiqueta → nombre del resultado)</option>
                       </select>
                     </div>
+                    <label className="flex shrink-0 items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                      <input
+                        type="checkbox"
+                        checked={facetExportClean}
+                        onChange={(e) => setFacetExportClean(e.target.checked)}
+                        disabled={exportBusy}
+                        className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500"
+                      />
+                      Limpia
+                    </label>
                     <Button
                       type="button"
                       variant="ghost"
