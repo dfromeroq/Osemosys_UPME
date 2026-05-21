@@ -135,11 +135,13 @@ PWR_TECH_ALIASES: dict[str, str] = {
 # tres charts principales del sector eléctrico para no afectar las vistas de
 # detalle (líquidos/térmica/factor planta) donde el usuario quiere ver cada
 # tecnología por separado.
-CONFIGS_CON_ALIAS_PWR: frozenset[str] = frozenset({
-    "cap_electricidad",
-    "prd_electricidad",
-    "elec_produccion",
-})
+CONFIGS_CON_ALIAS_PWR: frozenset[str] = frozenset(
+    {
+        "cap_electricidad",
+        "prd_electricidad",
+        "elec_produccion",
+    }
+)
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -254,9 +256,11 @@ def _filtro_crudo_flujos(df, **kw):
 
 def _filtro_ref_produccion_importaciones(df, **kw):
     """Refinerías específicas + importaciones de combustibles líquidos refinados."""
-    return df[df["TECHNOLOGY"].str.startswith(
-        ("UPSREF_CAR", "UPSREF_BAR", "IMPDSL", "IMPGSL", "IMPJET", "IMPLPG")
-    )]
+    return df[
+        df["TECHNOLOGY"].str.startswith(
+            ("UPSREF_CAR", "UPSREF_BAR", "IMPDSL", "IMPGSL", "IMPJET", "IMPLPG")
+        )
+    ]
 
 
 def _filtro_demanda_exportaciones_liquidos(df, **kw):
@@ -342,9 +346,11 @@ def _filtro_transporte_por_modo(df, **kw):
     mask = df["TECHNOLOGY"].str.startswith("DEMTRA")
     road_mask = df["TECHNOLOGY"].str.contains(_ROAD_TRANSPORT_PATTERN, regex=True)
     avi_mask = df["TECHNOLOGY"].str.contains("AVI")
-    bot_mask = df["TECHNOLOGY"].str.contains("BOT") | df["TECHNOLOGY"].str.contains("SHP")
+    bot_mask = df["TECHNOLOGY"].str.contains("BOT") | df["TECHNOLOGY"].str.contains(
+        "SHP"
+    )
     met_mask = df["TECHNOLOGY"].str.contains("MET")
-    mask &= (road_mask | avi_mask | bot_mask | met_mask)
+    mask &= road_mask | avi_mask | bot_mask | met_mask
     return df[mask]
 
 
@@ -542,15 +548,16 @@ def _filtro_consumo_liquidos(df, **kw):
     if "TECHNOLOGY" not in df.columns:
         return df.iloc[0:0]
 
-    demanda_mask = df["TECHNOLOGY"].str.startswith(
-        ("DEMRES", "DEMIND", "DEMTRA", "DEMTER", "DEMCON", "DEMAGF", "DEMCOQ")
-    )
-
+    # demanda_mask = df["TECHNOLOGY"].str.startswith(
+    #     ("DEMRES", "DEMIND", "DEMTRA", "DEMTER", "DEMCON", "DEMAGF", "DEMCOQ")
+    # )
+    demanda_mask = df["TECHNOLOGY"].str.startswith(("DEM"))
     df = df[demanda_mask]
 
     if "FUEL" not in df.columns:
         return df.iloc[0:0]
-    return df[df["FUEL"].isin({"DSL", "FOL", "GSL", "JET", "LPG"})]
+    # return df[df["FUEL"].isin({"DSL", "FOL", "GSL", "JET", "LPG"})]
+    return df[df["FUEL"].isin({"DSL002", "FOL", "GSL002", "JET", "LPG002"})]
 
 
 def _filtro_liquidos_total(df, **kw):
