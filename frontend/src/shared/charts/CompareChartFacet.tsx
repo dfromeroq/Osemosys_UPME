@@ -243,6 +243,7 @@ interface CompareChartFacetProps {
     jobIds: number[];
     selection: ChartSelection;
     legendTitle?: string;
+    scenarioAliases?: Record<number, string>;
   };
   /** Si true, los controles de export se colapsan en un menú kebab "⋯". */
   compactToolbar?: boolean;
@@ -773,7 +774,7 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
   const exportBusy = exportingFacetSvg || exportingFacetPng;
   const exportFilenameSelectId = React.useId();
 
-  const handleExportFacetPngServer = async () => {
+  const handleExportFacetPngServer = async (): Promise<void> => {
     if (!serverFacetExport || serverFacetExport.jobIds.length < 2) {
       push("Se necesitan al menos dos escenarios seleccionados.", "error");
       return;
@@ -800,13 +801,32 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
       if (sel.customSeriesOrder && sel.customSeriesOrder.length > 0) {
         payload.series_order = sel.customSeriesOrder.join(",");
       }
+      if (sel.region && sel.agrupar_por !== 'REGION') {
+        payload.region = sel.region;
+      }
+      if (serverFacetExport.scenarioAliases && Object.keys(serverFacetExport.scenarioAliases).some(k => serverFacetExport.scenarioAliases![Number(k)]?.trim())) {
+        payload.job_display_overrides = JSON.stringify(serverFacetExport.scenarioAliases);
+      }
       payload.facet_placement = facetPlacement;
       const { blob, filename } = await simulationApi.exportCompareFacet(payload, "png");
       downloadBlob(blob, filename);
       push("PNG descargado (todas las facetas en una imagen).", "success");
     } catch (err) {
       console.error(err);
-      push("No se pudo generar el PNG en el servidor.", "error");
+      let msg = "No se pudo generar el PNG en el servidor.";
+      if (err && typeof err === 'object' && 'response' in err) {
+        const resp = (err as any).response;
+        if (resp?.data instanceof Blob) {
+          try {
+            const text = await resp.data.text();
+            const parsed = JSON.parse(text);
+            if (parsed.detail) msg = parsed.detail;
+          } catch {}
+        } else if (resp?.data?.detail) {
+          msg = resp.data.detail;
+        }
+      }
+      push(msg, "error");
     } finally {
       setExportingFacetPng(false);
     }

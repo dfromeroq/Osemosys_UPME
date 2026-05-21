@@ -315,6 +315,44 @@ function applyScenarioAliases(
   };
 }
 
+function applyAliasesToCompareFacetData(
+  data: CompareChartFacetResponse,
+  aliases: Record<number, string>,
+): CompareChartFacetResponse {
+  const hasAliases = Object.values(aliases).some((v) => v?.trim());
+  if (!hasAliases) return data;
+  return {
+    ...data,
+    facets: data.facets.map((facet) => {
+      const alias = aliases[facet.job_id]?.trim();
+      if (!alias) return facet;
+      return {
+        ...facet,
+        display_name: alias,
+        scenario_name: alias,
+        scenario_tag_name: null,
+      };
+    }),
+  };
+}
+
+function applyAliasesToChartDataResponse(
+  data: ChartDataResponse,
+  aliases: Record<number, string>,
+  jobIds: (string | number)[],
+): ChartDataResponse {
+  const hasAliases = Object.values(aliases).some((v) => v?.trim());
+  if (!hasAliases) return data;
+  return {
+    ...data,
+    series: data.series.map((s, i) => {
+      const jid = Number(jobIds[i]);
+      const alias = jid != null ? aliases[jid]?.trim() : undefined;
+      return alias ? { ...s, name: alias } : s;
+    }),
+  };
+}
+
 export function ResultDetailPage() {
   const { runId } = useParams<{ runId: string }>();
   const currentRunId = Number(runId);
@@ -828,19 +866,23 @@ export function ResultDetailPage() {
   );
 
   const displayCompareFacetData = useMemo(
-    () =>
-      compareFacetData
-        ? reorderFacetSeries(compareFacetData, customSeriesOrder)
-        : null,
-    [compareFacetData, customSeriesOrder],
+    () => {
+      if (!compareFacetData) return null;
+      let data = reorderFacetSeries(compareFacetData, customSeriesOrder);
+      data = applyAliasesToCompareFacetData(data, scenarioAliases);
+      return data;
+    },
+    [compareFacetData, customSeriesOrder, scenarioAliases],
   );
 
   const displayCompareLineData = useMemo(
-    () =>
-      compareLineData
-        ? reorderChartSeries(compareLineData, customSeriesOrder)
-        : null,
-    [compareLineData, customSeriesOrder],
+    () => {
+      if (!compareLineData) return null;
+      let data = reorderChartSeries(compareLineData, customSeriesOrder);
+      data = applyAliasesToChartDataResponse(data, scenarioAliases, chartJobIds);
+      return data;
+    },
+    [compareLineData, customSeriesOrder, scenarioAliases, chartJobIds],
   );
 
   // Lista de series disponibles para el modal de orden, según el modo
@@ -2006,7 +2048,7 @@ export function ResultDetailPage() {
                   Configurar series
                 </button>
               ) : null}
-              {(chartCompareMode === 'by-year' || chartCompareMode === 'by-year-alt') && chartJobIds.length > 1 ? (
+              {(chartCompareMode !== 'off') && chartJobIds.length > 1 ? (
                 <button
                   type="button"
                   onClick={() => setScenarioRenameOpen(true)}
@@ -2084,7 +2126,7 @@ export function ResultDetailPage() {
                   : chartSelection.viewMode === 'area' ? 'area'
                   : 'column'
                 }
-                serverFacetExport={{ jobIds: chartJobIds, selection: chartSelection }}
+                serverFacetExport={{ jobIds: chartJobIds, selection: chartSelection, scenarioAliases }}
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
               />
@@ -2095,6 +2137,7 @@ export function ResultDetailPage() {
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
                 sharedYAxis={true}
+                serverCompareExport={{ jobIds: chartJobIds, selection: chartSelection, yearsToPlot: chartYearsToPlot, isAltMode: false, scenarioAliases }}
               />
             ) : chartCompareMode === 'by-year-alt' && chartJobIds.length > 1 && displayCompareChartData ? (
               <CompareChart
@@ -2103,6 +2146,7 @@ export function ResultDetailPage() {
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
                 sharedYAxis={true}
+                serverCompareExport={{ jobIds: chartJobIds, selection: chartSelection, yearsToPlot: chartYearsToPlot, isAltMode: true, scenarioAliases }}
               />
             ) : chartCompareMode === 'line-total' && chartJobIds.length > 1 && displayCompareLineData ? (
               <LineChart
