@@ -1931,7 +1931,9 @@ def build_comparison_data(
                 un,
             )
             if df_hist is not None and not df_hist.empty:
-                df_hist["SCENARIO"] = str(año_historico)
+                df_hist["SCENARIO"] = scenario_names.get(
+                    first_job_id, str(año_historico)
+                )
                 all_data.append(df_hist)
 
     # Paso 2: Años proyectados (todos los escenarios)
@@ -2039,7 +2041,8 @@ def build_comparison_data(
         df_año = df_final[df_final["YEAR"] == año]
 
         if año == years_to_plot[0]:
-            # Año histórico: mostrar una sola barra
+            # Año histórico: mostrar una sola barra (etiquetada con el nombre
+            # del primer escenario para que los alias/display_name funcionen).
             if not usa_historico:
                 historical_job_id = job_ids[0]
                 historical_name = scenario_names.get(
@@ -2048,10 +2051,20 @@ def build_comparison_data(
                 df_año = df_año[
                     df_año["SCENARIO"] == historical_name
                 ].copy()
-                df_año["SCENARIO"] = str(año)
-            escenarios_en_año = [str(año)]
+                df_año["SCENARIO"] = scenario_names.get(
+                    job_ids[0], str(año)
+                )
+            escenarios_en_año = [
+                scenario_names.get(job_ids[0], str(año))
+            ]
         else:
-            escenarios_en_año = sorted(df_año["SCENARIO"].unique())
+            # Preservar el orden de selección del usuario (job_ids)
+            escenarios_en_año = [
+                scenario_names[jid]
+                for jid in job_ids
+                if jid in scenario_names
+                and scenario_names[jid] in df_año["SCENARIO"].values
+            ]
 
         series: list[ChartSeries] = []
         for categoria, col_cat, name_cat in ordered_stack:
