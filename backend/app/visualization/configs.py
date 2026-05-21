@@ -13,6 +13,7 @@ from app.visualization.colors import (
     _color_por_grupo_fijo,
     _color_electricidad,
     _color_por_sector,
+    _color_por_sector_gei,
     _color_por_emision,
     _color_electrolisis,
     _color_h2_produccion,
@@ -20,6 +21,7 @@ from app.visualization.colors import (
     _color_bioenergia,
     _color_gas_produccion,
     _color_liquidos_import,
+    _color_por_modo,
     _color_ref_import,
 )
 
@@ -336,6 +338,16 @@ def _filtro_transporte(df, sub_filtro=None, **kw):
     return df[mask]
 
 
+def _filtro_transporte_por_modo(df, **kw):
+    mask = df["TECHNOLOGY"].str.startswith("DEMTRA")
+    road_mask = df["TECHNOLOGY"].str.contains(_ROAD_TRANSPORT_PATTERN, regex=True)
+    avi_mask = df["TECHNOLOGY"].str.contains("AVI")
+    bot_mask = df["TECHNOLOGY"].str.contains("BOT") | df["TECHNOLOGY"].str.contains("SHP")
+    met_mask = df["TECHNOLOGY"].str.contains("MET")
+    mask &= (road_mask | avi_mask | bot_mask | met_mask)
+    return df[mask]
+
+
 def _filtro_terciario(df, sub_filtro=None, **kw):
     return _filtro_prefijo_con_sub(df, "DEMTER", sub_filtro)
 
@@ -431,6 +443,14 @@ def _filtro_electrolisis_verde(df, **kw):
     ]
 
 
+def _map_electrolisis_verde(tech):
+    """Map electrolyzer technologies to unified 'Electrólisis Verde' label."""
+    t = str(tech)
+    if t.startswith("UPSALK") or t.startswith("UPSPEM"):
+        return "Electrólisis Verde"
+    return t
+
+
 def _map_h2_verde_azul_gris(tech):
     """Map technology to H2 verde/azul/gris label."""
     t = str(tech)
@@ -492,6 +512,11 @@ def _filtro_solidos_flujos(df, **kw):
         | df["TECHNOLOGY"].str.startswith("IMPCOA")
         | df["TECHNOLOGY"].str.startswith("EXPCOA")
     ]
+
+
+def _filtro_exp_carbon(df, **kw):
+    """Exportaciones de carbón (EXPCOA)."""
+    return df[df["TECHNOLOGY"].str.startswith("EXPCOA")]
 
 
 def _filtro_saf_produccion(df, **kw):
@@ -764,6 +789,20 @@ CONFIGS = {
         "soportaPareto": True,
         "soportaPorcentaje": True,
     },
+    "exp_carbon": {
+        "titulo": "Carbón - Exportación - ProductionByTechnology",
+        "figura": "Figura CAR-EXP",
+        "filename": "Fig_Carbon_Export",
+        "print": "CARBÓN: EXPORTACIÓN",
+        "filtro": _filtro_exp_carbon,
+        "msg_sin_datos": "Sin exportaciones de carbón (EXPCOA)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_liquidos_import,
+        "variable_default": "ProductionByTechnology",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
+        "soportaPareto": True,
+        "soportaPorcentaje": True,
+    },
     "ref_produccion_importaciones": {
         "titulo": "Refinerías + Importaciones de Líquidos - ProductionByTechnology",
         "figura": "Figura REF-IMP-LIQ",
@@ -856,6 +895,17 @@ CONFIGS = {
         "allowedGroupings": ["TECNOLOGIA", "FUEL", "TRANSPORTE_GRUPO"],
         "color_fn": generar_colores_tecnologias,
         "variable_default": "ProductionByTechnology",
+    },
+    "tra_por_modo": {
+        "titulo": "Sector Transporte - Consumo Por Modo - UseByTechnology",
+        "figura": "Figura X",
+        "filename": "Tra_Por_Modo",
+        "print": "SECTOR TRANSPORTE (POR MODO)",
+        "filtro": _filtro_transporte_por_modo,
+        "msg_sin_datos": "Sin tecnologías de transporte (DEMTRA)",
+        "agrupar_por": "MODO",
+        "color_fn": _color_por_modo,
+        "variable_default": "UseByTechnology",
     },
     # ═══════════════════════════════════════════════════════════════════
     # TERCIARIO
@@ -1310,7 +1360,7 @@ CONFIGS = {
         "filtro": _filtro_gei,
         "msg_sin_datos": "Sin datos de emisiones GEI (EMIC02, EMICH4, EMIN2O)",
         "agrupar_por": "SECTOR",
-        "color_fn": _color_por_sector,
+        "color_fn": _color_por_sector_gei,
         "variable_default": "AnnualTechnologyEmission",
     },
     "emisiones_contaminantes": {
@@ -1418,14 +1468,36 @@ CONFIGS = {
     # RECURSOS Y RESERVAS
     # ═══════════════════════════════════════════════════════════════════════
     "recursos_vs_demanda": {
-        "titulo": "Figura 18. Recursos y reservas contra demanda",
-        "figura": "Figura 18",
-        "filename": "Fig18_Recursos_Reservas_vs_Demanda",
-        "print": "RECURSOS Y RESERVAS CONTRA DEMANDA",
+        "titulo": "Recursos y reservas vs Demanda (Crudo)",
+        "figura": "Recursos y reservas vs Demanda (Crudo)",
+        "filename": "Recursos_Reservas_vs_Demanda_Crudo",
+        "print": "RECURSOS Y RESERVAS VS DEMANDA (CRUDO)",
         "filtro": None,
         "msg_sin_datos": "Sin datos de extracción de petróleo (MINOIL)",
         "agrupar_por": "TECNOLOGIA",
         "color_fn": None,
         "variable_default": "ProductionByTechnology",
+    },
+    "recursos_vs_demanda_gas": {
+        "titulo": "Recursos y reservas vs Demanda (Gas Natural)",
+        "figura": "Recursos y reservas vs Demanda (Gas Natural)",
+        "filename": "Recursos_Reservas_vs_Demanda_Gas",
+        "print": "RECURSOS Y RESERVAS VS DEMANDA (GAS NATURAL)",
+        "filtro": None,
+        "msg_sin_datos": "Sin datos de extracción de gas natural (MINNGS)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": None,
+        "variable_default": "ProductionByTechnology",
+    },
+    "recursos_vs_demanda_carbon": {
+        "titulo": "Recursos y reservas vs Demanda (Carbón)",
+        "figura": "Recursos y reservas vs Demanda (Carbón)",
+        "filename": "Recursos_Reservas_vs_Demanda_Carbon",
+        "print": "RECURSOS Y RESERVAS VS DEMANDA (CARBÓN)",
+        "filtro": None,
+        "msg_sin_datos": "Sin datos de carbón (COA/EXPCOA/MINCOA)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": None,
+        "variable_default": "UseByTechnology",
     },
 }

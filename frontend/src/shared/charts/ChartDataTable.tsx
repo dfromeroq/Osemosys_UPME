@@ -274,7 +274,7 @@ export const ChartDataTable: React.FC<Props> = ({
         serverExport.jobId,
         serverExport.selection,
         fmt,
-        filters,
+        { tableExportFilters: filters },
       );
     } catch (err) {
       // eslint-disable-next-line no-console

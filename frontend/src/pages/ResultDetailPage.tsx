@@ -271,6 +271,50 @@ function ScenarioMetricRow({
   );
 }
 
+function applyScenarioAliases(
+  data: CompareChartResponse,
+  aliases: Record<number, string>,
+  jobIds: number[],
+  historicalBarLabel?: string,
+): CompareChartResponse {
+  const hasAliases = Object.values(aliases).some((v) => v?.trim());
+  if (!hasAliases && !historicalBarLabel?.trim()) return data;
+
+  const isAltMode = data.subplots.some((sp) => sp.scenario_name);
+
+  return {
+    ...data,
+    subplots: data.subplots.map((subplot) => {
+      if (isAltMode) {
+        const jid = subplot.year;
+        const alias = aliases[jid]?.trim();
+        if (alias) {
+          return { ...subplot, scenario_name: alias };
+        }
+      } else {
+        // Barra del año histórico (categoría única) — usa historicalBarLabel si está definido
+        if (subplot.categories.length === 1 && jobIds.length > 1) {
+          if (historicalBarLabel?.trim()) {
+            return { ...subplot, categories: [historicalBarLabel.trim()] };
+          }
+          return subplot;
+        }
+        if (subplot.categories.length !== jobIds.length) return subplot;
+        const hasCategoryAliases = jobIds.some((jid) => aliases[jid]?.trim());
+        if (!hasCategoryAliases) return subplot;
+        const newCategories = subplot.categories.map((_name, i) => {
+          const jid = jobIds[i];
+          if (jid == null) return _name;
+          const alias = aliases[jid]?.trim();
+          return alias || _name;
+        });
+        return { ...subplot, categories: newCategories };
+      }
+      return subplot;
+    }),
+  };
+}
+
 export function ResultDetailPage() {
   const { runId } = useParams<{ runId: string }>();
   const currentRunId = Number(runId);
@@ -405,6 +449,9 @@ export function ResultDetailPage() {
   const [yAxisMin, setYAxisMin] = useState<number | null>(null);
   const [yAxisMax, setYAxisMax] = useState<number | null>(null);
   const [seriesOrderOpen, setSeriesOrderOpen] = useState(false);
+  const [scenarioAliases, setScenarioAliases] = useState<Record<number, string>>({});
+  const [scenarioRenameOpen, setScenarioRenameOpen] = useState(false);
+  const [historicalBarLabel, setHistoricalBarLabel] = useState<string>('');
 
   // Resetear modificadores cuando cambia la identidad del chart
   // (otro tipo, otra agrupación, otro filtro): el conjunto de series cambia,
@@ -416,6 +463,32 @@ export function ResultDetailPage() {
     setYAxisMin(null);
     setYAxisMax(null);
   }, [chartIdentityKey]);
+
+  // Persistir/recuperar alias de escenarios en localStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`scenarioAliases_${currentRunId}`);
+      setScenarioAliases(raw ? JSON.parse(raw) : {});
+    } catch { setScenarioAliases({}); }
+  }, [currentRunId]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(`scenarioAliases_${currentRunId}`, JSON.stringify(scenarioAliases));
+    } catch { /* localStorage lleno */ }
+  }, [scenarioAliases, currentRunId]);
+
+  // Persistir/recuperar etiqueta personalizada del año base
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`historicalBarLabel_${currentRunId}`);
+      setHistoricalBarLabel(raw ? JSON.parse(raw) : '');
+    } catch { setHistoricalBarLabel(''); }
+  }, [currentRunId]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(`historicalBarLabel_${currentRunId}`, JSON.stringify(historicalBarLabel));
+    } catch { /* localStorage lleno */ }
+  }, [historicalBarLabel, currentRunId]);
 
   // Sincronizar los modificadores DENTRO de chartSelection — así fluyen a
   // ``simulationApi.exportChart`` (descarga ad-hoc), a ``buildChartShareUrl``
@@ -726,6 +799,26 @@ export function ResultDetailPage() {
   const isComparing = columnCompareJobIds.length >= 2;
   const chartCompareMode: CompareMode = isComparing ? compareViewMode : 'off';
 
+  const chartJobIds = useMemo(() => {
+    if (isComparing) return columnCompareJobIds;
+    return [currentRunId];
+  }, [isComparing, columnCompareJobIds, currentRunId]);
+  const chartYearsToPlot = compareYearsToPlot;
+
+  const displayCompareChartData = useMemo(() => {
+    if (!compareChartData) return null;
+    let data = reorderByYearSeries(compareChartData, customSeriesOrder);
+    data = applyScenarioAliases(data, scenarioAliases, chartJobIds, historicalBarLabel);
+    return data;
+  }, [compareChartData, customSeriesOrder, scenarioAliases, chartJobIds, historicalBarLabel]);
+
+  // Forzar disposición vertical para chart mixto (áreas + líneas)
+  const RECURSOS_CHARTS = new Set(['recursos_vs_demanda', 'recursos_vs_demanda_gas', 'recursos_vs_demanda_carbon']);
+  const effectiveFacetPlacement: ChartFacetPlacement =
+    chartCompareMode === 'facet' && RECURSOS_CHARTS.has(chartSelection.tipo)
+      ? 'stacked'
+      : chartFacetPlacement;
+
   const displaySingleChartData = useMemo(
     () =>
       singleChartData
@@ -740,14 +833,6 @@ export function ResultDetailPage() {
         ? reorderFacetSeries(compareFacetData, customSeriesOrder)
         : null,
     [compareFacetData, customSeriesOrder],
-  );
-
-  const displayCompareChartData = useMemo(
-    () =>
-      compareChartData
-        ? reorderByYearSeries(compareChartData, customSeriesOrder)
-        : null,
-    [compareChartData, customSeriesOrder],
   );
 
   const displayCompareLineData = useMemo(
@@ -787,12 +872,6 @@ export function ResultDetailPage() {
     displayCompareLineData,
     displaySingleChartData,
   ]);
-  const chartJobIds = useMemo(() => {
-    if (isComparing) return columnCompareJobIds;
-    return [currentRunId];
-  }, [isComparing, columnCompareJobIds, currentRunId]);
-  const chartYearsToPlot = compareYearsToPlot;
-
   // Firma estable del contexto para persistir series sintéticas por gráfica.
   const syntheticSignature = useMemo(
     () =>
@@ -829,6 +908,15 @@ export function ResultDetailPage() {
       })
       .join('|');
   }, [chartJobIds, allSummaries, summary]);
+
+  const renameEntries = useMemo(() => {
+    return chartJobIds.map((jid) => {
+      const id = Number(jid);
+      const s = allSummaries.find((sum) => Number(sum.job_id) === id);
+      const originalName = s?.display_name?.trim() || s?.scenario_name?.trim() || `Job ${id}`;
+      return { jobId: id, originalName, alias: scenarioAliases[id] || '' };
+    });
+  }, [chartJobIds, allSummaries, scenarioAliases]);
 
   // 3. Fetch chart data when selection or comparison changes
   useEffect(() => {
@@ -1838,7 +1926,7 @@ export function ResultDetailPage() {
                       ? compareYearsToPlot
                       : undefined,
                   facetPlacement:
-                    chartCompareMode === "facet" ? chartFacetPlacement : undefined,
+                    chartCompareMode === "facet" ? effectiveFacetPlacement : undefined,
                   facetLegendMode:
                     chartCompareMode === "facet" ? chartFacetLegendMode : undefined,
                 });
@@ -1918,6 +2006,22 @@ export function ResultDetailPage() {
                   Configurar series
                 </button>
               ) : null}
+              {(chartCompareMode === 'by-year' || chartCompareMode === 'by-year-alt') && chartJobIds.length > 1 ? (
+                <button
+                  type="button"
+                  onClick={() => setScenarioRenameOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700"
+                  title="Cambia el nombre mostrado de cada escenario en la gráfica"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  Renombrar escenarios
+                  {Object.values(scenarioAliases).some((v) => v?.trim()) ? (
+                    <span className="rounded-full bg-cyan-500/20 px-1.5 py-0.5 text-[9px] text-cyan-300">custom</span>
+                  ) : null}
+                </button>
+              ) : null}
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] text-slate-500">Eje Y:</span>
                 <input
@@ -1973,9 +2077,13 @@ export function ResultDetailPage() {
               <CompareChartFacet
                 data={displayCompareFacetData}
                 barOrientation={chartBarOrientation}
-                facetPlacement={chartFacetPlacement}
+                facetPlacement={effectiveFacetPlacement}
                 legendMode={chartFacetLegendMode}
-                viewMode={chartSelection.viewMode === 'line' ? 'line' : 'column'}
+                viewMode={
+                  chartSelection.viewMode === 'line' ? 'line'
+                  : chartSelection.viewMode === 'area' ? 'area'
+                  : 'column'
+                }
                 serverFacetExport={{ jobIds: chartJobIds, selection: chartSelection }}
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
@@ -2026,15 +2134,26 @@ export function ResultDetailPage() {
                       yAxisMax={yAxisMax}
                     />
                   )
-                : (
-                    <HighchartsChart
-                      data={displaySingleChartData}
-                      barOrientation={chartBarOrientation}
-                      serverExport={{ jobId: currentRunId, selection: chartSelection }}
-                      yAxisMin={yAxisMin}
-                      yAxisMax={yAxisMax}
-                    />
-                  )
+                : chartSelection.viewMode === 'area'
+                  ? (
+                      <HighchartsChart
+                        data={displaySingleChartData}
+                        stackType="area"
+                        barOrientation="vertical"
+                        serverExport={{ jobId: currentRunId, selection: chartSelection }}
+                        yAxisMin={yAxisMin}
+                        yAxisMax={yAxisMax}
+                      />
+                    )
+                  : (
+                      <HighchartsChart
+                        data={displaySingleChartData}
+                        barOrientation={chartBarOrientation}
+                        serverExport={{ jobId: currentRunId, selection: chartSelection }}
+                        yAxisMin={yAxisMin}
+                        yAxisMax={yAxisMax}
+                      />
+                    )
             ) : !loadingChart ? (
               <div className="flex h-[400px] flex-col items-center justify-center px-4 text-center text-slate-500">
                 <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-slate-800 bg-slate-900/50">
@@ -2106,7 +2225,7 @@ export function ResultDetailPage() {
         yearsToPlot={chartCompareMode === 'by-year' || chartCompareMode === 'by-year-alt' ? chartYearsToPlot : null}
         syntheticSeries={syntheticSeries.length > 0 ? syntheticSeries : null}
         barOrientation={chartBarOrientation}
-        facetPlacement={chartFacetPlacement}
+        facetPlacement={effectiveFacetPlacement}
         facetLegendMode={chartFacetLegendMode}
         chartLabel={getChartLabel(chartSelection.tipo) ?? null}
         saveButtonLabel={isAddToReportFlow ? "Guardar gráfica y agregar al reporte" : undefined}
@@ -2194,6 +2313,101 @@ export function ResultDetailPage() {
         currentOrder={customSeriesOrder}
         onApply={(next) => setCustomSeriesOrder(next)}
       />
+
+      <Modal
+        open={scenarioRenameOpen}
+        title="Renombrar escenarios"
+        onClose={() => setScenarioRenameOpen(false)}
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-slate-400">
+            Los cambios solo afectan el nombre mostrado en la gráfica.
+            El nombre original del escenario no se modifica.
+          </p>
+
+          {chartCompareMode === 'by-year' ? (
+            <div className="border-b border-slate-700/50 pb-3">
+              <label className="mb-1.5 block text-[11px] font-medium text-slate-500">
+                Nombre del año base
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={historicalBarLabel}
+                  onChange={(e) => setHistoricalBarLabel(e.target.value)}
+                  placeholder="Ej: Línea Base 2024"
+                  className="flex-1 rounded border border-slate-700 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-600"
+                />
+                {historicalBarLabel ? (
+                  <button
+                    type="button"
+                    onClick={() => setHistoricalBarLabel('')}
+                    className="text-slate-500 hover:text-slate-300"
+                    title="Restablecer nombre original"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          {renameEntries.map(({ jobId, originalName, alias }) => (
+            <div key={jobId} className="flex items-center gap-3">
+              <span className="text-[11px] font-mono text-slate-500 w-16 shrink-0">#{jobId}</span>
+              <span className="text-xs text-slate-400 truncate flex-1" title={originalName}>
+                {originalName}
+              </span>
+              <input
+                type="text"
+                value={alias}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setScenarioAliases((prev) => {
+                    const next = { ...prev };
+                    if (v.trim()) next[jobId] = v;
+                    else delete next[jobId];
+                    return next;
+                  });
+                }}
+                placeholder="Nombre personalizado"
+                className="w-48 rounded border border-slate-700 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-600"
+              />
+              {alias ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScenarioAliases((prev) => {
+                      const next = { ...prev };
+                      delete next[jobId];
+                      return next;
+                    });
+                  }}
+                  className="text-slate-500 hover:text-slate-300"
+                  title="Restablecer nombre original"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              ) : null}
+            </div>
+          ))}
+          {Object.values(scenarioAliases).some((v) => v?.trim()) ? (
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setScenarioAliases({})}
+                className="rounded border border-slate-700 bg-slate-800/40 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-700"
+              >
+                Restablecer todos
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </Modal>
 
       {savedChartToast ? (
         <div

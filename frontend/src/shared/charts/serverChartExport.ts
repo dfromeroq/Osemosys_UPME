@@ -12,16 +12,19 @@ export async function downloadChartFromServer(
   jobId: number,
   selection: ChartSelection,
   fmt: 'png' | 'svg' | 'csv' | 'xlsx',
-  tableExportFilters?: {
-    series?: string[];
-    years?: (string | number)[];
+  options?: {
+    clean?: boolean;
+    tableExportFilters?: {
+      series?: string[];
+      years?: (string | number)[];
+    };
   },
 ): Promise<void> {
   const { blob, filename } = await simulationApi.exportChart(
     jobId,
     selection,
     fmt,
-    tableExportFilters,
+    options,
   );
   downloadBlob(blob, filename);
 }
