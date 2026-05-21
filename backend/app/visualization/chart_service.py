@@ -2416,6 +2416,8 @@ def _procesar_bloque_single(
         df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_modo)
     elif agrupar_col == "ELECTROLISIS":
         df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_electrolisis_verde)
+    elif agrupar_col == "H2_PRODUCCION":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_h2_verde_azul_gris)
     elif agrupar_col == "YEAR":
         df["CATEGORIA"] = "Total"
     else:
