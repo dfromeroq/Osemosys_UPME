@@ -234,6 +234,12 @@ COLORES_GRUPOS = {
     "Metro":       "#008080",
     "Aviación":    "#e6beff",
     "Otros":       "#808080",
+
+    # Transporte — modo de transporte (agrupación MODO)
+    "CARRETERA":   "#e6194b",
+    "AVI":         "#e6beff",
+    "BOT":         "#f032e6",
+    "MET":         "#008080",
 }
 
 
@@ -301,6 +307,14 @@ def _color_por_sector(df, columna: str = "COLOR"):
     return _ordered_color_list(COLORES_SECTOR, df, columna)
 
 
+def _color_por_sector_gei(df, columna: str = "COLOR"):
+    """COLORES_SECTOR con Transporte en #1e335c — solo para emisiones GEI."""
+    from app.visualization.configs_comparacion import COLORES_SECTOR  # lazy: evita circular
+    colores = dict(COLORES_SECTOR)
+    colores["Transporte"] = "#1e335c"
+    return _ordered_color_list(colores, df, columna)
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # 4. COLORES PARA TIPOS DE EMISIÓN (contaminantes y GEI)
 # ══════════════════════════════════════════════════════════════════════════
@@ -350,6 +364,7 @@ def _color_por_grupo_fijo(df, columna: str = "COLOR"):
 COLOR_MAP_ELECTROLISIS: dict[str, str] = {
     "UPSALK": "#16a34a",  # Electrólisis Alcalina — verde medio
     "UPSPEM": "#22c55e",  # Electrólisis PEM — verde claro
+    "Electrólisis Verde": "#22c55e",  # Grupo unificado — verde PEM
 }
 
 # Producción de H₂ por tipo (clasificación cromática del H₂):
@@ -428,6 +443,7 @@ COLOR_MAP_LIQUIDOS_IMPORT: dict[str, str] = {
     "EXPLPG":     "#a060c0",
     "IMPOIL":     "#8B4513",  # Importación Petróleo — marrón
     "EXPOIL":     "#CD853F",  # Exportación Petróleo — marrón claro
+    "EXPCOA":     "#333333",  # Exportación Carbón — gris oscuro
 }
 
 
@@ -448,6 +464,9 @@ _color_liquidos_import = _make_color_fn_fija(COLOR_MAP_LIQUIDOS_IMPORT)
 
 # Paleta fija para agrupación TRANSPORTE_GRUPO
 _color_transporte_grupo = _make_color_fn_fija(COLORES_GRUPOS)
+
+# Paleta fija para agrupación MODO
+_color_por_modo = _make_color_fn_fija(COLORES_GRUPOS)
 
 
 # ══════════════════════════════════════════════════════════════════════════

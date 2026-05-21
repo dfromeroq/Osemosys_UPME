@@ -71,11 +71,13 @@ from app.visualization.colors import (
     asignar_grupo,
     generar_colores_tecnologias,
     _color_electricidad,
+    _color_electrolisis,
     _color_por_grupo_fijo,
     _color_por_sector,
     _color_por_emision,
     _color_por_region,
     _color_transporte_grupo,
+    _color_por_modo,
 )
 from app.visualization.labels import get_label
 from app.visualization.regional import REGION_LABELS, transform_regional_df
@@ -85,6 +87,7 @@ from app.visualization.configs import (
     PWR_TECH_ALIASES,
     TITULOS_VARIABLES_CAPACIDAD,
     NOMBRES_COMBUSTIBLES,
+    _map_electrolisis_verde,
     _map_h2_verde_azul_gris,
 )
 from app.visualization.configs_comparacion import CONFIGS_COMPARACION
@@ -688,6 +691,54 @@ def _map_transporte_grupo(tech_code: str) -> str:
     return "Otros"
 
 
+# Mapeo de código de uso de transporte a modo (agrupación MODO)
+_MODOS_TRANSPORTE_MAP: dict[str, str] = {
+    "MOT": "CARRETERA",
+    "LDV": "CARRETERA",
+    "TAX": "CARRETERA",
+    "FWD": "CARRETERA",
+    "BUS": "CARRETERA",
+    "MIC": "CARRETERA",
+    "TCK": "CARRETERA",
+    "STT": "CARRETERA",
+    "AVI": "AVI",
+    "AIR": "AVI",
+    "BOT": "BOT",
+    "SHP": "BOT",
+    "MET": "MET",
+}
+
+
+def _map_transporte_modo(tech_code: str) -> str:
+    """Clasifica un código DEMTRA en modo de transporte (CARRETERA, AVI, BOT, MET)."""
+    if not isinstance(tech_code, str) or not tech_code.startswith("DEMTRA"):
+        return "Otros"
+    rest = tech_code[len("DEMTRA"):]
+
+    # Eliminar sufijos de eficiencia y área
+    from app.visualization.labels import _EFIC, _AREA  # lazy: evita circular
+    for suffix in _EFIC:
+        if rest.endswith(suffix):
+            rest = rest[:-len(suffix)]
+            break
+    for suffix in _AREA:
+        if rest.endswith(suffix):
+            rest = rest[:-len(suffix)]
+            break
+
+    # Buscar código de modo al final del restante
+    for modo_code in _MODOS_TRANSPORTE_MAP:
+        if rest.endswith(modo_code):
+            return _MODOS_TRANSPORTE_MAP[modo_code]
+
+    # Fallback: buscar cualquier código conocido en cualquier posición
+    for modo_code in _MODOS_TRANSPORTE_MAP:
+        if modo_code in rest:
+            return _MODOS_TRANSPORTE_MAP[modo_code]
+
+    return "Otros"
+
+
 def _sector_labels(tech_series: pd.Series) -> pd.Series:
     """Asignación vectorizada de sector, incluyendo PWR → Generación Electricidad.
 
@@ -733,6 +784,12 @@ def _asignar_categoria(
 
     elif agrupacion == "TRANSPORTE_GRUPO":
         df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_grupo)
+
+    elif agrupacion == "MODO":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_modo)
+
+    elif agrupacion == "ELECTROLISIS":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_electrolisis_verde)
 
     return df
 
@@ -900,12 +957,350 @@ _TECH_DISPLAY: dict[str, str] = {
     "MINOIL": "Crudo genérico",
 }
 
-_TECH_COLORS: dict[str, str] = {
-    "MINOIL_3PES": "#2d2d2d",
-    "MINOIL_2MID": "#5c5c5c",
-    "MINOIL_1LIV": "#8c8c8c",
-    "MINOIL": "#b0b0b0",
+_PRODUCTION_COLORS: dict[str, str] = {
+    "MINOIL_1LIV": "#3b82f6",
+    "MINOIL_2MID": "#f59e0b",
+    "MINOIL_3PES": "#6b7280",
+    "MINOIL": "#a855f7",
 }
+
+_REMAINING_COLORS: dict[str, str] = {
+    "MINOIL_1LIV": "#1e3a5f",
+    "MINOIL_2MID": "#92400e",
+    "MINOIL_3PES": "#374151",
+    "MINOIL": "#581c87",
+}
+
+_GAS_TECH_DISPLAY: dict[str, str] = {
+    "MINNGS": "Gas natural nacional",
+}
+
+_GAS_PRODUCTION_COLORS: dict[str, str] = {
+    "MINNGS": "#10b981",
+}
+
+_GAS_REMAINING_COLORS: dict[str, str] = {
+    "MINNGS": "#065f46",
+}
+
+_COAL_DOMESTIC_COLOR = "#dc2626"
+_COAL_EXPORT_COLOR = "#2563eb"
+_COAL_LIMIT_COLOR = "#000000"
+
+
+def _get_recursos_title(tipo: str) -> str:
+    """Retorna el título base para una gráfica de recursos."""
+    M = {
+        "recursos_vs_demanda": "Recursos y reservas vs Demanda (Crudo)",
+        "recursos_vs_demanda_gas": "Recursos y reservas vs Demanda (Gas Natural)",
+        "recursos_vs_demanda_carbon": "Recursos y reservas vs Demanda (Carbón)",
+    }
+    return M.get(tipo, "Recursos y reservas")
+
+
+def _load_annual_activity_limit_input(
+    db: Session, job_id: int, tech_prefix: str,
+) -> dict[int, float]:
+    """Carga TotalTechnologyAnnualActivityUpperLimit desde input params.
+
+    Retorna ``{year: total_limit}`` sumando todas las tecnologías que
+    empiezan con ``tech_prefix`` (ej. MINCOA). Filtra valores default
+    (>= 9,999,990).
+    """
+    job = db.query(SimulationJob).filter(SimulationJob.id == job_id).first()
+    if not job or not job.scenario_id:
+        return {}
+
+    results = (
+        db.query(Technology.name, OsemosysParamValue.year, OsemosysParamValue.value)
+        .join(Technology, Technology.id == OsemosysParamValue.id_technology)
+        .filter(
+            OsemosysParamValue.id_scenario == job.scenario_id,
+            OsemosysParamValue.param_name
+            == "TotalTechnologyAnnualActivityUpperLimit",
+            Technology.name.startswith(tech_prefix),
+        )
+        .all()
+    )
+
+    limits: dict[int, float] = {}
+    for name, year, value in results:
+        v = float(value)
+        if v < 9_999_990 and year is not None:
+            limits[year] = limits.get(year, 0.0) + v
+    return limits
+
+
+def _build_recursos_production_total(
+    db: Session, job_id: int, tipo: str, un: str = "PJ",
+) -> dict[int, float] | None:
+    """Retorna ``{year: total_production}`` en unidades ``un``.
+
+    - ``recursos_vs_demanda_gas``: ProductionByTechnology(MINNGS)
+    - ``recursos_vs_demanda_carbon``: UseByTechnology(FUEL=COA, no EXPCOA)
+                                      + ProductionByTechnology(EXPCOA)
+    """
+    if tipo == "recursos_vs_demanda_gas":
+        df_gas = _build_recursos_vs_demanda_gas_df(db, job_id, un=un)
+        if df_gas is None or df_gas.empty:
+            return None
+        prod = df_gas.groupby("YEAR")["PRODUCTION"].sum().to_dict()
+        return prod if prod else None
+
+    if tipo == "recursos_vs_demanda_carbon":
+        df_use = _load_variable_data(db, job_id, "UseByTechnology")
+        if df_use.empty:
+            return None
+        df_use = _apply_regional_transform(db, job_id, df_use)
+        df_coa = df_use[df_use["FUEL"] == "COA"].copy()
+        df_domestic = df_coa[~df_coa["TECHNOLOGY"].str.startswith("EXPCOA")]
+        domestic = df_domestic.groupby("YEAR")["VALUE"].sum().to_dict()
+
+        df_prod = _load_variable_data(db, job_id, "ProductionByTechnology")
+        if not df_prod.empty:
+            df_prod = _apply_regional_transform(db, job_id, df_prod)
+            df_export = df_prod[
+                df_prod["TECHNOLOGY"].str.startswith("EXPCOA")
+            ].copy()
+            export = df_export.groupby("YEAR")["VALUE"].sum().to_dict()
+        else:
+            export = {}
+
+        factor = _unit_conversion_factor(un)
+        all_years = sorted(set(domestic.keys()) | set(export.keys()))
+        result = {}
+        for y in all_years:
+            total = (domestic.get(y, 0.0) + export.get(y, 0.0)) * factor
+            result[y] = round(total, 6)
+        return result if result else None
+
+    return None
+
+
+def _build_recursos_vs_demanda_gas_df(
+    db: Session, job_id: int, un: str = "PJ",
+) -> pd.DataFrame | None:
+    """Helper que retorna un DataFrame con columnas:
+    YEAR, TECHNOLOGY, PRODUCTION, REMAINING, HAS_RESOURCE
+
+    Retorna None si no hay datos.
+    """
+    resource_caps = _load_resource_cap_input(db, job_id, "MINNGS")
+
+    df = _load_variable_data(db, job_id, "ProductionByTechnology")
+    if df.empty:
+        return None
+
+    df = _apply_regional_transform(db, job_id, df)
+    df_gas = df[df["TECHNOLOGY"].str.startswith("MINNGS")].copy()
+    if df_gas.empty:
+        return None
+
+    df_agg = df_gas.groupby(["TECHNOLOGY", "YEAR"], as_index=False)["VALUE"].sum()
+    all_techs = sorted(df_agg["TECHNOLOGY"].unique())
+
+    prod_totals = df_agg.groupby("TECHNOLOGY")["VALUE"].sum().to_dict()
+
+    initial: dict[str, float] = {}
+    for tech in all_techs:
+        if tech in resource_caps:
+            initial[tech] = resource_caps[tech]
+        else:
+            initial[tech] = prod_totals.get(tech, 0.0)
+
+    factor = _unit_conversion_factor(un)
+    años = sorted(df_agg["YEAR"].unique())
+
+    rows: list[dict] = []
+    for tech in all_techs:
+        tech_rows = df_agg[df_agg["TECHNOLOGY"] == tech]
+        prod_by_year = dict(zip(tech_rows["YEAR"], tech_rows["VALUE"]))
+        cap = initial.get(tech, 0.0)
+        cum = 0.0
+        for a in años:
+            prod = prod_by_year.get(a, 0.0)
+            cum += prod
+            rem = max(0.0, cap - cum)
+            rows.append({
+                "YEAR": a,
+                "TECHNOLOGY": tech,
+                "PRODUCTION": round(prod * factor, 6),
+                "REMAINING": round(rem * factor, 6) if cap > 0 else 0.0,
+                "HAS_RESOURCE": 1.0 if cap > 0 else 0.0,
+            })
+
+    return pd.DataFrame(rows)
+
+
+def build_recursos_vs_demanda_gas_data(
+    db: Session,
+    job_id: int,
+    un: str = "PJ",
+) -> ChartDataResponse:
+    """Construye datos para Recursos y reservas vs Demanda (Gas Natural).
+
+    Para la tecnología MINNGS:
+      1. Carga el recurso inicial desde
+         TotalTechnologyModelPeriodActivityUpperLimit (input param).
+      2. Carga la producción anual desde ProductionByTechnology (output).
+      3. Calcula ``remaining[t] = initial - cumulative_production[t]``.
+
+    Retorna 2 series:
+      - 1 barra apilada (stack="produccion"): producción anual.
+      - 1 línea (chart_type="line", sin stack): recurso remanente.
+    """
+    title = f"Recursos y reservas vs Demanda (Gas Natural) ({un})"
+
+    df_gas = _build_recursos_vs_demanda_gas_df(db, job_id, un=un)
+    if df_gas is None or df_gas.empty:
+        return ChartDataResponse(
+            categories=[], series=[], title=title, yAxisLabel=un
+        )
+
+    años = sorted(df_gas["YEAR"].unique())
+    categories = [str(a) for a in años]
+    all_techs = sorted(df_gas["TECHNOLOGY"].unique())
+
+    series: list[ChartSeries] = []
+
+    for tech in all_techs:
+        tech_display = _GAS_TECH_DISPLAY.get(tech, tech).lower()
+        tech_rows = df_gas[df_gas["TECHNOLOGY"] == tech]
+
+        prod_by_year = dict(zip(tech_rows["YEAR"], tech_rows["PRODUCTION"]))
+        rem_by_year = dict(zip(tech_rows["YEAR"], tech_rows["REMAINING"]))
+        has_res = tech_rows["HAS_RESOURCE"].iloc[0] > 0
+
+        # Serie de producción
+        prod_data = [prod_by_year.get(a, 0.0) for a in años]
+        series.append(
+            ChartSeries(
+                name=f"Producción {tech_display}",
+                data=prod_data,
+                color=_GAS_PRODUCTION_COLORS.get(tech, "#10b981"),
+                stack="produccion",
+            )
+        )
+
+        # Serie de recurso remanente
+        if has_res:
+            rem_data = [rem_by_year.get(a, 0.0) for a in años]
+            series.append(
+                ChartSeries(
+                    name=f"Recurso remanente {tech_display}",
+                    data=rem_data,
+                    color=_GAS_REMAINING_COLORS.get(tech, "#065f46"),
+                    stack=None,
+                    chart_type="line",
+                )
+            )
+
+    return ChartDataResponse(
+        categories=categories,
+        series=series,
+        title=title,
+        yAxisLabel=un,
+    )
+
+
+def build_recursos_vs_demanda_carbon_data(
+    db: Session,
+    job_id: int,
+    un: str = "PJ",
+) -> ChartDataResponse:
+    """Construye datos para Recursos y reservas vs Demanda (Carbón).
+
+    Barras apiladas (stack="carbon"):
+      - Demanda interna: UseByTechnology(FUEL=COA, excluyendo EXPCOA)
+      - Exportaciones:   ProductionByTechnology(EXPCOA)
+    Línea:
+      - Límite anual:    TotalTechnologyAnnualActivityUpperLimit(MINCOA)
+    """
+    title = f"Recursos y reservas vs Demanda (Carbón) ({un})"
+    factor = _unit_conversion_factor(un)
+
+    # 1. Demanda interna: UseByTechnology(FUEL=COA, excluir EXPCOA)
+    df_use = _load_variable_data(db, job_id, "UseByTechnology")
+    if df_use.empty:
+        return ChartDataResponse(
+            categories=[], series=[], title=title, yAxisLabel=un
+        )
+    df_use = _apply_regional_transform(db, job_id, df_use)
+    df_coa = df_use[df_use["FUEL"] == "COA"].copy()
+    df_domestic = df_coa[~df_coa["TECHNOLOGY"].str.startswith("EXPCOA")]
+    domestic_by_year = (
+        df_domestic.groupby("YEAR")["VALUE"].sum().to_dict()
+    )
+
+    # 2. Exportaciones: ProductionByTechnology(EXPCOA)
+    df_prod = _load_variable_data(db, job_id, "ProductionByTechnology")
+    if not df_prod.empty:
+        df_prod = _apply_regional_transform(db, job_id, df_prod)
+        df_export = df_prod[
+            df_prod["TECHNOLOGY"].str.startswith("EXPCOA")
+        ].copy()
+        export_by_year = df_export.groupby("YEAR")["VALUE"].sum().to_dict()
+    else:
+        export_by_year = {}
+
+    # 3. Límite anual: TotalTechnologyAnnualActivityUpperLimit(MINCOA)
+    annual_limits = _load_annual_activity_limit_input(db, job_id, "MINCOA")
+
+    all_years = sorted(
+        set(domestic_by_year.keys())
+        | set(export_by_year.keys())
+        | set(annual_limits.keys())
+    )
+    if not all_years:
+        return ChartDataResponse(
+            categories=[], series=[], title=title, yAxisLabel=un
+        )
+
+    categories = [str(a) for a in all_years]
+
+    series: list[ChartSeries] = []
+
+    # Barra: Demanda interna
+    dom_data = [round(domestic_by_year.get(a, 0.0) * factor, 6) for a in all_years]
+    series.append(
+        ChartSeries(
+            name="Demanda interna de carbón",
+            data=dom_data,
+            color=_COAL_DOMESTIC_COLOR,
+            stack="carbon",
+        )
+    )
+
+    # Barra: Exportaciones
+    exp_data = [round(export_by_year.get(a, 0.0) * factor, 6) for a in all_years]
+    series.append(
+        ChartSeries(
+            name="Exportaciones de carbón",
+            data=exp_data,
+            color=_COAL_EXPORT_COLOR,
+            stack="carbon",
+        )
+    )
+
+    # Línea: Límite anual de producción
+    lim_data = [round(annual_limits.get(a, 0.0) * factor, 6) for a in all_years]
+    if any(v > 0 for v in lim_data):
+        series.append(
+            ChartSeries(
+                name="Capacidad máxima de producción anual",
+                data=lim_data,
+                color=_COAL_LIMIT_COLOR,
+                stack=None,
+                chart_type="line",
+            )
+        )
+
+    return ChartDataResponse(
+        categories=categories,
+        series=series,
+        title=title,
+        yAxisLabel=un,
+    )
 
 
 def build_recursos_vs_demanda_data(
@@ -913,7 +1308,7 @@ def build_recursos_vs_demanda_data(
     job_id: int,
     un: str = "PJ",
 ) -> ChartDataResponse:
-    """Construye datos para Figura 18. Recursos y reservas contra demanda.
+    """Construye datos para Recursos y reservas vs Demanda (Crudo).
 
     Para cada categoría MINOIL (1LIV, 2MID, 3PES):
       1. Carga el recurso inicial desde
@@ -921,11 +1316,11 @@ def build_recursos_vs_demanda_data(
       2. Carga la producción anual desde ProductionByTechnology (output).
       3. Calcula ``remaining[t] = initial - cumulative_production[t]``.
 
-    Retorna 4 series:
-      - 3 áreas apiladas (stack="recurso"): recurso restante por categoría.
-      - 1 línea (chart_type="line", sin stack): producción anual total.
+    Retorna 6 series por categoría de crudo:
+      - 3 áreas/barras apiladas (stack="produccion"): producción anual por tipo.
+      - 3 líneas (chart_type="line", sin stack): recurso remanente por tipo.
     """
-    title = f"Figura 18. Recursos y reservas contra demanda ({un})"
+    title = f"Recursos y reservas vs Demanda (Crudo) ({un})"
 
     # 1. Cargar recursos iniciales desde input params (si existen)
     resource_caps = _load_resource_cap_input(db, job_id, "MINOIL")
@@ -968,52 +1363,49 @@ def build_recursos_vs_demanda_data(
     años = sorted(df_agg["YEAR"].unique())
     categories = [str(a) for a in años]
 
-    # Producción anual total (demanda)
-    annual_demand = df_agg.groupby("YEAR")["VALUE"].sum().to_dict()
-
-    # 4. Construir series de recurso restante (apiladas)
     series: list[ChartSeries] = []
     factor = _unit_conversion_factor(un)
 
+    # 4. Construir series: producción (área) + recurso remanente (línea) por tipo
     for tech in all_techs:
-        cap = initial.get(tech, 0.0)
-        if cap <= 0:
-            continue
-
+        tech_display = _TECH_DISPLAY.get(tech, tech).lower()
         tech_rows = df_agg[df_agg["TECHNOLOGY"] == tech]
         prod_by_year = dict(
             zip(tech_rows["YEAR"], tech_rows["VALUE"])
         )
 
-        cum = 0.0
-        remaining = []
-        for a in años:
-            cum += prod_by_year.get(a, 0.0)
-            rem = max(0.0, cap - cum)
-            remaining.append(round(rem * factor, 6))
-
+        # 4a. Serie de producción como área/barra
+        prod_data = [
+            round(prod_by_year.get(a, 0.0) * factor, 6) for a in años
+        ]
         series.append(
             ChartSeries(
-                name=_TECH_DISPLAY.get(tech, tech),
-                data=remaining,
-                color=_TECH_COLORS.get(tech, "#999999"),
-                stack="recurso",
+                name=f"Producción {tech_display}",
+                data=prod_data,
+                color=_PRODUCTION_COLORS.get(tech, "#999999"),
+                stack="produccion",
             )
         )
 
-    # 5. Serie de producción anual (línea)
-    demand_data = [
-        round(annual_demand.get(a, 0.0) * factor, 6) for a in años
-    ]
-    series.append(
-        ChartSeries(
-            name="Producción anual",
-            data=demand_data,
-            color="#e11d48",
-            stack=None,
-            chart_type="line",
-        )
-    )
+        # 4b. Serie de recurso remanente como línea
+        cap = initial.get(tech, 0.0)
+        if cap > 0:
+            cum = 0.0
+            remaining = []
+            for a in años:
+                cum += prod_by_year.get(a, 0.0)
+                rem = max(0.0, cap - cum)
+                remaining.append(round(rem * factor, 6))
+
+            series.append(
+                ChartSeries(
+                    name=f"Recurso remanente {tech_display}",
+                    data=remaining,
+                    color=_REMAINING_COLORS.get(tech, "#666666"),
+                    stack=None,
+                    chart_type="line",
+                )
+            )
 
     return ChartDataResponse(
         categories=categories,
@@ -1064,6 +1456,10 @@ def build_chart_data(
     # ── Ruta especial: recursos vs demanda ────────────────────────────────
     if tipo == "recursos_vs_demanda":
         return build_recursos_vs_demanda_data(db, job_id, un=un)
+    if tipo == "recursos_vs_demanda_gas":
+        return build_recursos_vs_demanda_gas_data(db, job_id, un=un)
+    if tipo == "recursos_vs_demanda_carbon":
+        return build_recursos_vs_demanda_carbon_data(db, job_id, un=un)
 
     if tipo not in CONFIGS:
         raise ValueError(f"tipo='{tipo}' no existe en CONFIGS.")
@@ -1185,10 +1581,14 @@ def build_chart_data(
         df["COLOR"] = _sector_labels(df["TECHNOLOGY"])
     elif agrupar_col == "EMISION":
         df["COLOR"] = df["FUEL"] if "FUEL" in df.columns else "?"
+    elif agrupar_col == "ELECTROLISIS":
+        df["COLOR"] = df["TECHNOLOGY"].apply(_map_electrolisis_verde)
     elif agrupar_col == "H2_PRODUCCION":
         df["COLOR"] = df["TECHNOLOGY"].apply(_map_h2_verde_azul_gris)
     elif agrupar_col == "TRANSPORTE_GRUPO":
         df["COLOR"] = df["TECHNOLOGY"].apply(_map_transporte_grupo)
+    elif agrupar_col == "MODO":
+        df["COLOR"] = df["TECHNOLOGY"].apply(_map_transporte_modo)
     elif agrupar_col == "REGION":
         # transform_regional_df ya añadió la columna REGION con prefijos AN..SO.
         df["COLOR"] = df["REGION"] if "REGION" in df.columns else df["TECHNOLOGY"]
@@ -1236,8 +1636,12 @@ def build_chart_data(
             color_fn = _color_por_emision
         elif agrupar_col == "TRANSPORTE_GRUPO":
             color_fn = _color_transporte_grupo
+        elif agrupar_col == "MODO":
+            color_fn = _color_por_modo
         elif agrupar_col == "REGION":
             color_fn = _color_por_region
+        elif agrupar_col == "ELECTROLISIS":
+            color_fn = _color_electrolisis
         else:
             color_fn = (
                 cfg.get("color_fn")
@@ -1305,6 +1709,80 @@ def build_chart_data(
         yAxisLabel="%"
         if es_porcentaje
         else (_emision_unit_label(un, es_emision_kt) if es_emision else un),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Helper: comparación recursos por año (by-year)
+# ═══════════════════════════════════════════════════════════════════════════
+
+_RECURSOS_TIPOS_COMPARACION = frozenset({
+    "recursos_vs_demanda_gas",
+    "recursos_vs_demanda_carbon",
+})
+
+
+def _build_comparison_recursos_by_year(
+    db: Session,
+    job_ids: list[int],
+    tipo: str,
+    years_to_plot: list[int] | None,
+    scenario_names: dict[int, str],
+    un: str = "PJ",
+) -> CompareChartResponse:
+    """Construye comparación by-year para gráficas de recursos (gas, carbón).
+
+    Subplot por año clave, cada barra = producción total de un escenario.
+    """
+    if years_to_plot is None:
+        years_to_plot = [2024, 2030, 2050]
+
+    title = f"{_get_recursos_title(tipo)} — Comparación ({un})"
+
+    prod_by_job_year: dict[int, dict[int, float]] = {}
+    has_data = False
+    for jid in job_ids:
+        totals = _build_recursos_production_total(db, jid, tipo, un=un)
+        if totals is None:
+            prod_by_job_year[jid] = {}
+            continue
+        has_data = True
+        prod_by_job_year[jid] = totals
+
+    if not has_data:
+        return CompareChartResponse(title=title, subplots=[], yAxisLabel=un)
+
+    subplots: list[SubplotData] = []
+    color = "#10b981" if tipo == "recursos_vs_demanda_gas" else "#dc2626"
+    prod_label = {
+        "recursos_vs_demanda_gas": "Producción gas natural nacional",
+        "recursos_vs_demanda_carbon": "Demanda total de carbón",
+    }.get(tipo, "Producción")
+
+    for año in years_to_plot:
+        data = [
+            round(prod_by_job_year.get(jid, {}).get(año, 0.0), 6)
+            for jid in job_ids
+        ]
+        categories = [scenario_names.get(jid, f"Job {jid}") for jid in job_ids]
+
+        subplots.append(
+            SubplotData(
+                year=año,
+                categories=categories,
+                series=[
+                    ChartSeries(
+                        name=prod_label,
+                        data=data,
+                        color=color,
+                        stack="default",
+                    )
+                ],
+            )
+        )
+
+    return CompareChartResponse(
+        title=title, subplots=subplots, yAxisLabel=un
     )
 
 
@@ -1389,6 +1867,7 @@ def build_comparison_data(
             "COMBUSTIBLE": "Combustibles",
             "FUEL": "Combustibles",
             "SECTOR": "Sectores",
+            "MODO": "Modo",
         }.get(agrupacion_usar, agrupacion_usar)
         title_base = f"{cfg['titulo_base']} por {label_agrupacion}"
     else:
@@ -1434,10 +1913,16 @@ def build_comparison_data(
 
     variable_name = cfg["variable_default"]
 
+    # ── Ruta especial: recursos vs demanda ────────────────────────────────
+    if tipo in _RECURSOS_TIPOS_COMPARACION:
+        return _build_comparison_recursos_by_year(
+            db, job_ids, tipo, years_to_plot, scenario_names, un,
+        )
+
     # ── Procesar datos ───────────────────────────────────────────────────
     all_data: list[pd.DataFrame] = []
 
-    # Paso 1: Año histórico (solo del primer escenario)
+    # Paso 1: Año histórico (solo del escenario primario — el primero en la lista)
     if usa_historico and año_historico in years_to_plot and job_ids:
         first_job_id = job_ids[0]
         df_var = _load_variable_data(db, first_job_id, variable_name)
@@ -1455,7 +1940,9 @@ def build_comparison_data(
                 un,
             )
             if df_hist is not None and not df_hist.empty:
-                df_hist["SCENARIO"] = str(año_historico)
+                df_hist["SCENARIO"] = scenario_names.get(
+                    first_job_id, str(año_historico)
+                )
                 all_data.append(df_hist)
 
     # Paso 2: Años proyectados (todos los escenarios)
@@ -1526,6 +2013,8 @@ def build_comparison_data(
                 color_fn = _color_por_sector
             elif agrupacion_usar == "EMISION":
                 color_fn = _color_por_emision
+            elif agrupacion_usar == "ELECTROLISIS":
+                color_fn = _color_electrolisis
             else:
                 color_fn = cfg.get("color_fn") or generar_colores_tecnologias
         else:
@@ -1561,12 +2050,45 @@ def build_comparison_data(
 
     for año in años_ordenados:
         df_año = df_final[df_final["YEAR"] == año]
-        escenarios_en_año = sorted(df_año["SCENARIO"].unique())
+
+        if año == years_to_plot[0]:
+            # Año histórico: mostrar una sola barra (etiquetada con el nombre
+            # del primer escenario para que los alias/display_name funcionen).
+            if not usa_historico:
+                historical_job_id = job_ids[0]
+                historical_name = scenario_names.get(
+                    historical_job_id, f"Job {historical_job_id}"
+                )
+                df_año = df_año[
+                    df_año["SCENARIO"] == historical_name
+                ].copy()
+                df_año["SCENARIO"] = scenario_names.get(
+                    job_ids[0], str(año)
+                )
+            escenarios_en_año = [
+                scenario_names.get(job_ids[0], str(año))
+            ]
+        else:
+            # Preservar el orden de selección del usuario (job_ids)
+            escenarios_en_año = [
+                scenario_names[jid]
+                for jid in job_ids
+                if jid in scenario_names
+                and scenario_names[jid] in df_año["SCENARIO"].values
+            ]
 
         series: list[ChartSeries] = []
         for categoria, col_cat, name_cat in ordered_stack:
             df_cat = df_año[df_año["CATEGORIA"] == categoria]
             if df_cat.empty:
+                series.append(
+                    ChartSeries(
+                        name=name_cat,
+                        data=[0.0] * len(escenarios_en_año),
+                        color=col_cat,
+                        stack="default",
+                    )
+                )
                 continue
 
             valor_por_escenario = {
@@ -1890,6 +2412,10 @@ def _procesar_bloque_single(
         df["CATEGORIA"] = df["FUEL"] if "FUEL" in df.columns else "?"
     elif agrupar_col == "TRANSPORTE_GRUPO":
         df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_grupo)
+    elif agrupar_col == "MODO":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_modo)
+    elif agrupar_col == "ELECTROLISIS":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_electrolisis_verde)
     elif agrupar_col == "YEAR":
         df["CATEGORIA"] = "Total"
     else:
@@ -2001,12 +2527,11 @@ def build_comparison_line_data(
     title += f" — Total ({un})"
 
     # Cargar nombres de escenarios
+    from app.models import Scenario
     scenario_names: dict[int, str] = {}
     for jid in job_ids:
         job = db.query(SimulationJob).filter(SimulationJob.id == jid).first()
         if job:
-            from app.models import Scenario
-
             scenario = (
                 db.query(Scenario).filter(Scenario.id == job.scenario_id).first()
                 if job.scenario_id
@@ -2397,11 +2922,16 @@ def export_all_charts_zip(
     job_id: int,
     un: str = "PJ",
     fmt: str = "svg",
+    *,
+    clean: bool = False,
 ) -> "io.BytesIO":
     """Genera un ZIP con todas las gráficas renderizadas como SVG o PNG.
 
     Para configs de capacidad genera 3 figuras (Total, Nueva, Acumulada).
     Retorna un BytesIO listo para streaming.
+
+    Si ``clean=True`` las gráficas se renderizan sin título ni etiquetas
+    numéricas sobre las barras.
     """
     import io
     import zipfile
@@ -2451,8 +2981,11 @@ def export_all_charts_zip(
                     chart_data,
                     chart_label,
                     fmt=ext,
+                    clean=clean,
                 )
                 safe_name = _safe_filename(chart_label)
+                if clean:
+                    safe_name += "_clean"
                 zf.writestr(f"{safe_name}.{ext}", img_buf.getvalue())
                 file_count += 1
 
@@ -2483,6 +3016,11 @@ def _legend_ncols_for_labels(labels: list[str], hard_cap: int = 5) -> int:
     return max(1, min(cap, hard_cap, n))
 
 
+def _is_line_series(s: Any) -> bool:
+    """True si la serie tiene ``chart_type == 'line'``."""
+    return bool(getattr(s, "chart_type", None) == "line")
+
+
 def _render_stacked_bar(
     chart: ChartDataResponse,
     title: str,
@@ -2490,14 +3028,20 @@ def _render_stacked_bar(
     *,
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
+    clean: bool = False,
 ) -> "io.BytesIO":
-    """Renderiza un ChartDataResponse como gráfica de barras apiladas con matplotlib."""
+    """Renderiza un ChartDataResponse como gráfica de barras apiladas con matplotlib.
+
+    Soporta **series mixtas**: las series con ``chart_type='line'`` se dibujan
+    como líneas sobre las barras en lugar de apilarse.
+    """
     import io
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import numpy as np
+    from matplotlib.lines import Line2D as _Line2D
 
     categories = chart.categories
     n_cats = len(categories)
@@ -2505,63 +3049,77 @@ def _render_stacked_bar(
 
     fig, ax = plt.subplots(figsize=(max(12, n_cats * 0.5), 7))
 
-    bottom = np.zeros(n_cats)
+    # Separar series en barras y líneas (respetando chart_type)
+    all_series = list(chart.series)
+    bar_series = [s for s in all_series if not _is_line_series(s)]
+    line_series = [s for s in all_series if _is_line_series(s)]
 
-    # Convención visual igual a Highcharts: la PRIMERA serie de
-    # ``chart.series`` queda en la parte de ARRIBA del stack. Iteramos en
-    # orden inverso para acumular.
-    # NaN/None → 0 antes de acumular para no contaminar ``bottom`` (los
-    # ``None`` pueden venir de synthetic series con huecos o de filtros).
-    for s in reversed(chart.series):
+    # ── Barras apiladas ────────────────────────────────────────────────
+    bottom = np.zeros(n_cats)
+    for s in reversed(bar_series):
         raw = np.array(s.data, dtype=float)
         values = np.nan_to_num(raw, nan=0.0, posinf=0.0, neginf=0.0)
         ax.bar(x, values, bottom=bottom, color=s.color, width=0.7)
         bottom += values
-    # Markers circulares estilo Highcharts para la leyenda (orden top→bottom).
-    from matplotlib.lines import Line2D as _Line2D
 
-    bar_handles = [
-        _Line2D(
-            [0],
-            [0],
-            marker="o",
-            color=s.color,
-            linestyle="None",
-            markersize=10,
-            markerfacecolor=s.color,
-            markeredgecolor=s.color,
+    # ── Líneas sobre las barras ────────────────────────────────────────
+    for s in line_series:
+        raw = np.array(s.data, dtype=float)
+        values = np.nan_to_num(raw, nan=float("nan"), posinf=float("nan"), neginf=float("nan"))
+        ax.plot(x, values, color=s.color, linewidth=2.5, marker="o", markersize=4)
+
+    # ── Handles de leyenda mixtos ──────────────────────────────────────
+    legend_handles: list[_Line2D] = []
+    legend_labels: list[str] = []
+
+    # Barras: círculos (orden invertido = primero arriba del stack)
+    for s in reversed(bar_series):
+        legend_handles.append(
+            _Line2D(
+                [0], [0],
+                marker="o", color=s.color, linestyle="None",
+                markersize=10, markerfacecolor=s.color, markeredgecolor=s.color,
+            )
         )
-        for s in chart.series
-    ]
-    bar_labels = [s.name for s in chart.series]
+        legend_labels.append(s.name)
+    # Líneas: segmento de línea con marcador
+    for s in line_series:
+        legend_handles.append(
+            _Line2D(
+                [0], [0],
+                color=s.color, linewidth=2.5, marker="o", markersize=5,
+                markeredgecolor=s.color, markerfacecolor=s.color,
+            )
+        )
+        legend_labels.append(s.name)
 
     # Stack totals on top — 1 decimal máx, cada 2 categorías (0, 2, 4, …).
-    for i, total in enumerate(bottom):
-        if i % 2 != 0:
-            continue
-        if total > 0:
-            ax.text(
-                i,
-                total,
-                f"{total:,.1f}",
-                ha="center",
-                va="bottom",
-                fontsize=18,
-                color="#333",
-            )
+    if not clean:
+        for i, total in enumerate(bottom):
+            if i % 2 != 0:
+                continue
+            if total > 0:
+                ax.text(
+                    i,
+                    total,
+                    f"{total:,.1f}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=18,
+                    color="#333",
+                )
 
     ax.set_xticks(x)
     ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
-    ax.set_ylabel(chart.yAxisLabel, fontsize=24, fontweight="bold")
-    ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
-    # Leyenda invertida respecto al stack: la primera serie (top del stack)
-    # aparece al final de la leyenda → lectura abajo→arriba como las barras.
+    ax.set_ylabel(chart.yAxisLabel, fontsize=24)
+    if not clean:
+        ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
     ax.legend(
-        list(reversed(bar_handles)),
-        list(reversed(bar_labels)),
+        legend_handles,
+        legend_labels,
         loc="upper center",
         bbox_to_anchor=(0.5, -0.15),
-        ncol=_legend_ncols_for_labels(bar_labels),
+        ncol=_legend_ncols_for_labels(legend_labels),
         fontsize=20,
         frameon=False,
         handlelength=1.0,
@@ -2576,12 +3134,23 @@ def _render_stacked_bar(
     ax.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+
+    # Ajustar límite Y superior para que las líneas no queden cortadas
+    if not line_series:
+        y_top = bottom.max() if len(bottom) > 0 else 1.0
+    else:
+        line_max = max(
+            np.nanmax(np.array(s.data, dtype=float)) for s in line_series
+        ) if line_series else 0.0
+        y_top = max(bottom.max(), line_max) if len(bottom) > 0 else line_max
+    y_top = max(y_top, 1.0) * 1.08  # 8% headroom
+
     if y_axis_min is not None or y_axis_max is not None:
-        cur_lo, cur_hi = ax.get_ylim()
-        ax.set_ylim(
-            float(y_axis_min) if y_axis_min is not None else cur_lo,
-            float(y_axis_max) if y_axis_max is not None else cur_hi,
-        )
+        cur_lo = float(y_axis_min) if y_axis_min is not None else 0.0
+        cur_hi = float(y_axis_max) if y_axis_max is not None else y_top
+        ax.set_ylim(cur_lo, cur_hi)
+    else:
+        ax.set_ylim(0.0, y_top)
 
     fig.tight_layout()
 
@@ -2647,6 +3216,7 @@ def _render_line_chart(
     *,
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
+    clean: bool = False,
 ) -> "io.BytesIO":
     """Renderiza un ChartDataResponse como gráfica de líneas con matplotlib."""
     import io
@@ -2676,8 +3246,9 @@ def _render_line_chart(
 
     ax.set_xticks(x)
     ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
-    ax.set_ylabel(chart.yAxisLabel, fontsize=24, fontweight="bold")
-    ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
+    ax.set_ylabel(chart.yAxisLabel, fontsize=24)
+    if not clean:
+        ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
     # Orden de leyenda:
     #   1) Series naturales en orden invertido (lectura abajo→arriba como
     #      en las columnas apiladas — convención del proyecto).
@@ -2734,11 +3305,13 @@ def render_chart_visualization_bytes(
     *,
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
+    clean: bool = False,
 ) -> bytes:
     """Genera PNG o SVG con Matplotlib.
 
     ``view_mode``: ``column`` | ``line`` | ``area`` | ``table``.
     ``y_axis_min`` / ``y_axis_max``: override del rango del eje Y. ``None`` = auto.
+    ``clean``: si ``True``, omite título y etiquetas sobre las barras.
     """
     if fmt not in ("png", "svg"):
         raise ValueError("fmt debe ser 'png' o 'svg'")
@@ -2750,6 +3323,7 @@ def render_chart_visualization_bytes(
             fmt=fmt,
             y_axis_min=y_axis_min,
             y_axis_max=y_axis_max,
+            clean=clean,
         )
     elif view_mode == "area":
         buf = _render_stacked_area(
@@ -2758,9 +3332,10 @@ def render_chart_visualization_bytes(
             fmt=fmt,
             y_axis_min=y_axis_min,
             y_axis_max=y_axis_max,
+            clean=clean,
         )
     elif view_mode == "table":
-        buf = _render_table_image(chart, title, fmt=fmt)
+        buf = _render_table_image(chart, title, fmt=fmt, clean=clean)
     else:
         buf = _render_stacked_bar(
             chart,
@@ -2768,6 +3343,7 @@ def render_chart_visualization_bytes(
             fmt=fmt,
             y_axis_min=y_axis_min,
             y_axis_max=y_axis_max,
+            clean=clean,
         )
     return buf.getvalue()
 
@@ -2776,6 +3352,8 @@ def _render_table_image(
     chart: ChartDataResponse,
     title: str,
     fmt: str = "png",
+    *,
+    clean: bool = False,
 ) -> "io.BytesIO":
     """Renderiza un ChartDataResponse como **tabla** (matplotlib ``ax.table``).
 
@@ -2872,7 +3450,8 @@ def _render_table_image(
 
     fig, ax = plt.subplots(figsize=(fig_w, fig_h))
     ax.axis("off")
-    ax.set_title(title, fontsize=28, fontweight="bold", pad=14)
+    if not clean:
+        ax.set_title(title, fontsize=28, fontweight="bold", pad=14)
 
     # Reparte ancho: primera columna ~22-30% según largo de nombres; el resto
     # se reparte entre las columnas de año/categoría.
@@ -3013,15 +3592,20 @@ def _render_stacked_area(
     *,
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
+    clean: bool = False,
 ) -> "io.BytesIO":
-    """Renderiza un ChartDataResponse como áreas apiladas."""
-    import io
+    """Renderiza un ChartDataResponse como áreas apiladas con matplotlib.
 
+    Soporta **series mixtas**: las series con ``chart_type='line'`` se dibujan
+    como líneas sobre las áreas en lugar de apilarse.
+    """
+    import io
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import numpy as np
+    from matplotlib.lines import Line2D as _Line2D
 
     categories = chart.categories
     n_cats = len(categories)
@@ -3029,12 +3613,17 @@ def _render_stacked_area(
 
     fig, ax = plt.subplots(figsize=(max(12, n_cats * 0.5), 7))
 
-    if chart.series:
+    # Separar series en áreas y líneas (respetando chart_type)
+    all_series = list(chart.series)
+    area_series = [s for s in all_series if not _is_line_series(s)]
+    line_series = [s for s in all_series if _is_line_series(s)]
+
+    # ── Áreas apiladas ────────────────────────────────────────────────
+    if area_series:
         # stackplot dibuja la primera serie al fondo. Para que la convención
         # coincida con Highcharts (primera serie del array → arriba),
         # invertimos el orden antes de pasarlo a stackplot.
-        # ``nan_to_num`` evita que NaN propague y rompa el stackplot.
-        rev_series = list(reversed(chart.series))
+        rev_series = list(reversed(area_series))
         ys = [
             np.nan_to_num(
                 np.array(s.data, dtype=float),
@@ -3056,33 +3645,48 @@ def _render_stacked_area(
             edgecolor="white",
         )
 
+    # ── Líneas sobre las áreas ────────────────────────────────────────
+    for s in line_series:
+        raw = np.array(s.data, dtype=float)
+        values = np.nan_to_num(raw, nan=float("nan"), posinf=float("nan"), neginf=float("nan"))
+        ax.plot(x, values, color=s.color, linewidth=2.5, marker="o", markersize=4)
+
+    # ── Handles de leyenda mixtos ─────────────────────────────────────
+    legend_handles: list[_Line2D] = []
+    legend_labels: list[str] = []
+
+    # Áreas: círculos (orden invertido = primero arriba del stack)
+    for s in reversed(area_series):
+        legend_handles.append(
+            _Line2D(
+                [0], [0],
+                marker="o", color=s.color, linestyle="None",
+                markersize=10, markerfacecolor=s.color, markeredgecolor=s.color,
+            )
+        )
+        legend_labels.append(s.name)
+    # Líneas: segmento de línea con marcador
+    for s in line_series:
+        legend_handles.append(
+            _Line2D(
+                [0], [0],
+                color=s.color, linewidth=2.5, marker="o", markersize=5,
+                markeredgecolor=s.color, markerfacecolor=s.color,
+            )
+        )
+        legend_labels.append(s.name)
+
     ax.set_xticks(x)
     ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
     ax.tick_params(axis="y", labelsize=18)
     from matplotlib.ticker import FuncFormatter as _FuncFormatter
 
     ax.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
-    ax.set_ylabel(chart.yAxisLabel, fontsize=24, fontweight="bold")
-    ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
-    # Markers circulares en la leyenda (estilo Highcharts), orden top→bottom.
-    from matplotlib.lines import Line2D as _Line2D
+    ax.set_ylabel(chart.yAxisLabel, fontsize=24)
+    if not clean:
+        ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
 
-    legend_handles = [
-        _Line2D(
-            [0],
-            [0],
-            marker="o",
-            color=s.color or "#999999",
-            linestyle="None",
-            markersize=10,
-            markerfacecolor=s.color or "#999999",
-            markeredgecolor=s.color or "#999999",
-        )
-        for s in chart.series
-    ]
-    legend_labels = [s.name for s in chart.series]
-    # Orden de leyenda: naturales en orden invertido (lectura abajo→arriba)
-    # y series manuales (sintéticas) SIEMPRE al final.
+    # Orden de leyenda: naturales invertidos + sintéticas al final.
     _synth_flags = [bool(getattr(s, "is_synthetic", False)) for s in chart.series]
     _natural = [
         (h, l)
@@ -3110,12 +3714,26 @@ def _render_stacked_area(
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.set_xlim(x.min() if n_cats > 0 else 0, x.max() if n_cats > 0 else 0)
+
+    # Ajustar límite Y para que las líneas no queden cortadas
+    if not area_series:
+        area_top = 0.0
+    else:
+        area_top = np.sum(ys, axis=0).max() if len(ys) > 1 else ys[0].max()
+    if not line_series:
+        line_max = 0.0
+    else:
+        line_max = max(
+            np.nanmax(np.array(s.data, dtype=float)) for s in line_series
+        ) if line_series else 0.0
+    y_top = max(area_top, line_max, 1.0) * 1.08
+
     if y_axis_min is not None or y_axis_max is not None:
-        cur_lo, cur_hi = ax.get_ylim()
-        ax.set_ylim(
-            float(y_axis_min) if y_axis_min is not None else cur_lo,
-            float(y_axis_max) if y_axis_max is not None else cur_hi,
-        )
+        cur_lo = float(y_axis_min) if y_axis_min is not None else 0.0
+        cur_hi = float(y_axis_max) if y_axis_max is not None else y_top
+        ax.set_ylim(cur_lo, cur_hi)
+    else:
+        ax.set_ylim(0.0, y_top)
 
     fig.tight_layout()
 
@@ -3132,10 +3750,12 @@ def render_comparison_by_year_bytes(
     *,
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
+    clean: bool = False,
 ) -> bytes:
     """Renderiza una comparación por año (subplots, un panel por año).
 
     Cada subplot muestra barras agrupadas (una barra por escenario).
+    Si ``clean=True``, omite el título general.
     """
     if fmt not in ("png", "svg"):
         raise ValueError("fmt debe ser 'png' o 'svg'")
@@ -3196,10 +3816,10 @@ def render_comparison_by_year_bytes(
                 label=s.name,
                 color=name_to_color.get(s.name) or getattr(s, "color", None),
             )
-        ax.set_title(f"Año {sp.year}", fontsize=22, fontweight="bold")
+        ax.set_title(f"Año {sp.year}", fontsize=22)
         ax.set_xticks(x)
         ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
-        ax.set_ylabel(data.yAxisLabel, fontsize=24, fontweight="bold")
+        ax.set_ylabel(data.yAxisLabel, fontsize=24)
         ax.tick_params(axis="y", labelsize=18)
         from matplotlib.ticker import FuncFormatter as _FuncFormatter
 
@@ -3234,7 +3854,8 @@ def render_comparison_by_year_bytes(
     for j in range(n, rows * cols):
         axes[j // cols][j % cols].set_axis_off()
 
-    fig.suptitle(data.title, fontsize=28, fontweight="bold")
+    if not clean:
+        fig.suptitle(data.title, fontsize=28, fontweight="bold")
     fig.tight_layout(rect=[0, 0.02, 1, 0.96])
 
     buf = io.BytesIO()
@@ -3247,8 +3868,13 @@ def render_comparison_by_year_bytes(
 def render_pareto_chart_bytes(
     pareto: ParetoChartResponse,
     fmt: str = "svg",
+    *,
+    clean: bool = False,
 ) -> bytes:
-    """Renderiza un ParetoChartResponse (barras descendentes + % acumulado)."""
+    """Renderiza un ParetoChartResponse (barras descendentes + % acumulado).
+
+    Si ``clean=True`` se omite el título.
+    """
     if fmt not in ("png", "svg"):
         raise ValueError("fmt debe ser 'png' o 'svg'")
     import io
@@ -3276,7 +3902,7 @@ def render_pareto_chart_bytes(
     x = np.arange(n)
     fig, ax1 = plt.subplots(figsize=(max(12, n * 0.5), 7))
     ax1.bar(x, values, color="#60a5fa", edgecolor="#1e3a8a", linewidth=0.5)
-    ax1.set_ylabel(pareto.yAxisLabel, fontsize=24, fontweight="bold", color="#1e3a8a")
+    ax1.set_ylabel(pareto.yAxisLabel, fontsize=24, color="#1e3a8a")
     ax1.set_xticks(x)
     # Eje X a 45° (más legible que vertical para etiquetas largas tipo
     # tecnología/sector). ``ha="right"`` ancla el final de la etiqueta al tick
@@ -3297,13 +3923,14 @@ def render_pareto_chart_bytes(
 
     ax2 = ax1.twinx()
     ax2.plot(x, cum_pct, color="#dc2626", marker="o", linewidth=2)
-    ax2.set_ylabel("% acumulado", fontsize=24, fontweight="bold", color="#dc2626")
+    ax2.set_ylabel("% acumulado", fontsize=24, color="#dc2626")
     ax2.tick_params(axis="y", labelsize=18)
     ax2.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
     ax2.set_ylim(0, 110)
     ax2.spines["top"].set_visible(False)
 
-    ax1.set_title(pareto.title, fontsize=28, fontweight="bold", pad=12)
+    if not clean:
+        ax1.set_title(pareto.title, fontsize=28, fontweight="bold", pad=12)
     fig.tight_layout()
 
     buf = io.BytesIO()
@@ -3359,12 +3986,17 @@ def render_comparison_facet_figure_bytes(
     data: CompareChartFacetResponse,
     fmt: str = "png",
     *,
+    layout: str = "horizontal",
     legend_title: str | None = None,
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
     series_order: list[str] | None = None,
+    clean: bool = False,
 ) -> bytes:
-    """Una sola figura: facetas en fila, título global, leyenda inferior (Matplotlib).
+    """Una sola figura: facetas en fila/columna, título global, leyenda inferior (Matplotlib).
+
+    ``layout`` puede ser ``"horizontal"`` (1 fila × N columnas) o
+    ``"vertical"`` (N filas × 1 columna).
 
     Prioriza **legibilidad**: misma escala Y entre escenarios, tipografía clara, leyenda
     con marco y números formateados en ejes y totales de barra cuando aportan.
@@ -3372,6 +4004,8 @@ def render_comparison_facet_figure_bytes(
     import io
 
     import matplotlib
+
+    assert layout in ("horizontal", "vertical"), f"layout inválido: {layout}"
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -3397,22 +4031,6 @@ def render_comparison_facet_figure_bytes(
                 legend_order.append((s.name, s.color))
 
     # Ordenamiento de la leyenda compartida.
-    #
-    # Sin esta lógica, la leyenda se construye por "primera aparición" recorriendo
-    # las facetas en orden — y como cada escenario suele tener un subconjunto
-    # distinto de tecnologías, las series exclusivas de las últimas facetas
-    # quedan al final aunque pertenezcan a una familia que ya estaba al inicio.
-    # El resultado en pantalla es una leyenda visualmente desordenada respecto
-    # al orden natural / al stack.
-    #
-    # Estrategia:
-    #   1. ``rank_natural``  = mínima posición observada en cualquier faceta.
-    #      Esto recupera el orden canónico de ``_color_electricidad`` (o el
-    #      orden de la color_fn correspondiente) aunque la primera faceta no
-    #      contenga todas las tecnologías.
-    #   2. Si el usuario configuró un ``series_order`` custom, ese orden tiene
-    #      prioridad absoluta; el resto se ordena por ``rank_natural`` como
-    #      desempate (mismo orden que el stack de los subplots).
     rank_natural: dict[str, int] = {}
     for facet in facets:
         for i, s in enumerate(facet.series):
@@ -3438,8 +4056,6 @@ def render_comparison_facet_figure_bytes(
     max_leg_label_len = max((len(lab) for lab in legend_labels_full), default=0)
 
     # Leyenda: **siempre** texto completo; menos columnas si los nombres son largos.
-    # Cap duro de **5 columnas** para evitar que figuras con muchas series
-    # corten demasiado ancho horizontal con leyendas extremadamente anchas.
     LEG_NCOL_MAX = 5
     if max_leg_label_len > 48:
         leg_ncol = max(1, min(2, n_leg_items))
@@ -3451,32 +4067,21 @@ def render_comparison_facet_figure_bytes(
         leg_ncol = max(1, min(LEG_NCOL_MAX, n_leg_items))
     n_leg_rows = max(1, (n_leg_items + leg_ncol - 1) // leg_ncol)
 
-    # Ancho por panel: aprovechamos un "presupuesto" total horizontal de ~26″
-    # repartido entre los `n` paneles, con un mínimo de 5.0″ y un máximo de
-    # 9.0″ por panel. Así con pocos escenarios cada panel es bien ancho, y
-    # con muchos escenarios mantenemos legibilidad sin estirar la figura
-    # más de lo necesario.
+    # Ancho por panel: presupuesto horizontal de ~26″ repartido entre `n` paneles.
     inter_panel = 0.55
     fig_w_target = 26.0
     w_per_facet = max(
         5.0,
         min(9.0, (fig_w_target - inter_panel * max(0, n - 1)) / n),
     )
-    fig_w = w_per_facet * n + inter_panel * max(0, n - 1)
-    fig_w = max(9.0, fig_w)
-    # Leyenda más ancha en figuras anchas — pero respetando el cap de 5 cols.
+    # Leyenda más ancha en figuras anchas — respetando cap de 5 cols.
     if max_leg_label_len <= 40:
         leg_ncol = min(
             n_leg_items,
-            max(leg_ncol, min(LEG_NCOL_MAX, 3 + max(0, int(fig_w // 2.6)))),
+            max(leg_ncol, min(LEG_NCOL_MAX, 3 + max(0, int(fig_w_target // 2.6)))),
         )
         n_leg_rows = max(1, (n_leg_items + leg_ncol - 1) // leg_ncol)
 
-    # `leg_font` se usa abajo para el cálculo de altura; lo derivamos aquí.
-    # Bump perceptual: la figura del facet es ~3× más ancha que un single,
-    # así que la leyenda visualmente se siente pequeña aunque su tamaño en pt
-    # sea mayor. Subimos +4pt sobre el cálculo previo para que en perspectiva
-    # se vea similar a la leyenda de los single-chart.
     leg_font_estimate = (
         21.0
         if max_leg_label_len > 52 or n_leg_items > 14
@@ -3484,48 +4089,46 @@ def render_comparison_facet_figure_bytes(
     )
     leg_font_estimate = float(min(leg_font_estimate, 23.5))
 
-    # Geometría en PULGADAS — las fracciones de figura se derivan de aquí
-    # para que paneles, x-labels y leyenda no se superpongan nunca.
-    title_band_inch = 1.25  # suptitle (32pt) + aire respecto a títulos de panel (28pt)
-    x_label_inch = 1.10  # años rotados 90° (≈20pt) + padding
-    gap_inch = 0.24  # separación x-labels ↔ leyenda
-    legend_pad_inch = 0.12  # padding leyenda ↔ borde inferior figura
+    title_band_inch = 1.25
+    x_label_inch = 1.10
+    gap_inch = 0.24
+    legend_pad_inch = 0.12
     line_h_inch = leg_font_estimate * 1.35 / 72.0
     legend_h_inch = line_h_inch * n_leg_rows + 0.12
-
     bottom_margin_inch = legend_pad_inch + legend_h_inch + gap_inch + x_label_inch
 
-    # Altura objetivo del panel (axes): ~55% del ancho del panel ⇒ ratio
-    # ancho:alto ≈ 1.8:1 (claramente más ancho que alto). Floor de 4.0″ para
-    # mantener legibilidad cuando hay muchos escenarios.
     panel_h_inch = max(4.0, w_per_facet * 0.55)
 
-    fig_h = panel_h_inch + title_band_inch + bottom_margin_inch
-    fig_h = float(min(max(fig_h, 6.0), 14.0))
-
-    fig, axes = plt.subplots(1, n, figsize=(fig_w, fig_h), squeeze=False)
-    row_axes = axes[0]
+    if layout == "vertical":
+        fig_w = max(9.0, w_per_facet)
+        fig_h = panel_h_inch * n + inter_panel * max(0, n - 1) + title_band_inch + bottom_margin_inch
+        fig_h = float(min(max(fig_h, 6.0), 20.0))
+        fig, axes = plt.subplots(n, 1, figsize=(fig_w, fig_h), squeeze=False)
+        facet_axes = axes[:, 0]
+    else:
+        fig_w = w_per_facet * n + inter_panel * max(0, n - 1)
+        fig_w = max(9.0, fig_w)
+        fig_h = panel_h_inch + title_band_inch + bottom_margin_inch
+        fig_h = float(min(max(fig_h, 6.0), 14.0))
+        fig, axes = plt.subplots(1, n, figsize=(fig_w, fig_h), squeeze=False)
+        facet_axes = axes[0]
 
     y_label = data.yAxisLabel or "Valor"
     stack_tops: list[np.ndarray] = []
+    line_maxes: list[float] = []
 
-    for ax, facet in zip(row_axes, facets):
+    for idx, (ax, facet) in enumerate(zip(facet_axes, facets)):
         categories = list(facet.categories)
         n_cats = len(categories)
         x = np.arange(n_cats, dtype=float)
-        bottom = np.zeros(n_cats, dtype=float)
 
-        # Iteramos en reverso: primer elemento de ``facet.series`` queda
-        # arriba del stack (igual a Highcharts).
-        #
-        # NOTA: ``s.data`` puede contener ``None`` (NaN al convertir a float)
-        # cuando ``_align_facet_x_axis`` rellenó años faltantes en facets de
-        # rango distinto. Si propagamos NaN al ``bottom`` cumulado, ``np.max``
-        # del stack devuelve NaN, ``global_max`` queda NaN, ``y_top = NaN`` y
-        # ``set_ylim(0, NaN)`` deja que matplotlib auto-ajuste a una altura
-        # menor — cortando visualmente los datos. Convertimos NaN→0 ANTES
-        # del stack (zero-height bar = invisible, equivalente a "sin dato").
-        for s in reversed(facet.series):
+        facet_series = list(facet.series)
+        bar_series = [s for s in facet_series if not _is_line_series(s)]
+        line_series = [s for s in facet_series if _is_line_series(s)]
+
+        # Barras apiladas
+        bottom = np.zeros(n_cats, dtype=float)
+        for s in reversed(bar_series):
             raw = np.array(s.data, dtype=float)
             if raw.size < n_cats:
                 raw = np.pad(raw, (0, n_cats - int(raw.size)))
@@ -3545,6 +4148,21 @@ def render_comparison_facet_figure_bytes(
 
         stack_tops.append(bottom.copy())
 
+        # Líneas sobre las barras
+        facet_line_max = 0.0
+        for s in line_series:
+            raw = np.array(s.data, dtype=float)
+            if raw.size < n_cats:
+                raw = np.pad(raw, (0, n_cats - int(raw.size)))
+            elif raw.size > n_cats:
+                raw = raw[:n_cats]
+            values = np.nan_to_num(raw, nan=float("nan"), posinf=float("nan"), neginf=float("nan"))
+            ax.plot(x, values, color=s.color, linewidth=2.5, marker="o", markersize=4)
+            clean = values[np.isfinite(values)]
+            if clean.size:
+                facet_line_max = max(facet_line_max, float(clean.max()))
+        line_maxes.append(facet_line_max)
+
         ax.set_xticks(x)
         x_step = _facet_x_axis_label_step(categories)
         x_labels = _facet_x_ticklabels_thinned(categories, x_step)
@@ -3561,13 +4179,16 @@ def render_comparison_facet_figure_bytes(
             fontsize=x_fs,
             color="#1e293b",
         )
-        ax.set_ylabel(
-            y_label,
-            fontsize=22,
-            color="#0f172a",
-            fontweight="bold",
-            labelpad=8,
-        )
+        # Y-label: en vertical solo en el primer subplot (shared Y)
+        if layout == "vertical" and idx > 0:
+            ax.set_ylabel("")
+        else:
+            ax.set_ylabel(
+                y_label,
+                fontsize=22,
+                color="#0f172a",
+                labelpad=8,
+            )
         sim_lbl = (
             facet.display_name or facet.scenario_name or f"Job {facet.job_id}"
         ).strip()
@@ -3576,7 +4197,6 @@ def render_comparison_facet_figure_bytes(
         ax.set_title(
             facet_title,
             fontsize=28,
-            fontweight="bold",
             color="#0f172a",
             pad=10,
         )
@@ -3605,67 +4225,40 @@ def render_comparison_facet_figure_bytes(
         ax.set_facecolor("#ffffff")
 
     global_max = 0.0
-    # Línea ~2809
-    global_max = 0.0
     for b in stack_tops:
         if b.size:
-            b_clean = b[np.isfinite(b)]  # ← ignorar nan/inf
+            b_clean = b[np.isfinite(b)]
             if b_clean.size:
                 global_max = max(global_max, float(b_clean.max()))
+    for lm in line_maxes:
+        global_max = max(global_max, lm)
     if global_max <= 0:
         global_max = 1.0
     y_top = global_max * 1.12
 
     show_stack_totals = all(len(b) <= 18 for b in stack_tops)
 
-    # Override del rango Y por usuario (aplica a TODOS los facets para que
-    # mantengan misma escala — la idea del facet es comparar visualmente).
     effective_y_lo = float(y_axis_min) if y_axis_min is not None else 0.0
     effective_y_hi = float(y_axis_max) if y_axis_max is not None else y_top
 
-    for ax, bottom in zip(row_axes, stack_tops):
+    for ax, bottom in zip(facet_axes, stack_tops):
         ax.set_ylim(effective_y_lo, effective_y_hi)
         ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _p: format_axis_3sig(v)))
         ax.yaxis.set_major_locator(
             MaxNLocator(nbins=7, min_n_ticks=5, steps=[1, 2, 2.5, 5, 10]),
         )
-        # Líneas horizontales intermedias entre marcas principales
         ax.yaxis.set_minor_locator(AutoMinorLocator(2))
 
-        # Rejilla: lectura de valores (horizontales mayor + menor; verticales por categoría)
-        ax.grid(
-            which="major",
-            axis="y",
-            linestyle="-",
-            linewidth=0.95,
-            color="#64748b",
-            alpha=0.55,
-            zorder=0,
-        )
-        ax.grid(
-            which="minor",
-            axis="y",
-            linestyle=":",
-            linewidth=0.7,
-            color="#94a3b8",
-            alpha=0.5,
-            zorder=0,
-        )
-        ax.grid(
-            which="major",
-            axis="x",
-            linestyle="-",
-            linewidth=0.75,
-            color="#94a3b8",
-            alpha=0.42,
-            zorder=0,
-        )
+        ax.grid(which="major", axis="y", linestyle="-", linewidth=0.95, color="#64748b", alpha=0.55, zorder=0)
+        ax.grid(which="minor", axis="y", linestyle=":", linewidth=0.7, color="#94a3b8", alpha=0.5, zorder=0)
+        ax.grid(which="major", axis="x", linestyle="-", linewidth=0.75, color="#94a3b8", alpha=0.42, zorder=0)
 
         if not show_stack_totals:
             continue
+        if clean:
+            continue
         n_cats = len(bottom)
         for i in range(n_cats):
-            # Mostrar el total solo cada 2 categorías (0, 2, 4, …).
             if i % 2 != 0:
                 continue
             total = float(bottom[i])
@@ -3679,52 +4272,52 @@ def render_comparison_facet_figure_bytes(
                 va="bottom",
                 fontsize=18,
                 color="#0f172a",
-                fontweight="600",
             )
             t.set_path_effects([pe.withStroke(linewidth=2.5, foreground="white")])
 
     fig.patch.set_facecolor("#ffffff")
-    # Suptitle: lo posicionamos ~0.30" desde el borde superior, lo que deja
-    # un aire claro respecto a los títulos por panel (que viven dentro de la
-    # banda reservada arriba).
-    suptitle_y = 1.0 - 0.28 / fig_h
-    fig.suptitle(
-        data.title,
-        fontsize=32,
-        fontweight="bold",
-        color="#020617",
-        y=suptitle_y,
-    )
+    if not clean:
+        suptitle_y = 1.0 - 0.28 / fig_h
+        fig.suptitle(
+            data.title,
+            fontsize=32,
+            fontweight="bold",
+            color="#020617",
+            y=suptitle_y,
+        )
 
-    # Markers circulares (estilo Highcharts) para coincidir con el chart
-    # individual y evitar la barra/cuadrado.
     from matplotlib.lines import Line2D as _Line2D
 
-    handles = [
-        _Line2D(
-            [0],
-            [0],
-            marker="o",
-            color=c,
-            linestyle="None",
-            markersize=10,
-            markerfacecolor=c,
-            markeredgecolor=c,
-        )
-        for _name, c in legend_order
-    ]
+    line_names: set[str] = set()
+    for facet in facets:
+        for s in facet.series:
+            if _is_line_series(s):
+                line_names.add(s.name)
+
+    handles = []
+    for name, c in legend_order:
+        if name in line_names:
+            handles.append(
+                _Line2D(
+                    [0], [0],
+                    color=c, linewidth=2.5, marker="o", markersize=5,
+                    markeredgecolor=c, markerfacecolor=c,
+                )
+            )
+        else:
+            handles.append(
+                _Line2D(
+                    [0], [0],
+                    marker="o", color=c, linestyle="None",
+                    markersize=10, markerfacecolor=c, markeredgecolor=c,
+                )
+            )
     leg_font = leg_font_estimate
 
-    # Las fracciones de figura derivan directo de las pulgadas calculadas
-    # arriba — así el cálculo es coherente y no quedan superposiciones.
     bottom_margin = bottom_margin_inch / fig_h
     top_margin = 1.0 - title_band_inch / fig_h
     legend_anchor_y = legend_pad_inch / fig_h
 
-    # Leyenda al estilo de las gráficas individuales: sin marco, sin título.
-    # Orden directo: coincide con el orden de las series (primera serie = primera
-    # entrada de la leyenda) — así la leyenda exportada corresponde con el orden
-    # configurado por el usuario y con el panel de leyenda compartida en la UI.
     fig.legend(
         handles=handles,
         labels=legend_labels_full,
@@ -3740,16 +4333,24 @@ def render_comparison_facet_figure_bytes(
         labelspacing=0.45,
     )
 
-    # `wspace` se reduce con menos paneles para que la separación entre
-    # paneles no domine la figura (el ojo percibe huecos enormes con n=2-3).
-    wspace = 0.20 if n >= 4 else 0.16
-    plt.subplots_adjust(
-        left=0.07,
-        right=0.995,
-        top=top_margin,
-        bottom=bottom_margin,
-        wspace=wspace,
-    )
+    if layout == "vertical":
+        hspace = 0.20 if n >= 4 else 0.16
+        plt.subplots_adjust(
+            left=0.10,
+            right=0.995,
+            top=top_margin,
+            bottom=bottom_margin,
+            hspace=hspace,
+        )
+    else:
+        wspace = 0.20 if n >= 4 else 0.16
+        plt.subplots_adjust(
+            left=0.07,
+            right=0.995,
+            top=top_margin,
+            bottom=bottom_margin,
+            wspace=wspace,
+        )
 
     buf = io.BytesIO()
     fig.savefig(
@@ -4042,6 +4643,136 @@ def export_results_csv_zip(
     return buffer
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Helper: comparación recursos por escenario (by-year-alt)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _build_comparison_recursos_by_year_alt(
+    db: Session,
+    job_ids: list[int],
+    tipo: str,
+    years_to_plot: list[int] | None,
+    un: str = "PJ",
+) -> CompareChartResponse:
+    """Construye comparación by-year-alt para gráficas de recursos.
+
+    Subplot por escenario, categories = años, serie = producción total.
+    """
+    if years_to_plot is None:
+        years_to_plot = [2024, 2030, 2050]
+
+    title = (
+        f"{_get_recursos_title(tipo)} — "
+        f"Por Años (Alternativo) ({un})"
+    )
+
+    # Cargar nombres de escenarios
+    from app.models import Scenario
+    scenario_names: dict[int, str] = {}
+    for jid in job_ids:
+        job = db.query(SimulationJob).filter(SimulationJob.id == jid).first()
+        if job:
+            scenario = (
+                db.query(Scenario).filter(Scenario.id == job.scenario_id).first()
+                if job.scenario_id
+                else None
+            )
+            base = scenario.name if scenario else (job.input_name or f"Job {jid}")
+            disp = (getattr(job, "display_name", None) or "").strip()
+            scenario_names[jid] = disp if disp else base
+        else:
+            scenario_names[jid] = f"Job {jid}"
+
+    subplots: list[SubplotData] = []
+    color = "#10b981" if tipo == "recursos_vs_demanda_gas" else "#dc2626"
+    prod_label = {
+        "recursos_vs_demanda_gas": "Producción gas natural nacional",
+        "recursos_vs_demanda_carbon": "Demanda total de carbón",
+    }.get(tipo, "Producción")
+
+    for jid in job_ids:
+        totals = _build_recursos_production_total(db, jid, tipo, un=un)
+        if totals is None:
+            continue
+
+        data = [round(totals.get(a, 0.0), 6) for a in years_to_plot]
+        subplots.append(
+            SubplotData(
+                year=jid,
+                scenario_name=scenario_names.get(jid, f"Job {jid}"),
+                categories=[str(a) for a in years_to_plot],
+                series=[
+                    ChartSeries(
+                        name=prod_label,
+                        data=data,
+                        color=color,
+                        stack="default",
+                    )
+                ],
+            )
+        )
+
+    if not subplots:
+        return CompareChartResponse(title=title, subplots=[], yAxisLabel=un)
+
+    return CompareChartResponse(
+        title=title, subplots=subplots, yAxisLabel=un
+    )
+
+    # Cargar nombres de escenarios
+    scenario_names: dict[int, str] = {}
+    for jid in job_ids:
+        job = db.query(SimulationJob).filter(SimulationJob.id == jid).first()
+        if job:
+            from app.models import Scenario
+            scenario = (
+                db.query(Scenario).filter(Scenario.id == job.scenario_id).first()
+                if job.scenario_id
+                else None
+            )
+            base = scenario.name if scenario else (job.input_name or f"Job {jid}")
+            disp = (getattr(job, "display_name", None) or "").strip()
+            scenario_names[jid] = disp if disp else base
+        else:
+            scenario_names[jid] = f"Job {jid}"
+
+    subplots: list[SubplotData] = []
+    color = "#10b981"
+    name = "Producción gas natural nacional"
+
+    for jid in job_ids:
+        df_gas = _build_recursos_vs_demanda_gas_df(db, jid, un=un)
+        if df_gas is None or df_gas.empty:
+            continue
+
+        tech_rows = df_gas.groupby("YEAR", as_index=False)["PRODUCTION"].sum()
+        prod_by_year = dict(zip(tech_rows["YEAR"], tech_rows["PRODUCTION"]))
+
+        data = [round(prod_by_year.get(a, 0.0), 6) for a in years_to_plot]
+        subplots.append(
+            SubplotData(
+                year=jid,
+                scenario_name=scenario_names.get(jid, f"Job {jid}"),
+                categories=[str(a) for a in years_to_plot],
+                series=[
+                    ChartSeries(
+                        name=name,
+                        data=data,
+                        color=color,
+                        stack="default",
+                    )
+                ],
+            )
+        )
+
+    if not subplots:
+        return CompareChartResponse(title=title, subplots=[], yAxisLabel=un)
+
+    return CompareChartResponse(
+        title=title, subplots=subplots, yAxisLabel=un
+    )
+
+
 def build_comparison_data_by_year_alt(
     db: Session,
     job_ids: list[int],
@@ -4078,6 +4809,12 @@ def build_comparison_data_by_year_alt(
 
     if years_to_plot is None:
         years_to_plot = [2024, 2030, 2050]
+
+    # ── Ruta especial: recursos vs demanda ────────────────────────────────
+    if tipo in _RECURSOS_TIPOS_COMPARACION:
+        return _build_comparison_recursos_by_year_alt(
+            db, job_ids, tipo, years_to_plot, un,
+        )
 
     # Resolver configuración
     if tipo in CONFIGS_COMPARACION:
@@ -4178,6 +4915,8 @@ def build_comparison_data_by_year_alt(
                 color_fn = _color_por_sector
             elif agrupacion_usar == "EMISION":
                 color_fn = _color_por_emision
+            elif agrupacion_usar == "ELECTROLISIS":
+                color_fn = _color_electrolisis
             else:
                 color_fn = cfg.get("color_fn") or generar_colores_tecnologias
         else:
@@ -4204,6 +4943,14 @@ def build_comparison_data_by_year_alt(
         for categoria in categorias_unicas:
             df_cat = df_escenario[df_escenario["CATEGORIA"] == categoria]
             if df_cat.empty:
+                series.append(
+                    ChartSeries(
+                        name=get_label(str(categoria)),
+                        data=[0.0] * len(years_to_plot),
+                        color=mapa_colores.get(categoria, "#999999"),
+                        stack="default",
+                    )
+                )
                 continue
 
             valor_por_año = {

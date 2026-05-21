@@ -11,7 +11,7 @@ interface ScenarioComparerProps {
   onChangeYears: (years: number[]) => void;
 }
 
-const AVAILABLE_YEARS = [2022, 2024, 2025, 2030, 2035, 2040, 2045, 2050, 2054];
+const AVAILABLE_YEARS = [2022, 2024, 2025, 2030, 2035, 2040, 2045, 2050, 2054, 2055];
 
 /**
  * Selector de modo de comparación (facet / by-year / line-total) y años a graficar

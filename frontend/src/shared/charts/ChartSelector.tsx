@@ -197,9 +197,19 @@ const AGRUPACION_OPTIONS: { value: string; label: string; description: string }[
     description: 'Agrupa por tipo de vehículo (motos, livianos, carga, buses, etc.)',
   },
   {
+    value: 'MODO',
+    label: 'Por Modo',
+    description: 'Agrupa por modo de transporte (CARRETERA, AVI, BOT, MET)',
+  },
+  {
     value: 'REGION',
     label: 'Por Región',
     description: 'Agrupa por las 7 regiones del SIN (solo jobs REGIONAL)',
+  },
+  {
+    value: 'ELECTROLISIS',
+    label: 'Electrólisis Verde',
+    description: 'Agrupa electrolizadores (UPSALK + UPSPEM) en una sola categoría',
   },
 ];
 
@@ -212,6 +222,13 @@ const CHARTS_SIN_AGRUPACION = new Set([
   'emisiones_gei',           // agrupa por SECTOR (incluye PWR) → fijo
   'emisiones_contaminantes', // agrupa por EMISION → fijo
   'h2_produccion_verde',     // H2_PRODUCCION fijo en backend
+]);
+
+/** Charts mixtos (áreas + líneas) que solo funcionan en modo columna. */
+const CHARTS_SOLO_COLUMNAS = new Set([
+  'recursos_vs_demanda',         // producción (áreas) + recurso remanente (líneas)
+  'recursos_vs_demanda_gas',     // producción (áreas) + recurso remanente (líneas)
+  'recursos_vs_demanda_carbon',  // demanda (áreas) + límite producción (línea)
 ]);
 
 // ─── Estructura del menú ─────────────────────────────────────────────────────
@@ -302,7 +319,9 @@ const MENU: Module[] = [
         charts: [
           { id: 'tra_total', label: 'Sector Transporte - Consumo Total - UseByTechnology', hasSub: true, subFiltroLabel: 'Modo', subFiltros: ['CARRETERA','AVI','BOT','SHP','LDV','FWD','BUS','TCK_C2P','TCK_CSG','MOT','MIC','TAX','STT','MET'], allowedGroupings: ['TECNOLOGIA', 'FUEL', 'TRANSPORTE_GRUPO'], soportaPareto: true, soportaPorcentaje: true },
           { id: 'tra_uso',   label: 'Sector Transporte - ProductionByTechnology',           hasSub: true, subFiltroLabel: 'Modo', subFiltros: ['CARRETERA','AVI','BOT','SHP','LDV','FWD','BUS','TCK_C2P','TCK_CSG','MOT','MIC','TAX','STT','MET'], allowedGroupings: ['TECNOLOGIA', 'FUEL', 'TRANSPORTE_GRUPO'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'tra_por_modo', label: 'Sector Transporte - Consumo Por Modo - UseByTechnology', allowedGroupings: ['MODO'], defaultGrouping: 'MODO', soportaPareto: true, soportaPorcentaje: true },
         ],
+
       },
       {
         id: 'terciario', label: '🏢 Terciario',
@@ -391,6 +410,7 @@ const MENU: Module[] = [
       { id: 'solidos_extraccion', label: 'Sólidos - Extracción - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
       { id: 'solidos_import',     label: 'Sólidos - Importación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
       { id: 'solidos_flujos',     label: 'Sólidos - Importación/Exportación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+      { id: 'exp_carbon',         label: 'Carbón — Exportación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
     ],
   },
     {
@@ -400,7 +420,7 @@ const MENU: Module[] = [
       charts: [
         { id: 'cap_h2',     label: 'Hidrógeno - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true , soportaPorcentaje: true },
         { id: 'h2_consumo', label: 'Hidrógeno - Consumo - UseByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
-        { id: 'cap_electrolisis_verde', label: 'Capacidad Total de Electrólisis Verde', isCapacity: true },
+        { id: 'cap_electrolisis_verde', label: 'Capacidad Total de Electrólisis Verde', isCapacity: true, allowedGroupings: ['TECNOLOGIA', 'ELECTROLISIS'], defaultGrouping: 'TECNOLOGIA' },
         { id: 'h2_produccion_verde', label: 'Hidrógeno Producción (Verde/Azul/Gris)', soportaPareto: true, soportaPorcentaje: true },
       ],
     },
@@ -426,7 +446,9 @@ const MENU: Module[] = [
     emoji: '🛢️',
     label: 'Recursos y Reservas',
     charts: [
-      { id: 'recursos_vs_demanda', label: 'Figura 18. Recursos y Reservas vs Demanda', soportaPareto: false, soportaPorcentaje: false },
+      { id: 'recursos_vs_demanda', label: 'Recursos y reservas vs Demanda (Crudo)', soportaPareto: false, soportaPorcentaje: false },
+      { id: 'recursos_vs_demanda_gas', label: 'Recursos y reservas vs Demanda (Gas Natural)', soportaPareto: false, soportaPorcentaje: false },
+      { id: 'recursos_vs_demanda_carbon', label: 'Recursos y reservas vs Demanda (Carbón)', soportaPareto: false, soportaPorcentaje: false },
     ],
   },
   {
@@ -519,7 +541,7 @@ function chartTipoBelongsToModule(tipo: string, moduleId: string): boolean {
 /** Determina si la gráfica activa debe mostrar el selector de agrupación */
 function showsAgrupacion(item: ChartItem | undefined): boolean {
   if (!item) return false;
-  if (item.isCapacity) return false;                    // fijo en backend
+  if (item.isCapacity && !item.allowedGroupings) return false; // si declaró allowedGroupings, sí muestra selector
   if (CHARTS_SIN_AGRUPACION.has(item.id)) return false; // porcentaje / emisiones
   return true;
 }
@@ -614,6 +636,10 @@ export function ChartSelector({
     // Si el viewMode actual es 'table' y la nueva gráfica lo desactiva
     // explícitamente (soportaTabla=false), resetear a 'column'.
     if (newViewMode === 'table' && item.soportaTabla === false) {
+      newViewMode = 'column';
+    }
+    // Charts mixtos (áreas+lineas): solo columna o área
+    if (CHARTS_SOLO_COLUMNAS.has(item.id) && newViewMode !== 'column' && newViewMode !== 'area') {
       newViewMode = 'column';
     }
 
@@ -831,6 +857,8 @@ export function ChartSelector({
                         : opt.value === 'FUEL' ? '⛽'
                         : opt.value === 'SECTOR' ? '🏢'
                         : opt.value === 'REGION' ? '🗺️'
+                        : opt.value === 'MODO' ? '🚗'
+                        : opt.value === 'ELECTROLISIS' ? '🧪'
                         : '🔗'}
                     </span>
                     <span>{opt.label}</span>
@@ -926,13 +954,27 @@ export function ChartSelector({
                       ☰ Barras horizontales
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => onChange({ ...value, viewMode: 'line' })}
-                    style={{ ...viewBtnStyle, ...(currentVm === 'line' ? viewBtnActiveStyle : viewBtnInactiveStyle) }}
-                  >
-                    ∿ Línea
-                  </button>
+                  {currentItem && CHARTS_SOLO_COLUMNAS.has(currentItem.id) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onChange({ ...value, viewMode: 'area' });
+                        onChangeBarOrientation?.('vertical');
+                      }}
+                      style={{ ...viewBtnStyle, ...(currentVm === 'area' ? viewBtnActiveStyle : viewBtnInactiveStyle) }}
+                    >
+                      ▨ Área
+                    </button>
+                  )}
+                  {currentItem && !CHARTS_SOLO_COLUMNAS.has(currentItem.id) && (
+                    <button
+                      type="button"
+                      onClick={() => onChange({ ...value, viewMode: 'line' })}
+                      style={{ ...viewBtnStyle, ...(currentVm === 'line' ? viewBtnActiveStyle : viewBtnInactiveStyle) }}
+                    >
+                      ∿ Línea
+                    </button>
+                  )}
                   {currentItem?.soportaPorcentaje === true && (
                     <button
                       type="button"

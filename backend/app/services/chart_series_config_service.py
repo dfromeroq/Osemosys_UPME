@@ -356,7 +356,7 @@ def populate_chart_type(
 def populate_all_chart_types(db: Session) -> int:
     total = 0
     for tipo in CONFIGS.keys():
-        if tipo == "recursos_vs_demanda":
+        if tipo in ("recursos_vs_demanda", "recursos_vs_demanda_gas", "recursos_vs_demanda_carbon"):
             continue
         cfg = CONFIGS[tipo]
         ap = normalize_agrupar_por(None, cfg.get("agrupar_por"))
@@ -467,7 +467,7 @@ def create_config(
 def chart_types_catalog() -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for tipo, cfg in CONFIGS.items():
-        if tipo == "recursos_vs_demanda":
+        if tipo in ("recursos_vs_demanda", "recursos_vs_demanda_gas", "recursos_vs_demanda_carbon"):
             continue
         out.append(
             {
