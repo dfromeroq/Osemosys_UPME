@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Highcharts from './highchartsSetup';
 import {
+  CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS,
   EXPORTING_CONTEXT_BUTTON_DARK,
+  INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
   buildChartExportMenuItems,
+  createCleanExportMenuItem,
   onHighchartsExportError,
 } from './chartExportingShared';
 import { buildLineTooltipOptions } from './chartTooltips';
@@ -203,7 +206,18 @@ export const LineChart: React.FC<LineChartProps> = ({
         },
         buttons: {
           contextButton: {
-            menuItems: buildChartExportMenuItems(serverExport) as string[],
+            // Highcharts admite objetos { text, onclick }; los tipos suelen declarar solo string[].
+            menuItems: (() => {
+              if (!serverExport) {
+                return [
+                  ...INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
+                  '_separator_',
+                  createCleanExportMenuItem('png', CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS),
+                  createCleanExportMenuItem('svg', CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS),
+                ];
+              }
+              return buildChartExportMenuItems(serverExport);
+            })() as unknown as string[],
             ...EXPORTING_CONTEXT_BUTTON_DARK,
           },
         },

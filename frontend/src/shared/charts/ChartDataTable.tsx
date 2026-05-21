@@ -14,7 +14,11 @@
  * parámetros vía `serverChartExport`.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import type { ChartDataResponse } from '../../types/domain';
+import type {
+  ChartDataResponse,
+  ChartSeries,
+  ResultTablePresentation,
+} from '../../types/domain';
 import type { ChartSelection } from './ChartSelector';
 import { formatAxis3Sig } from './numberFormat';
 import { downloadChartFromServer } from './serverChartExport';
@@ -27,6 +31,12 @@ interface Props {
   cumulative?: boolean;
   /** Para descargar PNG/SVG/CSV/XLSX desde el backend. */
   serverExport?: { jobId: number; selection: ChartSelection };
+  /** Sustituye el título proveniente de chart-data. */
+  titleOverride?: string | null;
+  /** Orden de filas por nombre de serie (misma semántica que plantillas guardadas). */
+  customSeriesOrder?: string[] | null;
+  /** Reglas admin: visibilidad, orden, colores, etiquetas, grupos, columnas. */
+  presentation?: ResultTablePresentation | null;
 }
 
 /** Espejo de `_year_keep_indices` en backend. Categorías no-año se preservan. */
@@ -71,11 +81,119 @@ function applyCumulative(data: (number | null)[]): number[] {
   });
 }
 
+function reorderSeriesByNames(
+  series: ChartSeries[],
+  order: string[] | null | undefined,
+): ChartSeries[] {
+  if (!order || order.length === 0) return series;
+  const m = new Map(series.map((s) => [s.name, s]));
+  const out: ChartSeries[] = [];
+  for (const n of order) {
+    const s = m.get(n);
+    if (s) {
+      out.push(s);
+      m.delete(n);
+    }
+  }
+  for (const s of series) {
+    if (m.has(s.name)) out.push(s);
+  }
+  return out;
+}
+
+type DisplayRow =
+  | { kind: 'group'; label: string }
+  | { kind: 'series'; series: ChartSeries; displayName: string };
+
+function applyPresentationLayout(
+  view: { cats: string[]; series: ChartSeries[]; totals: number[] },
+  presentation: ResultTablePresentation | null | undefined,
+): { cats: string[]; series: ChartSeries[]; totals: number[]; rows: DisplayRow[] } {
+  if (!presentation || (!presentation.columns?.length && !presentation.series?.length)) {
+    const rows: DisplayRow[] = view.series.map((s) => ({
+      kind: 'series',
+      series: s,
+      displayName: s.name,
+    }));
+    return { ...view, rows };
+  }
+
+  const colRules = new Map((presentation.columns ?? []).map((c) => [c.id, c]));
+  let orderedCatIds: string[];
+  if (!presentation.columns?.length) {
+    orderedCatIds = view.cats.map((c) => String(c));
+  } else {
+    const withMeta = view.cats.map((c, i) => ({
+      id: String(c),
+      i,
+      rule: colRules.get(String(c)),
+    }));
+    const visible = withMeta.filter((x) => !x.rule?.hidden);
+    const explicit = visible
+      .filter((x) => x.rule != null && typeof x.rule.sort_order === 'number')
+      .sort((a, b) => (a.rule!.sort_order! as number) - (b.rule!.sort_order! as number));
+    const implicit = visible
+      .filter((x) => !x.rule || typeof x.rule.sort_order !== 'number')
+      .sort((a, b) => a.i - b.i);
+    orderedCatIds = [...explicit, ...implicit].map((x) => x.id);
+  }
+
+  const oldIndices = orderedCatIds
+    .map((id) => view.cats.findIndex((c) => String(c) === id))
+    .filter((i) => i >= 0);
+  const cats = oldIndices.map((i) => view.cats[i]!);
+  const sliceData = (s: ChartSeries) =>
+    oldIndices.map((i) => (i < s.data.length ? s.data[i]! : 0));
+  let series = view.series.map((s) => ({ ...s, data: sliceData(s) }));
+
+  const ruleByName = new Map((presentation.series ?? []).map((r) => [r.match, r]));
+  series = series.filter((s) => !ruleByName.get(s.name)?.hidden);
+
+  const totals =
+    series.length === 0
+      ? cats.map(() => 0)
+      : cats.map((_, colIdx) =>
+          series.reduce(
+            (acc, s) => acc + (Number.isFinite(s.data[colIdx]) ? s.data[colIdx]! : 0),
+            0,
+          ),
+        );
+
+  const withOrder = series.map((s, origIdx) => {
+    const r = ruleByName.get(s.name);
+    const si = r?.sort_index;
+    const sortKey = typeof si === 'number' ? si : 1_000_000 + origIdx;
+    let color = s.color;
+    if (r?.color && r.color.trim()) color = r.color.trim();
+    return { s: { ...s, color }, sortKey, rule: r };
+  });
+  withOrder.sort((a, b) => a.sortKey - b.sortKey);
+
+  const rows: DisplayRow[] = [];
+  let lastG: string | null = null;
+  for (const { s, rule } of withOrder) {
+    const g = rule?.group_key?.trim() || null;
+    if (g) {
+      if (g !== lastG) rows.push({ kind: 'group', label: g });
+      lastG = g;
+    } else {
+      lastG = null;
+    }
+    const displayName = rule?.display_label?.trim() || s.name;
+    rows.push({ kind: 'series', series: s, displayName });
+  }
+
+  return { cats, series: withOrder.map((x) => x.s), totals, rows };
+}
+
 export const ChartDataTable: React.FC<Props> = ({
   data,
   periodYears,
   cumulative,
   serverExport,
+  titleOverride,
+  customSeriesOrder,
+  presentation,
 }) => {
   const [downloading, setDownloading] = useState<null | 'png' | 'svg' | 'csv' | 'xlsx'>(
     null,
@@ -119,14 +237,15 @@ export const ChartDataTable: React.FC<Props> = ({
   }, [data.categories]);
 
   const view = useMemo(() => {
+    const ordered = reorderSeriesByNames(data.series, customSeriesOrder ?? null);
     // 1) Acumular (si aplica) sobre TODAS las categorías originales.
-    const seriesCum = data.series.map((s) => ({
+    const seriesCum = ordered.map((s) => ({
       ...s,
       data: cumulative ? applyCumulative(s.data) : s.data.slice(),
     }));
     // 2) Filtrar columnas por período.
     const keep = yearKeepIndices(data.categories, periodYears ?? null);
-    const cats = keep.map((i) => data.categories[i]!);
+    const cats = keep.map((i) => String(data.categories[i]!));
     const series = seriesCum.map((s) => ({
       ...s,
       data: keep.map((i) => (i < s.data.length ? s.data[i]! : 0)),
@@ -135,9 +254,10 @@ export const ChartDataTable: React.FC<Props> = ({
     const totals = cats.map((_, colIdx) =>
       series.reduce((acc, s) => acc + (Number.isFinite(s.data[colIdx]) ? s.data[colIdx]! : 0), 0),
     );
-    return { cats, series, totals };
-  }, [data, cumulative, periodYears]);
+    return applyPresentationLayout({ cats, series, totals }, presentation ?? null);
+  }, [data, cumulative, periodYears, customSeriesOrder, presentation]);
 
+  const displayTitle = titleOverride?.trim() || data.title;
   // ¿La selección actual cubre todo? Si sí, no enviamos filtros al backend.
   const allSeriesSelected = selectedSeries.size === data.series.length;
   const allYearsSelected = selectedYears.size === data.categories.length;
@@ -154,7 +274,7 @@ export const ChartDataTable: React.FC<Props> = ({
         serverExport.jobId,
         serverExport.selection,
         fmt,
-        filters,
+        { tableExportFilters: filters },
       );
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -187,7 +307,7 @@ export const ChartDataTable: React.FC<Props> = ({
       <div className="flex items-start justify-between gap-3 mb-2">
         <div className="min-w-0">
           <h3 className="m-0 text-sm font-semibold text-slate-100 break-words">
-            {data.title}
+            {displayTitle}
           </h3>
           <p className="m-0 text-[11px] text-slate-500">
             {data.yAxisLabel}
@@ -352,36 +472,53 @@ export const ChartDataTable: React.FC<Props> = ({
             </tr>
           </thead>
           <tbody>
-            {view.series.map((s, rIdx) => (
-              <tr
-                key={`r-${rIdx}-${s.name}`}
-                className={rIdx % 2 === 0 ? 'bg-slate-900/40' : 'bg-slate-900/20'}
-              >
-                <td
-                  className="px-3 py-1.5 font-semibold text-white border-r border-slate-700/60 break-words"
-                  style={{
-                    background: s.color,
-                    minWidth: 200,
-                    maxWidth: 280,
-                    width: 240,
-                    whiteSpace: 'normal',
-                    wordBreak: 'break-word',
-                    lineHeight: 1.25,
-                  }}
-                  title={s.name}
-                >
-                  {s.name}
-                </td>
-                {view.cats.map((_c, cIdx) => (
-                  <td
-                    key={`c-${rIdx}-${cIdx}`}
-                    className="px-3 py-1.5 text-right tabular-nums text-slate-100 whitespace-nowrap"
-                  >
-                    {formatAxis3Sig(s.data[cIdx])}
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {(() => {
+              let stripe = 0;
+              return view.rows.map((row, rIdx) => {
+                if (row.kind === 'group') {
+                  return (
+                    <tr key={`g-${rIdx}-${row.label}`} className="bg-slate-800/90">
+                      <td
+                        colSpan={view.cats.length + 1}
+                        className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-300"
+                      >
+                        {row.label}
+                      </td>
+                    </tr>
+                  );
+                }
+                const s = row.series;
+                const cls = stripe % 2 === 0 ? 'bg-slate-900/40' : 'bg-slate-900/20';
+                stripe += 1;
+                return (
+                  <tr key={`r-${rIdx}-${s.name}`} className={cls}>
+                    <td
+                      className="px-3 py-1.5 font-semibold text-white border-r border-slate-700/60 break-words"
+                      style={{
+                        background: s.color,
+                        minWidth: 200,
+                        maxWidth: 280,
+                        width: 240,
+                        whiteSpace: 'normal',
+                        wordBreak: 'break-word',
+                        lineHeight: 1.25,
+                      }}
+                      title={s.name}
+                    >
+                      {row.displayName}
+                    </td>
+                    {view.cats.map((_c, cIdx) => (
+                      <td
+                        key={`c-${rIdx}-${cIdx}`}
+                        className="px-3 py-1.5 text-right tabular-nums text-slate-100 whitespace-nowrap"
+                      >
+                        {formatAxis3Sig(s.data[cIdx])}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              });
+            })()}
             {view.series.length > 0 ? (
               <tr className="bg-slate-700/60 font-semibold">
                 <td

@@ -74,7 +74,7 @@ function buildSharedLegendSvgBlock(
 
   const parts: string[] = [];
   parts.push(
-    `<text x="${paddingX}" y="${legendHeaderBaselineY}" fill="#64748b" font-size="20" font-weight="bold" font-family="Verdana, sans-serif" letter-spacing="0.06em">LEYENDA (TODAS LAS GRÁFICAS)</text>`,
+    `<text x="${paddingX}" y="${legendHeaderBaselineY}" fill="#64748b" font-size="20" font-weight="normal" font-family="Verdana, sans-serif" letter-spacing="0.06em">LEYENDA (TODAS LAS GRÁFICAS)</text>`,
   );
 
   for (const item of items) {

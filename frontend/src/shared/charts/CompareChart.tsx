@@ -3,6 +3,7 @@ import Highcharts from './highchartsSetup';
 import {
   EXPORTING_CONTEXT_BUTTON_DARK,
   INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
+  createCleanExportMenuItem,
   onHighchartsExportError,
 } from './chartExportingShared';
 import { buildStackedSinglePointTooltipOptions } from './chartTooltips';
@@ -92,12 +93,22 @@ export const CompareChart: React.FC<CompareChartProps> = ({
     const yAxis: Highcharts.YAxisOptions[] = [];
     const series: Highcharts.SeriesColumnOptions[] = [];
 
-    const widthPerSubplot = 100 / (numSubplots || 1);
+    const totalBars = Math.max(
+      data.subplots.reduce((sum, sp) => sum + sp.categories.length, 0),
+      1,
+    );
+
+    let cumulativeLeft = 0;
+    const legendNamesSeen = new Set<string>();
 
     data.subplots.forEach((subplot, idx) => {
-      const leftStr = `${idx * widthPerSubplot}%`;
-      const rightMargin = numSubplots > 1 && idx < numSubplots - 1 ? 2 : 0;
-      const widthStr = `${widthPerSubplot - rightMargin}%`;
+      const barFraction = subplot.categories.length / totalBars;
+      const width = barFraction * 100;
+      const rightMargin = idx < numSubplots - 1 ? 2 : 0;
+      const effectiveWidth = width - rightMargin;
+      const leftStr = `${cumulativeLeft}%`;
+      const widthStr = `${effectiveWidth}%`;
+      cumulativeLeft += width;
 
       xAxis.push({
         id: `x-${idx}`,
@@ -171,6 +182,8 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       });
 
       subplot.series.forEach((s) => {
+        const isNew = !legendNamesSeen.has(s.name);
+        if (isNew) legendNamesSeen.add(s.name);
         series.push({
           type: 'column',
           name: s.name,
@@ -180,7 +193,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
           yAxis: `y-${idx}`,
           stacking: 'normal',
           borderWidth: 0,
-          showInLegend: idx === 0,
+          showInLegend: isNew,
           visible: !hiddenNames.has(s.name),
           custom: {
             subplotYear: subplot.year,
@@ -189,6 +202,62 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         });
       });
     });
+
+    const exportChartYAxisOptions = (() => {
+      const totalBarsExport = Math.max(
+        data.subplots.reduce((sum, sp) => sum + sp.categories.length, 0),
+        1,
+      );
+      let cumulativeLeftExport = 0;
+      return data.subplots.map((sp, idx) => {
+        const barFraction = sp.categories.length / totalBarsExport;
+        const width = barFraction * 100;
+        const rightMargin = idx < numSubplots - 1 ? 2 : 0;
+        const effectiveWidth = width - rightMargin;
+        const leftStr = `${cumulativeLeftExport}%`;
+        const widthStr = `${effectiveWidth}%`;
+        cumulativeLeftExport += width;
+        return {
+          left: leftStr,
+          width: widthStr,
+          top: '0%',
+          height: '86%',
+          gridLineColor: '#e2e8f0',
+          gridLineWidth: 1,
+          lineWidth: (!sharedYAxis || idx === 0) ? 1 : 0,
+          lineColor: (!sharedYAxis || idx === 0) ? '#64748b' : 'transparent',
+          tickWidth: (!sharedYAxis || idx === 0) ? 1 : 0,
+          tickLength: (!sharedYAxis || idx === 0) ? 6 : 0,
+          tickColor: (!sharedYAxis || idx === 0) ? '#64748b' : 'transparent',
+          labels: {
+            enabled: !sharedYAxis || idx === 0,
+            style: { color: '#334155', fontSize: '20pt' },
+          },
+          title: {
+            text: idx === 0 ? data.yAxisLabel : null,
+            style: { color: '#334155', fontSize: '28pt' },
+          },
+          stackLabels: {
+            enabled: true,
+            style: {
+              fontWeight: 'normal',
+              color: '#1e293b',
+              textOutline: 'none',
+              fontSize: '20pt',
+            },
+          },
+        };
+      });
+    })();
+
+    const cleanExportOverrides: Partial<Highcharts.Options> = {
+      title: { text: '' },
+      yAxis: exportChartYAxisOptions.map(cfg => ({
+        ...cfg,
+        stackLabels: { enabled: false },
+      })),
+      plotOptions: { series: { dataLabels: { enabled: false } } },
+    };
 
     return {
       chart: {
@@ -254,51 +323,22 @@ export const CompareChart: React.FC<CompareChartProps> = ({
               style: { color: '#334155', fontSize: '20pt' },
             },
             title: {
-              style: { color: '#334155', fontSize: '28pt' },
+              style: { color: '#334155', fontSize: '28pt', fontWeight: 'normal' },
             },
             lineColor: '#cbd5e1',
             tickColor: '#cbd5e1',
           })),
           // Preserve Y-axis configuration for all subplots during export
-          yAxis: data.subplots.map((_, idx) => {
-            const widthPerSubplot = 100 / (data.subplots.length || 1);
-            const leftStr = `${idx * widthPerSubplot}%`;
-            const widthStr = `${widthPerSubplot}%`;
-            return {
-              left: leftStr,
-              width: widthStr,
-              top: '0%',
-              height: '86%',
-              gridLineColor: '#e2e8f0',
-              gridLineWidth: 1,
-              lineWidth: (!sharedYAxis || idx === 0) ? 1 : 0,
-              lineColor: (!sharedYAxis || idx === 0) ? '#64748b' : 'transparent',
-              tickWidth: (!sharedYAxis || idx === 0) ? 1 : 0,
-              tickLength: (!sharedYAxis || idx === 0) ? 6 : 0,
-              tickColor: (!sharedYAxis || idx === 0) ? '#64748b' : 'transparent',
-              labels: {
-                enabled: !sharedYAxis || idx === 0,
-                style: { color: '#334155', fontSize: '20pt' },
-              },
-              title: {
-                text: idx === 0 ? data.yAxisLabel : null,
-                style: { color: '#334155', fontSize: '28pt' },
-              },
-              stackLabels: {
-                enabled: true,
-                style: {
-                  fontWeight: 'bold',
-                  color: '#1e293b',
-                  textOutline: 'none',
-                  fontSize: '20pt',
-                },
-              },
-            };
-          }),
+          yAxis: exportChartYAxisOptions,
         },
         buttons: {
           contextButton: {
-            menuItems: [...INDIVIDUAL_CHART_EXPORT_MENU_ITEMS],
+            menuItems: [
+              ...INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
+              '_separator_',
+              createCleanExportMenuItem('png', cleanExportOverrides),
+              createCleanExportMenuItem('svg', cleanExportOverrides),
+            ] as unknown as string[],
             ...EXPORTING_CONTEXT_BUTTON_DARK,
           },
         },

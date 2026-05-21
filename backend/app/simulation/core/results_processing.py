@@ -223,8 +223,35 @@ def _coerce_number(value, default: float = 0.0) -> float:
 
 def _safe_extract(var_component) -> dict:
     """Extrae valores de un componente Pyomo (Param/Var); sustituye None por 0.0."""
+    try:
+        model = var_component.model()
+        cache = getattr(model, "_safe_extract_cache", None)
+        if cache is None:
+            cache = {}
+            model._safe_extract_cache = cache
+        comp_name = var_component.local_name
+        if comp_name in cache:
+            return cache[comp_name]
+    except Exception:
+        cache = None
+        comp_name = None
+
+    if isinstance(var_component, pyo.Var) and hasattr(var_component, "_data"):
+        raw = {}
+        for k, v in var_component._data.items():
+            val = v.value
+            if val is not None and abs(val) >= 1e-10:
+                raw[k] = val
+        if cache is not None and comp_name:
+            cache[comp_name] = raw
+        return raw
+
     raw = var_component.extract_values()
-    return {k: (v if v is not None else 0.0) for k, v in raw.items()}
+    res = {k: (v if v is not None else 0.0) for k, v in raw.items()}
+    
+    if cache is not None and comp_name:
+        cache[comp_name] = res
+    return res
 
 
 def _variable_to_dataframe(variable, index_names: list[str] | None = None) -> pd.DataFrame:

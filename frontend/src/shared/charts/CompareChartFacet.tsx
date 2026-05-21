@@ -6,9 +6,11 @@ import { Button } from "@/shared/components/Button";
 import { downloadBlob } from "@/shared/utils/downloadBlob";
 import Highcharts from "./highchartsSetup";
 import {
+  CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS,
   EXPORTING_CONTEXT_BUTTON_DARK,
   HIGHCHARTS_GETSVG_MERGE_OPTIONS,
   INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
+  createCleanExportMenuItem,
   onHighchartsExportError,
 } from "./chartExportingShared";
 import {
@@ -142,6 +144,8 @@ function FacetExportKebab({
   onExportSvg,
   exportingPng,
   exportingSvg,
+  exportClean,
+  onToggleClean,
 }: {
   disabled: boolean;
   showServerPng: boolean;
@@ -149,6 +153,8 @@ function FacetExportKebab({
   onExportSvg: () => Promise<void> | void;
   exportingPng: boolean;
   exportingSvg: boolean;
+  exportClean: boolean;
+  onToggleClean: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -192,6 +198,15 @@ function FacetExportKebab({
               {exportingPng ? "Generando PNG…" : "Descargar PNG"}
             </button>
           ) : null}
+          <label className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800/80">
+            <input
+              type="checkbox"
+              checked={exportClean}
+              onChange={onToggleClean}
+              className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500"
+            />
+            Sin título / valores
+          </label>
           <button
             type="button"
             disabled={disabled}
@@ -222,7 +237,7 @@ interface CompareChartFacetProps {
    *   - `line`: una línea por serie; sin stacking. Útil para ver la evolución
    *     por año de cada serie dentro de cada escenario.
    */
-  viewMode?: 'column' | 'line';
+  viewMode?: 'column' | 'line' | 'area';
   /** Si se define, permite descargar PNG (y parámetros) desde el backend sin Highcharts. */
   serverFacetExport?: {
     jobIds: number[];
@@ -293,7 +308,7 @@ function FacetChart({
   inverted: boolean;
   chartHeight: number;
   showHighchartsLegend: boolean;
-  viewMode: 'column' | 'line';
+  viewMode: 'column' | 'line' | 'area';
   /** Cantidad de facetas en el grupo. Define responsive de font y step del eje X. */
   facetCount: number;
   /** Resaltado sincronizado con leyenda compartida (hover). */
@@ -335,28 +350,24 @@ function FacetChart({
   }, [hoveredSeriesName, facet, hiddenSeriesNames, chartGeneration]);
 
   const options = useMemo<Highcharts.Options>(() => {
-    const isLine = viewMode === "line";
-    const series = facet.series.map((s) =>
-      isLine
-        ? {
-            type: "line" as const,
-            name: s.name,
-            data: s.data,
-            color: s.color,
-            visible: !hiddenSeriesNames.has(s.name),
-            marker: { enabled: true, radius: 3 },
-          }
-        : {
-            type: "column" as const,
-            name: s.name,
-            data: s.data,
-            color: s.color,
-            stacking: "normal" as const,
-            stack: s.stack,
-            visible: !hiddenSeriesNames.has(s.name),
-            borderWidth: 0,
-          },
-    );
+    const series = facet.series.map((s) => {
+      const effectiveType = s.chart_type ?? (viewMode === "line" ? "line" : viewMode === "area" ? "area" : "column");
+      const isLine = effectiveType === "line";
+      const isArea = effectiveType === "area";
+      return {
+        type: effectiveType as "column" | "area" | "line",
+        name: s.name,
+        data: s.data,
+        color: s.color,
+        stacking: isLine ? undefined : "normal" as const,
+        stack: isLine ? undefined : s.stack,
+        visible: !hiddenSeriesNames.has(s.name),
+        marker: isLine ? { enabled: true, radius: 3 } : (isArea ? { enabled: false } : undefined),
+        borderWidth: isLine ? undefined : 0,
+        fillOpacity: isArea ? 0.85 : undefined,
+        lineWidth: isArea ? 0.5 : (isLine ? 2 : undefined),
+      };
+    });
 
     const xLabelFontPx = facetXLabelFontPx(facetCount);
     const xLabelStep = facetXLabelStep(facetCount, facet.categories.length);
@@ -451,7 +462,7 @@ function FacetChart({
           },
         },
         gridLineColor: "#334155",
-        stackLabels: isLine
+        stackLabels: viewMode === "line"
           ? { enabled: false }
           : {
               enabled: true,
@@ -464,7 +475,7 @@ function FacetChart({
               formatter: stackLabelFormatter,
             },
       },
-      tooltip: isLine
+      tooltip: viewMode === "line"
         ? buildLineTooltipOptions({ unitLabel: yAxisLabel })
         : buildStackedTooltipOptions({
             unitLabel: yAxisLabel,
@@ -508,6 +519,13 @@ function FacetChart({
           groupPadding: 0.08,
           dataLabels: { enabled: false },
         },
+        area: {
+          stacking: "normal",
+          lineWidth: 0.5,
+          fillOpacity: 0.85,
+          marker: { enabled: false },
+          dataLabels: { enabled: false },
+        },
         line: {
           dataLabels: { enabled: false },
           marker: { enabled: true, radius: 3 },
@@ -515,7 +533,7 @@ function FacetChart({
       },
       series: series as Highcharts.SeriesOptionsType[],
       chart: {
-        type: isLine ? "line" : "column",
+        type: viewMode === "line" ? "line" : viewMode === "area" ? "area" : "column",
         height: chartHeight,
         inverted,
         ...(marginBottomVert !== undefined ? { marginBottom: marginBottomVert } : {}),
@@ -544,7 +562,12 @@ function FacetChart({
         chartOptions: HIGHCHARTS_GETSVG_MERGE_OPTIONS as Highcharts.Options,
         buttons: {
           contextButton: {
-            menuItems: [...INDIVIDUAL_CHART_EXPORT_MENU_ITEMS],
+            menuItems: [
+              ...INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
+              '_separator_',
+              createCleanExportMenuItem('png', CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS),
+              createCleanExportMenuItem('svg', CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS),
+            ] as unknown as string[],
             ...EXPORTING_CONTEXT_BUTTON_DARK,
           },
         },
@@ -744,6 +767,7 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
   const { push } = useToast();
   const [exportingFacetSvg, setExportingFacetSvg] = useState(false);
   const [exportingFacetPng, setExportingFacetPng] = useState(false);
+  const [facetExportClean, setFacetExportClean] = useState(false);
   const [facetExportFilenameMode, setFacetExportFilenameMode] =
     useState<CompareFacetExportFilenameMode>("result");
   const exportBusy = exportingFacetSvg || exportingFacetPng;
@@ -771,10 +795,12 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
       if (sel.variable) payload.variable = sel.variable;
       if (sel.agrupar_por) payload.agrupar_por = sel.agrupar_por;
       if (legend_title) payload.legend_title = legend_title;
+      if (facetExportClean) payload.clean = true;
       payload.filename_mode = facetExportFilenameMode;
       if (sel.customSeriesOrder && sel.customSeriesOrder.length > 0) {
         payload.series_order = sel.customSeriesOrder.join(",");
       }
+      payload.facet_placement = facetPlacement;
       const { blob, filename } = await simulationApi.exportCompareFacet(payload, "png");
       downloadBlob(blob, filename);
       push("PNG descargado (todas las facetas en una imagen).", "success");
@@ -891,6 +917,7 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
         sliceW,
         sliceH,
         ...(exportLegendItems ? { legendItems: exportLegendItems } : {}),
+        ...(facetExportClean ? { clean: true } : {}),
       });
       const base = compareFacetClientFilenameBase(data, facetExportFilenameMode);
       const filename = `comparativa-facet-${base}-${new Date().toISOString().slice(0, 10)}.svg`;
@@ -920,6 +947,8 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
                 onExportSvg={handleExportCombinedSvg}
                 exportingPng={exportingFacetPng}
                 exportingSvg={exportingFacetSvg}
+                exportClean={facetExportClean}
+                onToggleClean={() => setFacetExportClean((v) => !v)}
               />
             ) : (
               <>
@@ -945,6 +974,16 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
                         <option value="tags">Etiquetas (sin etiqueta → nombre del resultado)</option>
                       </select>
                     </div>
+                    <label className="flex shrink-0 items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                      <input
+                        type="checkbox"
+                        checked={facetExportClean}
+                        onChange={(e) => setFacetExportClean(e.target.checked)}
+                        disabled={exportBusy}
+                        className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500"
+                      />
+                      Limpia
+                    </label>
                     <Button
                       type="button"
                       variant="ghost"

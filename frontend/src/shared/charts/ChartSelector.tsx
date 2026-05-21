@@ -24,7 +24,7 @@ export interface ChartSelection {
   loc?: string;
   variable?: string;
   viewMode?: 'column' | 'line' | 'area' | 'pareto' | 'porcentaje' | 'table';
-  /** Agrupación enviada al backend: 'TECNOLOGIA' | 'COMBUSTIBLE' | 'FUEL' | 'GROUP' */
+  /** Agrupación enviada al backend: 'TECNOLOGIA' | 'COMBUSTIBLE' | 'FUEL' | 'GROUP' | 'REGION' */
   agrupar_por?: string;
   /** Solo `viewMode === 'table'`: año-paso (5 = cada 5 años). null/undefined = todos. */
   tablePeriodYears?: number | null;
@@ -38,6 +38,8 @@ export interface ChartSelection {
   yAxisMax?: number | null;
   /** Para Sector Eléctrico: filtra entre 'liquidos', 'todos', 'termica' */
   tipo_electrico?: 'liquidos' | 'todos' | 'termica';
+  /** Solo jobs REGIONAL: filtro por prefijo regional ('AN'..'SO') o undefined = todas. */
+  region?: string;
   /**
    * Código de timeslice para filtrar la gráfica a un TS específico (p. ej.
    * 'S101'). Cuando es null/undefined la gráfica agrega por año sumando
@@ -62,12 +64,32 @@ interface Props {
   barOrientation?: 'vertical' | 'horizontal';
   onChangeBarOrientation?: (next: 'vertical' | 'horizontal') => void;
   /**
+   * True si el job es REGIONAL: habilita la opción "Por Región" en
+   * agrupaciones y el dropdown de filtro por región.
+   */
+  isRegionalJob?: boolean;
+  /**
    * Códigos de timeslice presentes en los outputs del job actual.
    * Si tiene 2+ entradas se muestra un selector para filtrar la gráfica a
    * un TS específico (o "todos" → agregación anual).
    */
   availableTimeslices?: string[];
 }
+
+/** Nombres legibles para las 7 regiones del SIN (debe coincidir con backend). */
+const REGION_OPTIONS: { value: string; label: string }[] = [
+  { value: 'AN', label: 'Antioquia (AN)' },
+  { value: 'CA', label: 'Caribe (CA)' },
+  { value: 'IN', label: 'Interior (IN)' },
+  { value: 'NE', label: 'Noreste (NE)' },
+  { value: 'OR', label: 'Oriente (OR)' },
+  { value: 'SE', label: 'Suroriente (SE)' },
+  { value: 'SO', label: 'Suroccidente (SO)' },
+];
+
+const REGION_LABELS_FE: Record<string, string> = Object.fromEntries(
+  REGION_OPTIONS.map((o) => [o.value, o.label]),
+);
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
 
@@ -174,6 +196,21 @@ const AGRUPACION_OPTIONS: { value: string; label: string; description: string }[
     label: 'Por Grupo Transporte',
     description: 'Agrupa por tipo de vehículo (motos, livianos, carga, buses, etc.)',
   },
+  {
+    value: 'MODO',
+    label: 'Por Modo',
+    description: 'Agrupa por modo de transporte (CARRETERA, AVI, BOT, MET)',
+  },
+  {
+    value: 'REGION',
+    label: 'Por Región',
+    description: 'Agrupa por las 7 regiones del SIN (solo jobs REGIONAL)',
+  },
+  {
+    value: 'ELECTROLISIS',
+    label: 'Electrólisis Verde',
+    description: 'Agrupa electrolizadores (UPSALK + UPSPEM) en una sola categoría',
+  },
 ];
 
 // IDs de charts que NO deben mostrar el selector de agrupación
@@ -185,6 +222,13 @@ const CHARTS_SIN_AGRUPACION = new Set([
   'emisiones_gei',           // agrupa por SECTOR (incluye PWR) → fijo
   'emisiones_contaminantes', // agrupa por EMISION → fijo
   'h2_produccion_verde',     // H2_PRODUCCION fijo en backend
+]);
+
+/** Charts mixtos (áreas + líneas) que solo funcionan en modo columna. */
+const CHARTS_SOLO_COLUMNAS = new Set([
+  'recursos_vs_demanda',         // producción (áreas) + recurso remanente (líneas)
+  'recursos_vs_demanda_gas',     // producción (áreas) + recurso remanente (líneas)
+  'recursos_vs_demanda_carbon',  // demanda (áreas) + límite producción (línea)
 ]);
 
 // ─── Estructura del menú ─────────────────────────────────────────────────────
@@ -275,7 +319,9 @@ const MENU: Module[] = [
         charts: [
           { id: 'tra_total', label: 'Sector Transporte - Consumo Total - UseByTechnology', hasSub: true, subFiltroLabel: 'Modo', subFiltros: ['CARRETERA','AVI','BOT','SHP','LDV','FWD','BUS','TCK_C2P','TCK_CSG','MOT','MIC','TAX','STT','MET'], allowedGroupings: ['TECNOLOGIA', 'FUEL', 'TRANSPORTE_GRUPO'], soportaPareto: true, soportaPorcentaje: true },
           { id: 'tra_uso',   label: 'Sector Transporte - ProductionByTechnology',           hasSub: true, subFiltroLabel: 'Modo', subFiltros: ['CARRETERA','AVI','BOT','SHP','LDV','FWD','BUS','TCK_C2P','TCK_CSG','MOT','MIC','TAX','STT','MET'], allowedGroupings: ['TECNOLOGIA', 'FUEL', 'TRANSPORTE_GRUPO'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'tra_por_modo', label: 'Sector Transporte - Consumo Por Modo - UseByTechnology', allowedGroupings: ['MODO'], defaultGrouping: 'MODO', soportaPareto: true, soportaPorcentaje: true },
         ],
+
       },
       {
         id: 'terciario', label: '🏢 Terciario',
@@ -364,6 +410,7 @@ const MENU: Module[] = [
       { id: 'solidos_extraccion', label: 'Sólidos - Extracción - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
       { id: 'solidos_import',     label: 'Sólidos - Importación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
       { id: 'solidos_flujos',     label: 'Sólidos - Importación/Exportación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+      { id: 'exp_carbon',         label: 'Carbón — Exportación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
     ],
   },
     {
@@ -373,7 +420,7 @@ const MENU: Module[] = [
       charts: [
         { id: 'cap_h2',     label: 'Hidrógeno - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true , soportaPorcentaje: true },
         { id: 'h2_consumo', label: 'Hidrógeno - Consumo - UseByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
-        { id: 'cap_electrolisis_verde', label: 'Capacidad Total de Electrólisis Verde', isCapacity: true },
+        { id: 'cap_electrolisis_verde', label: 'Capacidad Total de Electrólisis Verde', isCapacity: true, allowedGroupings: ['TECNOLOGIA', 'ELECTROLISIS'], defaultGrouping: 'TECNOLOGIA' },
         { id: 'h2_produccion_verde', label: 'Hidrógeno Producción (Verde/Azul/Gris)', soportaPareto: true, soportaPorcentaje: true },
       ],
     },
@@ -399,7 +446,9 @@ const MENU: Module[] = [
     emoji: '🛢️',
     label: 'Recursos y Reservas',
     charts: [
-      { id: 'recursos_vs_demanda', label: 'Figura 18. Recursos y Reservas vs Demanda', soportaPareto: false, soportaPorcentaje: false },
+      { id: 'recursos_vs_demanda', label: 'Recursos y reservas vs Demanda (Crudo)', soportaPareto: false, soportaPorcentaje: false },
+      { id: 'recursos_vs_demanda_gas', label: 'Recursos y reservas vs Demanda (Gas Natural)', soportaPareto: false, soportaPorcentaje: false },
+      { id: 'recursos_vs_demanda_carbon', label: 'Recursos y reservas vs Demanda (Carbón)', soportaPareto: false, soportaPorcentaje: false },
     ],
   },
   {
@@ -492,7 +541,7 @@ function chartTipoBelongsToModule(tipo: string, moduleId: string): boolean {
 /** Determina si la gráfica activa debe mostrar el selector de agrupación */
 function showsAgrupacion(item: ChartItem | undefined): boolean {
   if (!item) return false;
-  if (item.isCapacity) return false;                    // fijo en backend
+  if (item.isCapacity && !item.allowedGroupings) return false; // si declaró allowedGroupings, sí muestra selector
   if (CHARTS_SIN_AGRUPACION.has(item.id)) return false; // porcentaje / emisiones
   return true;
 }
@@ -505,6 +554,7 @@ export function ChartSelector({
   hideGroupBy = false,
   barOrientation,
   onChangeBarOrientation,
+  isRegionalJob = false,
   availableTimeslices,
 }: Props) {
   const loc = findLocation(value.tipo);
@@ -586,6 +636,10 @@ export function ChartSelector({
     // Si el viewMode actual es 'table' y la nueva gráfica lo desactiva
     // explícitamente (soportaTabla=false), resetear a 'column'.
     if (newViewMode === 'table' && item.soportaTabla === false) {
+      newViewMode = 'column';
+    }
+    // Charts mixtos (áreas+lineas): solo columna o área
+    if (CHARTS_SOLO_COLUMNAS.has(item.id) && newViewMode !== 'column' && newViewMode !== 'area') {
       newViewMode = 'column';
     }
 
@@ -772,9 +826,17 @@ export function ChartSelector({
 
       {/* ── Agrupación (no caps, no porcentaje, no emisiones) ── */}
       {canChangeAgrupacion && !hideGroupBy && (() => {
-        const allowedOptions = currentItem?.allowedGroupings
+        const baseOptions = currentItem?.allowedGroupings
           ? AGRUPACION_OPTIONS.filter(o => currentItem.allowedGroupings!.includes(o.value))
           : AGRUPACION_OPTIONS;
+        // REGION solo aparece cuando el job es REGIONAL; siempre disponible
+        // (independiente de allowedGroupings) para que cualquier chart pueda
+        // colapsar por las 7 regiones del SIN.
+        const allowedOptions = isRegionalJob
+          ? (baseOptions.some(o => o.value === 'REGION')
+              ? baseOptions
+              : [...baseOptions, AGRUPACION_OPTIONS.find(o => o.value === 'REGION')!])
+          : baseOptions.filter(o => o.value !== 'REGION');
         return (
           <div>
             <p style={labelStyle}>Agrupar por</p>
@@ -794,6 +856,9 @@ export function ChartSelector({
                         : opt.value === 'COMBUSTIBLE' ? '🔥'
                         : opt.value === 'FUEL' ? '⛽'
                         : opt.value === 'SECTOR' ? '🏢'
+                        : opt.value === 'REGION' ? '🗺️'
+                        : opt.value === 'MODO' ? '🚗'
+                        : opt.value === 'ELECTROLISIS' ? '🧪'
                         : '🔗'}
                     </span>
                     <span>{opt.label}</span>
@@ -889,13 +954,27 @@ export function ChartSelector({
                       ☰ Barras horizontales
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => onChange({ ...value, viewMode: 'line' })}
-                    style={{ ...viewBtnStyle, ...(currentVm === 'line' ? viewBtnActiveStyle : viewBtnInactiveStyle) }}
-                  >
-                    ∿ Línea
-                  </button>
+                  {currentItem && CHARTS_SOLO_COLUMNAS.has(currentItem.id) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onChange({ ...value, viewMode: 'area' });
+                        onChangeBarOrientation?.('vertical');
+                      }}
+                      style={{ ...viewBtnStyle, ...(currentVm === 'area' ? viewBtnActiveStyle : viewBtnInactiveStyle) }}
+                    >
+                      ▨ Área
+                    </button>
+                  )}
+                  {currentItem && !CHARTS_SOLO_COLUMNAS.has(currentItem.id) && (
+                    <button
+                      type="button"
+                      onClick={() => onChange({ ...value, viewMode: 'line' })}
+                      style={{ ...viewBtnStyle, ...(currentVm === 'line' ? viewBtnActiveStyle : viewBtnInactiveStyle) }}
+                    >
+                      ∿ Línea
+                    </button>
+                  )}
                   {currentItem?.soportaPorcentaje === true && (
                     <button
                       type="button"
@@ -1076,6 +1155,28 @@ export function ChartSelector({
           </label>
         )}
 
+        {isRegionalJob && (
+          <label style={{ display: 'grid', gap: 6 }}>
+            <p style={labelStyle}>Región</p>
+            <select
+              style={selectStyle}
+              value={value.region ?? ''}
+              onChange={(e) => onChange({ ...value, region: e.target.value })}
+              disabled={value.agrupar_por === 'REGION'}
+              title={
+                value.agrupar_por === 'REGION'
+                  ? 'Deshabilitado mientras la agrupación es "Por Región".'
+                  : undefined
+              }
+            >
+              <option value="">Todas (acumulado nacional)</option>
+              {REGION_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </label>
+        )}
+
         {Array.isArray(availableTimeslices) && availableTimeslices.length >= 2 && (
           <label style={{ display: 'grid', gap: 6 }}>
             <p style={labelStyle}>Timeslice</p>
@@ -1105,6 +1206,7 @@ export function ChartSelector({
             {activeVariable !== '' ? ` — ${activeCapacityLabel}` : ''}
             {value.sub_filtro != null && value.sub_filtro !== '' ? ` [${FUEL_LABELS[value.sub_filtro] ?? value.sub_filtro}]` : ''}
             {value.loc != null && value.loc !== '' ? ` (${value.loc})` : ''}
+            {isRegionalJob && value.region ? ` · Región: ${REGION_LABELS_FE[value.region] ?? value.region}` : ''}
             {value.timeslice != null && value.timeslice !== '' ? ` · TS=${value.timeslice}` : ''}
             {' '}· {displayUnit}
             {canChangeAgrupacion ? ` · ${agrupacionLabel}` : ''}

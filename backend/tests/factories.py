@@ -21,6 +21,8 @@ def create_user(
     can_manage_catalogs: bool = False,
     can_import_official_data: bool = False,
     can_manage_users: bool = False,
+    is_admin_reports: bool = False,
+    can_manage_scenarios: bool = False,
 ) -> User:
     doc_type = DocumentType(code=f"CC-{username}", name=f"Cedula {username}")
     user = User(
@@ -34,6 +36,8 @@ def create_user(
         can_manage_catalogs=can_manage_catalogs,
         can_import_official_data=can_import_official_data,
         can_manage_users=can_manage_users,
+        is_admin_reports=is_admin_reports,
+        can_manage_scenarios=can_manage_scenarios,
     )
     db.add(doc_type)
     db.flush()
