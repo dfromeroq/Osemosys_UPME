@@ -240,7 +240,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
           stackLabels: {
             enabled: true,
             style: {
-              fontWeight: 'bold',
+              fontWeight: 'normal',
               color: '#1e293b',
               textOutline: 'none',
               fontSize: '20pt',
@@ -323,7 +323,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
               style: { color: '#334155', fontSize: '20pt' },
             },
             title: {
-              style: { color: '#334155', fontSize: '28pt' },
+              style: { color: '#334155', fontSize: '28pt', fontWeight: 'normal' },
             },
             lineColor: '#cbd5e1',
             tickColor: '#cbd5e1',

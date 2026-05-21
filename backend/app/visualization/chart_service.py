@@ -3098,7 +3098,7 @@ def _render_stacked_bar(
 
     ax.set_xticks(x)
     ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
-    ax.set_ylabel(chart.yAxisLabel, fontsize=24, fontweight="bold")
+    ax.set_ylabel(chart.yAxisLabel, fontsize=24)
     if not clean:
         ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
     ax.legend(
@@ -3233,7 +3233,7 @@ def _render_line_chart(
 
     ax.set_xticks(x)
     ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
-    ax.set_ylabel(chart.yAxisLabel, fontsize=24, fontweight="bold")
+    ax.set_ylabel(chart.yAxisLabel, fontsize=24)
     if not clean:
         ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
     # Orden de leyenda:
@@ -3669,7 +3669,7 @@ def _render_stacked_area(
     from matplotlib.ticker import FuncFormatter as _FuncFormatter
 
     ax.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
-    ax.set_ylabel(chart.yAxisLabel, fontsize=24, fontweight="bold")
+    ax.set_ylabel(chart.yAxisLabel, fontsize=24)
     if not clean:
         ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
 
@@ -3803,10 +3803,10 @@ def render_comparison_by_year_bytes(
                 label=s.name,
                 color=name_to_color.get(s.name) or getattr(s, "color", None),
             )
-        ax.set_title(f"Año {sp.year}", fontsize=22, fontweight="bold")
+        ax.set_title(f"Año {sp.year}", fontsize=22)
         ax.set_xticks(x)
         ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
-        ax.set_ylabel(data.yAxisLabel, fontsize=24, fontweight="bold")
+        ax.set_ylabel(data.yAxisLabel, fontsize=24)
         ax.tick_params(axis="y", labelsize=18)
         from matplotlib.ticker import FuncFormatter as _FuncFormatter
 
@@ -3889,7 +3889,7 @@ def render_pareto_chart_bytes(
     x = np.arange(n)
     fig, ax1 = plt.subplots(figsize=(max(12, n * 0.5), 7))
     ax1.bar(x, values, color="#60a5fa", edgecolor="#1e3a8a", linewidth=0.5)
-    ax1.set_ylabel(pareto.yAxisLabel, fontsize=24, fontweight="bold", color="#1e3a8a")
+    ax1.set_ylabel(pareto.yAxisLabel, fontsize=24, color="#1e3a8a")
     ax1.set_xticks(x)
     # Eje X a 45° (más legible que vertical para etiquetas largas tipo
     # tecnología/sector). ``ha="right"`` ancla el final de la etiqueta al tick
@@ -3910,7 +3910,7 @@ def render_pareto_chart_bytes(
 
     ax2 = ax1.twinx()
     ax2.plot(x, cum_pct, color="#dc2626", marker="o", linewidth=2)
-    ax2.set_ylabel("% acumulado", fontsize=24, fontweight="bold", color="#dc2626")
+    ax2.set_ylabel("% acumulado", fontsize=24, color="#dc2626")
     ax2.tick_params(axis="y", labelsize=18)
     ax2.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
     ax2.set_ylim(0, 110)
@@ -4174,7 +4174,6 @@ def render_comparison_facet_figure_bytes(
                 y_label,
                 fontsize=22,
                 color="#0f172a",
-                fontweight="bold",
                 labelpad=8,
             )
         sim_lbl = (
@@ -4185,7 +4184,6 @@ def render_comparison_facet_figure_bytes(
         ax.set_title(
             facet_title,
             fontsize=28,
-            fontweight="bold",
             color="#0f172a",
             pad=10,
         )
@@ -4261,7 +4259,6 @@ def render_comparison_facet_figure_bytes(
                 va="bottom",
                 fontsize=18,
                 color="#0f172a",
-                fontweight="600",
             )
             t.set_path_effects([pe.withStroke(linewidth=2.5, foreground="white")])
 

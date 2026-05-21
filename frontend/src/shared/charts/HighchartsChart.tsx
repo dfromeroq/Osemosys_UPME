@@ -221,7 +221,7 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
             labels: { style: { color: '#334155', fontSize: '20pt' } },
             title: { style: { color: '#334155', fontSize: '28pt' } },
             gridLineColor: '#e2e8f0',
-            stackLabels: { style: { color: '#1e293b', fontSize: '20pt' } },
+            stackLabels: { style: { color: '#1e293b', fontSize: '20pt', fontWeight: 'normal' } },
           },
           legend: { itemStyle: { color: '#334155', fontSize: '20pt' } },
         },
