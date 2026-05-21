@@ -16,12 +16,14 @@ export async function downloadChartFromServer(
     series?: string[];
     years?: (string | number)[];
   },
+  clean?: boolean,
 ): Promise<void> {
   const { blob, filename } = await simulationApi.exportChart(
     jobId,
     selection,
     fmt,
     tableExportFilters,
+    clean,
   );
   downloadBlob(blob, filename);
 }

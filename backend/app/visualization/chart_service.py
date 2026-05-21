@@ -2909,11 +2909,16 @@ def export_all_charts_zip(
     job_id: int,
     un: str = "PJ",
     fmt: str = "svg",
+    *,
+    clean: bool = False,
 ) -> "io.BytesIO":
     """Genera un ZIP con todas las gráficas renderizadas como SVG o PNG.
 
     Para configs de capacidad genera 3 figuras (Total, Nueva, Acumulada).
     Retorna un BytesIO listo para streaming.
+
+    Si ``clean=True`` las gráficas se renderizan sin título ni etiquetas
+    numéricas sobre las barras.
     """
     import io
     import zipfile
@@ -2963,8 +2968,11 @@ def export_all_charts_zip(
                     chart_data,
                     chart_label,
                     fmt=ext,
+                    clean=clean,
                 )
                 safe_name = _safe_filename(chart_label)
+                if clean:
+                    safe_name += "_clean"
                 zf.writestr(f"{safe_name}.{ext}", img_buf.getvalue())
                 file_count += 1
 
@@ -3007,11 +3015,14 @@ def _render_stacked_bar(
     *,
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
+    clean: bool = False,
 ) -> "io.BytesIO":
     """Renderiza un ChartDataResponse como gráfica de barras apiladas con matplotlib.
 
     Soporta **series mixtas**: las series con ``chart_type='line'`` se dibujan
     como líneas sobre las barras en lugar de apilarse.
+
+    Si ``clean=True`` se omite el título y las etiquetas numéricas sobre las barras.
     """
     import io
     import matplotlib
@@ -3072,24 +3083,26 @@ def _render_stacked_bar(
         legend_labels.append(s.name)
 
     # Stack totals on top — 1 decimal máx, cada 2 categorías (0, 2, 4, …).
-    for i, total in enumerate(bottom):
-        if i % 2 != 0:
-            continue
-        if total > 0:
-            ax.text(
-                i,
-                total,
-                f"{total:,.1f}",
-                ha="center",
-                va="bottom",
-                fontsize=18,
-                color="#333",
-            )
+    if not clean:
+        for i, total in enumerate(bottom):
+            if i % 2 != 0:
+                continue
+            if total > 0:
+                ax.text(
+                    i,
+                    total,
+                    f"{total:,.1f}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=18,
+                    color="#333",
+                )
 
     ax.set_xticks(x)
     ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
     ax.set_ylabel(chart.yAxisLabel, fontsize=24, fontweight="bold")
-    ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
+    if not clean:
+        ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
     ax.legend(
         legend_handles,
         legend_labels,
@@ -3192,8 +3205,12 @@ def _render_line_chart(
     *,
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
+    clean: bool = False,
 ) -> "io.BytesIO":
-    """Renderiza un ChartDataResponse como gráfica de líneas con matplotlib."""
+    """Renderiza un ChartDataResponse como gráfica de líneas con matplotlib.
+
+    Si ``clean=True`` se omite el título.
+    """
     import io
 
     import matplotlib
@@ -3222,7 +3239,8 @@ def _render_line_chart(
     ax.set_xticks(x)
     ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
     ax.set_ylabel(chart.yAxisLabel, fontsize=24, fontweight="bold")
-    ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
+    if not clean:
+        ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
     # Orden de leyenda:
     #   1) Series naturales en orden invertido (lectura abajo→arriba como
     #      en las columnas apiladas — convención del proyecto).
@@ -3279,11 +3297,13 @@ def render_chart_visualization_bytes(
     *,
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
+    clean: bool = False,
 ) -> bytes:
     """Genera PNG o SVG con Matplotlib.
 
     ``view_mode``: ``column`` | ``line`` | ``area`` | ``table``.
     ``y_axis_min`` / ``y_axis_max``: override del rango del eje Y. ``None`` = auto.
+    ``clean``: si ``True``, se omite título y etiquetas numéricas.
     """
     if fmt not in ("png", "svg"):
         raise ValueError("fmt debe ser 'png' o 'svg'")
@@ -3295,6 +3315,7 @@ def render_chart_visualization_bytes(
             fmt=fmt,
             y_axis_min=y_axis_min,
             y_axis_max=y_axis_max,
+            clean=clean,
         )
     elif view_mode == "area":
         buf = _render_stacked_area(
@@ -3303,9 +3324,10 @@ def render_chart_visualization_bytes(
             fmt=fmt,
             y_axis_min=y_axis_min,
             y_axis_max=y_axis_max,
+            clean=clean,
         )
     elif view_mode == "table":
-        buf = _render_table_image(chart, title, fmt=fmt)
+        buf = _render_table_image(chart, title, fmt=fmt, clean=clean)
     else:
         buf = _render_stacked_bar(
             chart,
@@ -3313,6 +3335,7 @@ def render_chart_visualization_bytes(
             fmt=fmt,
             y_axis_min=y_axis_min,
             y_axis_max=y_axis_max,
+            clean=clean,
         )
     return buf.getvalue()
 
@@ -3321,6 +3344,8 @@ def _render_table_image(
     chart: ChartDataResponse,
     title: str,
     fmt: str = "png",
+    *,
+    clean: bool = False,
 ) -> "io.BytesIO":
     """Renderiza un ChartDataResponse como **tabla** (matplotlib ``ax.table``).
 
@@ -3332,6 +3357,8 @@ def _render_table_image(
 
     El swatch de color por serie se aplica como ``cellColours`` en la
     primera columna (celda con el color de la serie + texto blanco).
+
+    Si ``clean=True`` se omite el título.
     """
     import io
     import matplotlib
@@ -3417,7 +3444,8 @@ def _render_table_image(
 
     fig, ax = plt.subplots(figsize=(fig_w, fig_h))
     ax.axis("off")
-    ax.set_title(title, fontsize=28, fontweight="bold", pad=14)
+    if not clean:
+        ax.set_title(title, fontsize=28, fontweight="bold", pad=14)
 
     # Reparte ancho: primera columna ~22-30% según largo de nombres; el resto
     # se reparte entre las columnas de año/categoría.
@@ -3558,11 +3586,14 @@ def _render_stacked_area(
     *,
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
+    clean: bool = False,
 ) -> "io.BytesIO":
     """Renderiza un ChartDataResponse como áreas apiladas con matplotlib.
 
     Soporta **series mixtas**: las series con ``chart_type='line'`` se dibujan
     como líneas sobre las áreas en lugar de apilarse.
+
+    Si ``clean=True`` se omite el título.
     """
     import io
     import matplotlib
@@ -3648,7 +3679,8 @@ def _render_stacked_area(
 
     ax.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
     ax.set_ylabel(chart.yAxisLabel, fontsize=24, fontweight="bold")
-    ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
+    if not clean:
+        ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
 
     # Orden de leyenda: naturales invertidos + sintéticas al final.
     _synth_flags = [bool(getattr(s, "is_synthetic", False)) for s in chart.series]
@@ -3714,10 +3746,13 @@ def render_comparison_by_year_bytes(
     *,
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
+    clean: bool = False,
 ) -> bytes:
     """Renderiza una comparación por año (subplots, un panel por año).
 
     Cada subplot muestra barras agrupadas (una barra por escenario).
+
+    Si ``clean=True`` se omite el título global y los títulos de subplot.
     """
     if fmt not in ("png", "svg"):
         raise ValueError("fmt debe ser 'png' o 'svg'")
@@ -3778,7 +3813,8 @@ def render_comparison_by_year_bytes(
                 label=s.name,
                 color=name_to_color.get(s.name) or getattr(s, "color", None),
             )
-        ax.set_title(f"Año {sp.year}", fontsize=22, fontweight="bold")
+        if not clean:
+            ax.set_title(f"Año {sp.year}", fontsize=22, fontweight="bold")
         ax.set_xticks(x)
         ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
         ax.set_ylabel(data.yAxisLabel, fontsize=24, fontweight="bold")
@@ -3816,7 +3852,8 @@ def render_comparison_by_year_bytes(
     for j in range(n, rows * cols):
         axes[j // cols][j % cols].set_axis_off()
 
-    fig.suptitle(data.title, fontsize=28, fontweight="bold")
+    if not clean:
+        fig.suptitle(data.title, fontsize=28, fontweight="bold")
     fig.tight_layout(rect=[0, 0.02, 1, 0.96])
 
     buf = io.BytesIO()
@@ -3829,8 +3866,13 @@ def render_comparison_by_year_bytes(
 def render_pareto_chart_bytes(
     pareto: ParetoChartResponse,
     fmt: str = "svg",
+    *,
+    clean: bool = False,
 ) -> bytes:
-    """Renderiza un ParetoChartResponse (barras descendentes + % acumulado)."""
+    """Renderiza un ParetoChartResponse (barras descendentes + % acumulado).
+
+    Si ``clean=True`` se omite el título.
+    """
     if fmt not in ("png", "svg"):
         raise ValueError("fmt debe ser 'png' o 'svg'")
     import io
@@ -3885,7 +3927,8 @@ def render_pareto_chart_bytes(
     ax2.set_ylim(0, 110)
     ax2.spines["top"].set_visible(False)
 
-    ax1.set_title(pareto.title, fontsize=28, fontweight="bold", pad=12)
+    if not clean:
+        ax1.set_title(pareto.title, fontsize=28, fontweight="bold", pad=12)
     fig.tight_layout()
 
     buf = io.BytesIO()
@@ -3946,6 +3989,7 @@ def render_comparison_facet_figure_bytes(
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
     series_order: list[str] | None = None,
+    clean: bool = False,
 ) -> bytes:
     """Una sola figura: facetas en fila/columna, título global, leyenda inferior (Matplotlib).
 
@@ -3954,6 +3998,9 @@ def render_comparison_facet_figure_bytes(
 
     Prioriza **legibilidad**: misma escala Y entre escenarios, tipografía clara, leyenda
     con marco y números formateados en ejes y totales de barra cuando aportan.
+
+    Si ``clean=True`` se omite el título global, los títulos de faceta y las etiquetas
+    numéricas sobre las barras.
     """
     import io
 
@@ -4148,14 +4195,15 @@ def render_comparison_facet_figure_bytes(
             facet.display_name or facet.scenario_name or f"Job {facet.job_id}"
         ).strip()
         tag_lbl = (facet.scenario_tag_name or "").strip()
-        facet_title = f"{sim_lbl} — {tag_lbl}" if tag_lbl else sim_lbl
-        ax.set_title(
-            facet_title,
-            fontsize=28,
-            fontweight="bold",
-            color="#0f172a",
-            pad=10,
-        )
+        if not clean:
+            facet_title = f"{sim_lbl} — {tag_lbl}" if tag_lbl else sim_lbl
+            ax.set_title(
+                facet_title,
+                fontsize=28,
+                fontweight="bold",
+                color="#0f172a",
+                pad=10,
+            )
         ax.set_axisbelow(True)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
@@ -4209,36 +4257,38 @@ def render_comparison_facet_figure_bytes(
         ax.grid(which="minor", axis="y", linestyle=":", linewidth=0.7, color="#94a3b8", alpha=0.5, zorder=0)
         ax.grid(which="major", axis="x", linestyle="-", linewidth=0.75, color="#94a3b8", alpha=0.42, zorder=0)
 
-        if not show_stack_totals:
-            continue
-        n_cats = len(bottom)
-        for i in range(n_cats):
-            if i % 2 != 0:
+        if not clean:
+            if not show_stack_totals:
                 continue
-            total = float(bottom[i])
-            if total <= 0 or total < global_max * 0.018:
-                continue
-            t = ax.text(
-                i,
-                total,
-                f"{total:,.1f}",
-                ha="center",
-                va="bottom",
-                fontsize=18,
-                color="#0f172a",
-                fontweight="600",
-            )
-            t.set_path_effects([pe.withStroke(linewidth=2.5, foreground="white")])
+            n_cats = len(bottom)
+            for i in range(n_cats):
+                if i % 2 != 0:
+                    continue
+                total = float(bottom[i])
+                if total <= 0 or total < global_max * 0.018:
+                    continue
+                t = ax.text(
+                    i,
+                    total,
+                    f"{total:,.1f}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=18,
+                    color="#0f172a",
+                    fontweight="600",
+                )
+                t.set_path_effects([pe.withStroke(linewidth=2.5, foreground="white")])
 
     fig.patch.set_facecolor("#ffffff")
-    suptitle_y = 1.0 - 0.28 / fig_h
-    fig.suptitle(
-        data.title,
-        fontsize=32,
-        fontweight="bold",
-        color="#020617",
-        y=suptitle_y,
-    )
+    if not clean:
+        suptitle_y = 1.0 - 0.28 / fig_h
+        fig.suptitle(
+            data.title,
+            fontsize=32,
+            fontweight="bold",
+            color="#020617",
+            y=suptitle_y,
+        )
 
     from matplotlib.lines import Line2D as _Line2D
 

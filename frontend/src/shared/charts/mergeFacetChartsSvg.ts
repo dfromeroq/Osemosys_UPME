@@ -115,8 +115,10 @@ export function buildCombinedFacetSvgDocument(params: {
   sliceH: number;
   /** Leyenda compartida (mismo contenido que el panel React). */
   legendItems?: FacetExportLegendItem[];
+  /** Si true, omite el título principal. */
+  clean?: boolean;
 }): string {
-  const { mainTitle, fragmentInnerXmls, layout, sliceW, sliceH, legendItems } = params;
+  const { mainTitle, fragmentInnerXmls, layout, sliceW, sliceH, legendItems, clean } = params;
   const n = fragmentInnerXmls.length;
   const paddingX = 24;
   const gap = 16;
@@ -166,11 +168,15 @@ export function buildCombinedFacetSvgDocument(params: {
 
   const titleEsc = escapeXml(mainTitle);
 
+  const titleSvg = clean
+    ? ""
+    : `<text x="${paddingX}" y="${titleBaselineY}" fill="#1e293b" font-size="36" font-weight="bold" font-family="Verdana, sans-serif">${titleEsc}</text>`;
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}" style="font-family: Verdana, sans-serif; font-size: 1rem;" role="img" aria-label="${titleEsc}">
   <desc>Combined facet export (Highcharts)</desc>
   <rect fill="#FFFFFF" x="0" y="0" width="${totalW}" height="${totalH}" />
-  <text x="${paddingX}" y="${titleBaselineY}" fill="#1e293b" font-size="36" font-weight="bold" font-family="Verdana, sans-serif">${titleEsc}</text>
+  ${titleSvg}
   ${body}
   ${legendFragment}
 </svg>`;

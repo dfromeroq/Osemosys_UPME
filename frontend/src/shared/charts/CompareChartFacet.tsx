@@ -140,6 +140,8 @@ function FacetExportKebab({
   showServerPng,
   onExportPng,
   onExportSvg,
+  onExportPngClean,
+  onExportSvgClean,
   exportingPng,
   exportingSvg,
 }: {
@@ -147,6 +149,8 @@ function FacetExportKebab({
   showServerPng: boolean;
   onExportPng: () => Promise<void> | void;
   onExportSvg: () => Promise<void> | void;
+  onExportPngClean?: () => Promise<void> | void;
+  onExportSvgClean?: () => Promise<void> | void;
   exportingPng: boolean;
   exportingSvg: boolean;
 }) {
@@ -179,18 +183,34 @@ function FacetExportKebab({
       {open ? (
         <div className="absolute right-0 top-full z-30 mt-1 min-w-[220px] rounded-lg border border-slate-800 bg-slate-900/95 p-1 shadow-2xl backdrop-blur-md">
           {showServerPng ? (
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={async () => {
-                setOpen(false);
-                await onExportPng();
-              }}
-              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800/80 disabled:opacity-50"
-            >
-              <FileDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              {exportingPng ? "Generando PNG…" : "Descargar PNG"}
-            </button>
+            <>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={async () => {
+                  setOpen(false);
+                  await onExportPng();
+                }}
+                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800/80 disabled:opacity-50"
+              >
+                <FileDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                {exportingPng ? "Generando PNG…" : "Descargar PNG (completo)"}
+              </button>
+              {onExportPngClean ? (
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={async () => {
+                    setOpen(false);
+                    await onExportPngClean();
+                  }}
+                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800/80 disabled:opacity-50"
+                >
+                  <FileDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  {exportingPng ? "Generando PNG…" : "Descargar PNG (sin título/núm.)"}
+                </button>
+              ) : null}
+            </>
           ) : null}
           <button
             type="button"
@@ -202,8 +222,22 @@ function FacetExportKebab({
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800/80 disabled:opacity-50"
           >
             <FileDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            {exportingSvg ? "Generando SVG…" : "Descargar SVG"}
+            {exportingSvg ? "Generando SVG…" : "Descargar SVG (completo)"}
           </button>
+          {onExportSvgClean ? (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={async () => {
+                setOpen(false);
+                await onExportSvgClean();
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800/80 disabled:opacity-50"
+            >
+              <FileDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {exportingSvg ? "Generando SVG…" : "Descargar SVG (sin título/núm.)"}
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -752,7 +786,7 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
   const exportBusy = exportingFacetSvg || exportingFacetPng;
   const exportFilenameSelectId = React.useId();
 
-  const handleExportFacetPngServer = async () => {
+  const handleExportFacetPngServer = async (clean?: boolean) => {
     if (!serverFacetExport || serverFacetExport.jobIds.length < 2) {
       push("Se necesitan al menos dos escenarios seleccionados.", "error");
       return;
@@ -779,9 +813,13 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
         payload.series_order = sel.customSeriesOrder.join(",");
       }
       payload.facet_placement = facetPlacement;
+      if (clean) payload.clean = true;
       const { blob, filename } = await simulationApi.exportCompareFacet(payload, "png");
       downloadBlob(blob, filename);
-      push("PNG descargado (todas las facetas en una imagen).", "success");
+      const msg = clean
+        ? "PNG descargado (sin título/números, todas las facetas)."
+        : "PNG descargado (todas las facetas en una imagen).";
+      push(msg, "success");
     } catch (err) {
       console.error(err);
       push("No se pudo generar el PNG en el servidor.", "error");
@@ -790,7 +828,7 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
     }
   };
 
-  const handleExportCombinedSvg = () => {
+  const handleExportCombinedSvg = (clean?: boolean) => {
     setExportingFacetSvg(true);
     try {
       const instanceId = facetExportInstanceIdRef.current;
@@ -839,7 +877,7 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
       const innerXmls: string[] = [];
       for (let i = 0; i < n; i += 1) {
         const chart = charts[i]!;
-        const raw = chart.getSVG({
+        const svgOptions: Highcharts.Options = {
           ...HIGHCHARTS_GETSVG_MERGE_OPTIONS,
           chart: {
             ...(HIGHCHARTS_GETSVG_MERGE_OPTIONS.chart as Record<string, unknown>),
@@ -874,7 +912,11 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
                 },
               }
             : {}),
-        } as Highcharts.Options);
+        };
+        if (clean) {
+          svgOptions.title = { text: '' };
+        }
+        const raw = chart.getSVG(svgOptions);
         const fixed = i === 0 ? raw : remapSvgFragmentIds(raw, `f${i}_`);
         innerXmls.push(extractSvgRootInnerXml(fixed));
       }
@@ -895,11 +937,15 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
         sliceW,
         sliceH,
         ...(exportLegendItems ? { legendItems: exportLegendItems } : {}),
+        ...(clean ? { clean: true } : {}),
       });
       const base = compareFacetClientFilenameBase(data, facetExportFilenameMode);
       const filename = `comparativa-facet-${base}-${new Date().toISOString().slice(0, 10)}.svg`;
       downloadBlob(new Blob([doc], { type: "image/svg+xml;charset=utf-8" }), filename);
-      push("SVG combinado descargado (misma apariencia que exportar una gráfica).", "success");
+      const msg = clean
+        ? "SVG combinado descargado (sin título/números)."
+        : "SVG combinado descargado (misma apariencia que exportar una gráfica).";
+      push(msg, "success");
     } catch (err) {
       console.error(err);
       push("No se pudo generar el SVG combinado.", "error");
@@ -920,8 +966,10 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
               <FacetExportKebab
                 disabled={exportBusy}
                 showServerPng={Boolean(serverFacetExport && serverFacetExport.jobIds.length > 1)}
-                onExportPng={handleExportFacetPngServer}
-                onExportSvg={handleExportCombinedSvg}
+                onExportPng={() => void handleExportFacetPngServer()}
+                onExportSvg={() => handleExportCombinedSvg()}
+                onExportPngClean={() => void handleExportFacetPngServer(true)}
+                onExportSvgClean={() => handleExportCombinedSvg(true)}
                 exportingPng={exportingFacetPng}
                 exportingSvg={exportingFacetSvg}
               />
@@ -957,7 +1005,17 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
                       className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-emerald-700/50 bg-emerald-950/40 px-3 py-2 text-xs font-semibold text-emerald-100 hover:border-emerald-600 hover:bg-emerald-900/50 disabled:opacity-50"
                     >
                       <FileDown className="h-4 w-4 shrink-0" aria-hidden />
-                      {exportingFacetPng ? "Generando PNG…" : "Descargar PNG (servidor)"}
+                      {exportingFacetPng ? "Generando PNG…" : "Descargar PNG (completo)"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={exportBusy}
+                      onClick={() => void handleExportFacetPngServer(true)}
+                      className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs font-semibold text-slate-200 hover:border-slate-600 hover:bg-slate-800/80 disabled:opacity-50"
+                    >
+                      <FileDown className="h-4 w-4 shrink-0" aria-hidden />
+                      {exportingFacetPng ? "Generando PNG…" : "Descargar PNG (sin título/núm.)"}
                     </Button>
                   </>
                 ) : null}
@@ -965,11 +1023,21 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
                   type="button"
                   variant="ghost"
                   disabled={exportBusy}
-                  onClick={handleExportCombinedSvg}
+                  onClick={() => handleExportCombinedSvg()}
                   className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs font-semibold text-slate-200 hover:border-slate-600 hover:bg-slate-800/80 disabled:opacity-50"
                 >
                   <FileDown className="h-4 w-4 shrink-0" aria-hidden />
                   {exportingFacetSvg ? "Generando SVG…" : "Descargar SVG (todas las facetas)"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={exportBusy}
+                  onClick={() => handleExportCombinedSvg(true)}
+                  className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs font-semibold text-slate-200 hover:border-slate-600 hover:bg-slate-800/80 disabled:opacity-50"
+                >
+                  <FileDown className="h-4 w-4 shrink-0" aria-hidden />
+                  {exportingFacetSvg ? "Generando SVG…" : "Descargar SVG (sin título/núm.)"}
                 </Button>
               </>
             )}

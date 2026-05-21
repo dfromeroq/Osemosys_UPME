@@ -271,6 +271,10 @@ def export_comparison_facet_image(
         "inline",
         description="inline (horizontal) o stacked (vertical).",
     ),
+    clean: bool = Query(
+        False,
+        description="True = descargar sin título ni etiquetas numéricas sobre las barras.",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -324,6 +328,7 @@ def export_comparison_facet_image(
             layout=layout,
             legend_title=legend_title,
             series_order=order_list,
+            clean=clean,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -333,7 +338,8 @@ def export_comparison_facet_image(
 
     base_name = _compare_facet_export_basename(facet_payload, filename_mode)
     ext = "svg" if fmt == "svg" else "png"
-    filename = f"{base_name}_facet.{ext}"
+    suffix = "_clean" if clean else ""
+    filename = f"{base_name}{suffix}_facet.{ext}"
     media = "image/svg+xml" if fmt == "svg" else "image/png"
     return StreamingResponse(
         io.BytesIO(img_bytes),
@@ -513,6 +519,10 @@ def export_chart(
         None,
         description="Override del valor máximo del eje Y. Vacío = auto.",
     ),
+    clean: bool = Query(
+        False,
+        description="True = descargar sin título ni etiquetas numéricas sobre las barras.",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -571,12 +581,13 @@ def export_chart(
 
         img_fmt = "svg" if fmt == "svg" else "png"
         try:
-            img_bytes = chart_service.render_pareto_chart_bytes(pareto, fmt=img_fmt)
+            img_bytes = chart_service.render_pareto_chart_bytes(pareto, fmt=img_fmt, clean=clean)
         except Exception as e:
             logger.exception("Error renderizando Pareto para export")
             raise HTTPException(status_code=500, detail=str(e))
 
-        filename = f"{base_name}.{img_fmt}"
+        suffix = "_clean" if clean else ""
+        filename = f"{base_name}{suffix}.{img_fmt}"
         media = "image/svg+xml" if img_fmt == "svg" else "image/png"
         return StreamingResponse(
             io.BytesIO(img_bytes),
@@ -654,13 +665,15 @@ def export_chart(
         img_bytes = chart_service.render_chart_visualization_bytes(
             chart, fmt=img_fmt, view_mode=view_mode,
             y_axis_min=y_axis_min, y_axis_max=y_axis_max,
+            clean=clean,
         )
     except Exception as e:
         logger.exception("Error renderizando gráfica para export")
         raise HTTPException(status_code=500, detail=str(e))
 
     ext = img_fmt
-    filename = f"{base_name}.{ext}"
+    suffix = "_clean" if clean else ""
+    filename = f"{base_name}{suffix}.{ext}"
     media = "image/svg+xml" if img_fmt == "svg" else "image/png"
     return StreamingResponse(
         io.BytesIO(img_bytes),
@@ -674,6 +687,10 @@ def export_all_charts(
     job_id: int,
     un: str = Query("PJ"),
     fmt: str = Query("svg", description="Formato de imagen: svg o png"),
+    clean: bool = Query(
+        False,
+        description="True = descargar sin título ni etiquetas numéricas sobre las barras.",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -690,7 +707,7 @@ def export_all_charts(
 
     try:
         zip_bytes = chart_service.export_all_charts_zip(
-            db=db, job_id=job["id"], un=un, fmt=fmt,
+            db=db, job_id=job["id"], un=un, fmt=fmt, clean=clean,
         )
     except Exception as e:
         logger.exception("Error generando ZIP de gráficas")

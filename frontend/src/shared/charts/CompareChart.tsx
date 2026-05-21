@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Highcharts from './highchartsSetup';
 import {
   EXPORTING_CONTEXT_BUTTON_DARK,
-  INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
   onHighchartsExportError,
 } from './chartExportingShared';
 import { buildStackedSinglePointTooltipOptions } from './chartTooltips';
@@ -202,6 +201,13 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       });
     });
 
+    const cleanOverrides: Highcharts.Options = {
+      title: { text: '' },
+      yAxis: data.subplots.map(() => ({
+        stackLabels: { enabled: false },
+      })),
+    };
+
     return {
       chart: {
         type: 'column',
@@ -321,7 +327,26 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         },
         buttons: {
           contextButton: {
-            menuItems: [...INDIVIDUAL_CHART_EXPORT_MENU_ITEMS],
+            menuItems: ([
+              {
+                text: 'Descargar PNG (completo)',
+                onclick: function (this: Highcharts.Chart) { this.exportChart({ type: 'image/png' }, {} as Highcharts.Options); },
+              },
+              {
+                text: 'Descargar SVG (completo)',
+                onclick: function (this: Highcharts.Chart) { this.exportChart({ type: 'image/svg+xml' }, {} as Highcharts.Options); },
+              },
+              'downloadCSV',
+              '_separator_',
+              {
+                text: 'Descargar PNG (sin título/números)',
+                onclick: function (this: Highcharts.Chart) { this.exportChart({ type: 'image/png' }, cleanOverrides); },
+              },
+              {
+                text: 'Descargar SVG (sin título/números)',
+                onclick: function (this: Highcharts.Chart) { this.exportChart({ type: 'image/svg+xml' }, cleanOverrides); },
+              },
+            ] as unknown as string[]),
             ...EXPORTING_CONTEXT_BUTTON_DARK,
           },
         },
