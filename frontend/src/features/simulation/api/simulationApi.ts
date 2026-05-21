@@ -441,6 +441,7 @@ export const simulationApi = {
       es_porcentaje?: string;
       clean?: boolean;
       series_order?: string;
+      region?: string;
     },
     fmt: "png" | "svg" = "png",
   ): Promise<{ blob: Blob; filename: string }> {
@@ -458,6 +459,7 @@ export const simulationApi = {
     if (params.es_porcentaje) q.es_porcentaje = params.es_porcentaje;
     if (params.clean) q.clean = "true";
     if (params.series_order) q.series_order = params.series_order;
+    if (params.region) q.region = params.region;
 
     const response = await httpClient.get("/visualizations/export-compare-by-year", {
       params: q,

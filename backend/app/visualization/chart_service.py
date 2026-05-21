@@ -4160,9 +4160,9 @@ def render_comparison_facet_figure_bytes(
                 raw = raw[:n_cats]
             values = np.nan_to_num(raw, nan=float("nan"), posinf=float("nan"), neginf=float("nan"))
             ax.plot(x, values, color=s.color, linewidth=2.5, marker="o", markersize=4)
-            clean = values[np.isfinite(values)]
-            if clean.size:
-                facet_line_max = max(facet_line_max, float(clean.max()))
+            finite_values = values[np.isfinite(values)]
+            if finite_values.size:
+                facet_line_max = max(facet_line_max, float(finite_values.max()))
         line_maxes.append(facet_line_max)
 
         ax.set_xticks(x)

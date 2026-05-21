@@ -773,7 +773,7 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
   const exportBusy = exportingFacetSvg || exportingFacetPng;
   const exportFilenameSelectId = React.useId();
 
-  const handleExportFacetPngServer = async () => {
+  const handleExportFacetPngServer = async (): Promise<void> => {
     if (!serverFacetExport || serverFacetExport.jobIds.length < 2) {
       push("Se necesitan al menos dos escenarios seleccionados.", "error");
       return;
@@ -806,7 +806,20 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
       push("PNG descargado (todas las facetas en una imagen).", "success");
     } catch (err) {
       console.error(err);
-      push("No se pudo generar el PNG en el servidor.", "error");
+      let msg = "No se pudo generar el PNG en el servidor.";
+      if (err && typeof err === 'object' && 'response' in err) {
+        const resp = (err as any).response;
+        if (resp?.data instanceof Blob) {
+          try {
+            const text = await resp.data.text();
+            const parsed = JSON.parse(text);
+            if (parsed.detail) msg = parsed.detail;
+          } catch {}
+        } else if (resp?.data?.detail) {
+          msg = resp.data.detail;
+        }
+      }
+      push(msg, "error");
     } finally {
       setExportingFacetPng(false);
     }

@@ -275,6 +275,7 @@ def export_comparison_facet_image(
         "inline",
         description="inline (horizontal) o stacked (vertical).",
     ),
+    region: str | None = Query(None, description="Filtro regional (AN, CA, IN, NE, OR, SE, SO) — solo en jobs REGIONAL"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -303,6 +304,7 @@ def export_comparison_facet_image(
             variable=variable,
             agrupar_por=agrupar_por,
             es_porcentaje_override=es_porcentaje,
+            region=region,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

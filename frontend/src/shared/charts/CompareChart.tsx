@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FileDown } from 'lucide-react';
 import Highcharts from './highchartsSetup';
 import {
   EXPORTING_CONTEXT_BUTTON_DARK,
@@ -13,7 +14,11 @@ import {
   dispatchLegendClick,
 } from './chartLegendInteractions';
 import HighchartsReact from 'highcharts-react-official';
+import { simulationApi } from '@/features/simulation/api/simulationApi';
+import { downloadBlob } from '@/shared/utils/downloadBlob';
+import { Button } from '@/shared/components/Button';
 import type { CompareChartResponse } from '../../types/domain';
+import type { ChartSelection } from './ChartSelector';
 
 interface CompareChartProps {
   data: CompareChartResponse;
@@ -23,6 +28,13 @@ interface CompareChartProps {
   yAxisMax?: number | null;
   /** Force all subplots to share the same Y-axis maximum */
   sharedYAxis?: boolean;
+  /** Config para exportación PNG servidor (modo comparación por años). */
+  serverCompareExport?: {
+    jobIds: (string | number)[];
+    selection: ChartSelection;
+    yearsToPlot: number[];
+    isAltMode?: boolean;
+  };
 }
 
 export const CompareChart: React.FC<CompareChartProps> = ({
@@ -31,9 +43,11 @@ export const CompareChart: React.FC<CompareChartProps> = ({
   yAxisMin,
   yAxisMax,
   sharedYAxis = false,
+  serverCompareExport,
 }) => {
   const inverted = barOrientation === 'horizontal';
   const legendDblclickStateRef = useRef(createLegendDblclickState());
+  const [exportBusy, setExportBusy] = useState(false);
 
   const allSeriesNames = useMemo(() => {
     const names = new Set<string>();
@@ -77,6 +91,48 @@ export const CompareChart: React.FC<CompareChartProps> = ({
     setHiddenNames(new Set(allSeriesNames.filter((n) => n !== name)));
   };
   const handleRestoreAll = () => setHiddenNames(new Set());
+
+  const handleExportComparePngServer = useCallback(async () => {
+    if (!serverCompareExport || serverCompareExport.jobIds.length < 2) return;
+    setExportBusy(true);
+    try {
+      const sel = serverCompareExport.selection;
+      const payload: Parameters<typeof simulationApi.exportCompareByYear>[0] = {
+        job_ids: serverCompareExport.jobIds.join(','),
+        tipo: sel.tipo,
+        un: sel.un,
+        years_to_plot: serverCompareExport.yearsToPlot.join(','),
+      };
+      if (serverCompareExport.isAltMode) payload.group_by = 'scenario';
+      if (sel.sub_filtro) payload.sub_filtro = sel.sub_filtro;
+      if (sel.loc) payload.loc = sel.loc;
+      if (sel.agrupar_por) payload.agrupacion = sel.agrupar_por;
+      if (sel.viewMode === 'porcentaje') payload.es_porcentaje = 'true';
+      if (sel.region && sel.agrupar_por !== 'REGION') {
+        payload.region = sel.region;
+      }
+      const { blob, filename } = await simulationApi.exportCompareByYear(payload, 'png');
+      downloadBlob(blob, filename);
+    } catch (err) {
+      console.error(err);
+      let msg = 'No se pudo generar el PNG en el servidor.';
+      if (err && typeof err === 'object' && 'response' in err) {
+        const resp = (err as any).response;
+        if (resp?.data instanceof Blob) {
+          try {
+            const text = await resp.data.text();
+            const parsed = JSON.parse(text);
+            if (parsed.detail) msg = parsed.detail;
+          } catch {}
+        } else if (resp?.data?.detail) {
+          msg = resp.data.detail;
+        }
+      }
+      window.alert(msg);
+    } finally {
+      setExportBusy(false);
+    }
+  }, [serverCompareExport]);
 
   const options = useMemo<Highcharts.Options>(() => {
     const legendItemClick = function (this: Highcharts.Series): boolean {
@@ -362,6 +418,20 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         options={options}
         containerProps={{ style: { width: '100%' } }}
       />
+      {serverCompareExport && serverCompareExport.jobIds.length > 1 ? (
+        <div className="mt-2 flex justify-end">
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={exportBusy}
+            onClick={handleExportComparePngServer}
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-emerald-700/50 bg-emerald-950/40 px-3 py-2 text-xs font-semibold text-emerald-100 hover:border-emerald-600 hover:bg-emerald-900/50 disabled:opacity-50"
+          >
+            <FileDown className="h-4 w-4 shrink-0" aria-hidden />
+            {exportBusy ? 'Generando PNG…' : 'Descargar PNG (servidor)'}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 };
