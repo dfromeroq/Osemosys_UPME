@@ -2126,7 +2126,7 @@ export function ResultDetailPage() {
                   : chartSelection.viewMode === 'area' ? 'area'
                   : 'column'
                 }
-                serverFacetExport={{ jobIds: chartJobIds, selection: chartSelection }}
+                serverFacetExport={{ jobIds: chartJobIds, selection: chartSelection, scenarioAliases }}
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
               />
@@ -2137,6 +2137,7 @@ export function ResultDetailPage() {
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
                 sharedYAxis={true}
+                serverCompareExport={{ jobIds: chartJobIds, selection: chartSelection, yearsToPlot: chartYearsToPlot, isAltMode: false, scenarioAliases }}
               />
             ) : chartCompareMode === 'by-year-alt' && chartJobIds.length > 1 && displayCompareChartData ? (
               <CompareChart
@@ -2145,6 +2146,7 @@ export function ResultDetailPage() {
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
                 sharedYAxis={true}
+                serverCompareExport={{ jobIds: chartJobIds, selection: chartSelection, yearsToPlot: chartYearsToPlot, isAltMode: true, scenarioAliases }}
               />
             ) : chartCompareMode === 'line-total' && chartJobIds.length > 1 && displayCompareLineData ? (
               <LineChart

@@ -243,6 +243,7 @@ interface CompareChartFacetProps {
     jobIds: number[];
     selection: ChartSelection;
     legendTitle?: string;
+    scenarioAliases?: Record<number, string>;
   };
   /** Si true, los controles de export se colapsan en un menú kebab "⋯". */
   compactToolbar?: boolean;
@@ -799,6 +800,12 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
       payload.filename_mode = facetExportFilenameMode;
       if (sel.customSeriesOrder && sel.customSeriesOrder.length > 0) {
         payload.series_order = sel.customSeriesOrder.join(",");
+      }
+      if (sel.region && sel.agrupar_por !== 'REGION') {
+        payload.region = sel.region;
+      }
+      if (serverFacetExport.scenarioAliases && Object.keys(serverFacetExport.scenarioAliases).some(k => serverFacetExport.scenarioAliases![Number(k)]?.trim())) {
+        payload.job_display_overrides = JSON.stringify(serverFacetExport.scenarioAliases);
       }
       payload.facet_placement = facetPlacement;
       const { blob, filename } = await simulationApi.exportCompareFacet(payload, "png");

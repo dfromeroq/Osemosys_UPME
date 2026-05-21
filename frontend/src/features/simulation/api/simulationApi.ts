@@ -392,6 +392,8 @@ export const simulationApi = {
       filename_mode?: CompareFacetExportFilenameMode;
       series_order?: string;
       facet_placement?: string;
+      region?: string;
+      job_display_overrides?: string;
     },
     fmt: "png" | "svg" = "png",
   ): Promise<{ blob: Blob; filename: string }> {
@@ -411,6 +413,8 @@ export const simulationApi = {
     if (params.filename_mode) q.filename_mode = params.filename_mode;
     if (params.series_order) q.series_order = params.series_order;
     if (params.facet_placement) q.facet_placement = params.facet_placement;
+    if (params.region) q.region = params.region;
+    if (params.job_display_overrides) q.job_display_overrides = params.job_display_overrides;
 
     const response = await httpClient.get("/visualizations/export-compare-facet", {
       params: q,
@@ -442,6 +446,7 @@ export const simulationApi = {
       clean?: boolean;
       series_order?: string;
       region?: string;
+      job_display_overrides?: string;
     },
     fmt: "png" | "svg" = "png",
   ): Promise<{ blob: Blob; filename: string }> {
@@ -460,6 +465,7 @@ export const simulationApi = {
     if (params.clean) q.clean = "true";
     if (params.series_order) q.series_order = params.series_order;
     if (params.region) q.region = params.region;
+    if (params.job_display_overrides) q.job_display_overrides = params.job_display_overrides;
 
     const response = await httpClient.get("/visualizations/export-compare-by-year", {
       params: q,

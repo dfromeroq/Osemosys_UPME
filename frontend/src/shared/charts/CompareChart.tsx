@@ -34,6 +34,7 @@ interface CompareChartProps {
     selection: ChartSelection;
     yearsToPlot: number[];
     isAltMode?: boolean;
+    scenarioAliases?: Record<number, string>;
   };
 }
 
@@ -110,6 +111,9 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       if (sel.viewMode === 'porcentaje') payload.es_porcentaje = 'true';
       if (sel.region && sel.agrupar_por !== 'REGION') {
         payload.region = sel.region;
+      }
+      if (serverCompareExport.scenarioAliases && Object.keys(serverCompareExport.scenarioAliases).some(k => serverCompareExport.scenarioAliases![Number(k)]?.trim())) {
+        payload.job_display_overrides = JSON.stringify(serverCompareExport.scenarioAliases);
       }
       const { blob, filename } = await simulationApi.exportCompareByYear(payload, 'png');
       downloadBlob(blob, filename);

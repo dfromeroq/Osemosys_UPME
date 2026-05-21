@@ -7,6 +7,7 @@ comparación entre múltiples escenarios.
 from __future__ import annotations
 
 import io
+import json
 import logging
 from typing import List
 
@@ -276,6 +277,11 @@ def export_comparison_facet_image(
         description="inline (horizontal) o stacked (vertical).",
     ),
     region: str | None = Query(None, description="Filtro regional (AN, CA, IN, NE, OR, SE, SO) — solo en jobs REGIONAL"),
+    job_display_overrides: str | None = Query(
+        None,
+        description='JSON dict {job_id: display_name} para renombrar escenarios. '
+                    'Ej: \'{"1":"Esc A","2":"Esc B"}\'',
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -293,6 +299,14 @@ def export_comparison_facet_image(
 
     job_id_list = _validate_compare_job_ids(job_ids, db, current_user)
 
+    _overrides: dict[int, str] | None = None
+    if job_display_overrides:
+        try:
+            raw = json.loads(job_display_overrides)
+            _overrides = {int(k): str(v) for k, v in raw.items()}
+        except (json.JSONDecodeError, ValueError, TypeError):
+            pass
+
     try:
         facet_payload = chart_service.build_comparison_facet_data(
             db=db,
@@ -305,6 +319,7 @@ def export_comparison_facet_image(
             agrupar_por=agrupar_por,
             es_porcentaje_override=es_porcentaje,
             region=region,
+            job_display_overrides=_overrides,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -365,6 +380,12 @@ def export_comparison_by_year_image(
     y_axis_min: float | None = Query(None),
     y_axis_max: float | None = Query(None),
     series_order: str | None = Query(None, description="Orden custom de series separado por coma."),
+    region: str | None = Query(None, description="Filtro regional (AN, CA, IN, NE, OR, SE, SO) — solo en jobs REGIONAL"),
+    job_display_overrides: str | None = Query(
+        None,
+        description='JSON dict {job_id: display_name} para renombrar escenarios. '
+                    'Ej: \'{"1":"Esc A","2":"Esc B"}\'',
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -380,18 +401,43 @@ def export_comparison_by_year_image(
     except ValueError:
         raise HTTPException(status_code=400, detail="years_to_plot inválidos")
 
+    _overrides: dict[int, str] | None = None
+    if job_display_overrides:
+        try:
+            raw = json.loads(job_display_overrides)
+            _overrides = {int(k): str(v) for k, v in raw.items()}
+        except (json.JSONDecodeError, ValueError, TypeError):
+            pass
+
     try:
-        cmp_data = chart_service.build_comparison_data(
-            db=db,
-            job_ids=job_id_list,
-            tipo=tipo,
-            un=un,
-            years_to_plot=year_list,
-            agrupacion=agrupacion,
-            sub_filtro=sub_filtro,
-            loc=loc,
-            es_porcentaje_override=es_porcentaje,
-        )
+        if group_by == "scenario":
+            cmp_data = chart_service.build_comparison_data_by_year_alt(
+                db=db,
+                job_ids=job_id_list,
+                tipo=tipo,
+                un=un,
+                years_to_plot=year_list,
+                agrupacion=agrupacion,
+                sub_filtro=sub_filtro,
+                loc=loc,
+                es_porcentaje_override=es_porcentaje,
+                region=region,
+                job_display_overrides=_overrides,
+            )
+        else:
+            cmp_data = chart_service.build_comparison_data(
+                db=db,
+                job_ids=job_id_list,
+                tipo=tipo,
+                un=un,
+                years_to_plot=year_list,
+                agrupacion=agrupacion,
+                sub_filtro=sub_filtro,
+                loc=loc,
+                es_porcentaje_override=es_porcentaje,
+                region=region,
+                job_display_overrides=_overrides,
+            )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
