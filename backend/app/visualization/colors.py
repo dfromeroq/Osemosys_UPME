@@ -307,6 +307,14 @@ def _color_por_sector(df, columna: str = "COLOR"):
     return _ordered_color_list(COLORES_SECTOR, df, columna)
 
 
+def _color_por_sector_gei(df, columna: str = "COLOR"):
+    """COLORES_SECTOR con Transporte en #1e335c — solo para emisiones GEI."""
+    from app.visualization.configs_comparacion import COLORES_SECTOR  # lazy: evita circular
+    colores = dict(COLORES_SECTOR)
+    colores["Transporte"] = "#1e335c"
+    return _ordered_color_list(colores, df, columna)
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # 4. COLORES PARA TIPOS DE EMISIÓN (contaminantes y GEI)
 # ══════════════════════════════════════════════════════════════════════════

@@ -13,6 +13,7 @@ from app.visualization.colors import (
     _color_por_grupo_fijo,
     _color_electricidad,
     _color_por_sector,
+    _color_por_sector_gei,
     _color_por_emision,
     _color_electrolisis,
     _color_h2_produccion,
@@ -1351,7 +1352,7 @@ CONFIGS = {
         "filtro": _filtro_gei,
         "msg_sin_datos": "Sin datos de emisiones GEI (EMIC02, EMICH4, EMIN2O)",
         "agrupar_por": "SECTOR",
-        "color_fn": _color_por_sector,
+        "color_fn": _color_por_sector_gei,
         "variable_default": "AnnualTechnologyEmission",
     },
     "emisiones_contaminantes": {
