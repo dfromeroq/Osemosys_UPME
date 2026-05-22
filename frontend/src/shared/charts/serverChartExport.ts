@@ -7,6 +7,7 @@ import type { ChartSelection } from './ChartSelector';
  *
  * ``tableExportFilters`` (opcional) restringe la exportación cuando
  * ``view_mode === 'table'`` a un subconjunto de series y/o años elegidos en la UI.
+ * ``hiddenSeries`` (opcional) omite del render las series que el usuario ocultó en la UI.
  */
 export async function downloadChartFromServer(
   jobId: number,
@@ -18,6 +19,7 @@ export async function downloadChartFromServer(
       series?: string[];
       years?: (string | number)[];
     };
+    hiddenSeries?: string[];
   },
 ): Promise<void> {
   const { blob, filename } = await simulationApi.exportChart(

@@ -115,6 +115,9 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       if (serverCompareExport.scenarioAliases && Object.keys(serverCompareExport.scenarioAliases).some(k => serverCompareExport.scenarioAliases![Number(k)]?.trim())) {
         payload.job_display_overrides = JSON.stringify(serverCompareExport.scenarioAliases);
       }
+      if (hiddenNames.size > 0) {
+        payload.hidden_series = Array.from(hiddenNames).join(',');
+      }
       const { blob, filename } = await simulationApi.exportCompareByYear(payload, 'png');
       downloadBlob(blob, filename);
     } catch (err) {
