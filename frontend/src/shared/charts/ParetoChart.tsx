@@ -144,7 +144,7 @@ export const ParetoChart: React.FC<ParetoChartProps> = ({
         fallbackToExportServer: false,
         error: onHighchartsExportError,
         chartOptions: {
-          chart: { backgroundColor: '#FFFFFF' },
+          chart: { backgroundColor: '#FFFFFF', spacingTop: 50 },
           title: { style: { color: '#1e293b', fontSize: '28pt' } },
           xAxis: {
             labels: { style: { color: '#334155', fontSize: '20pt' } },

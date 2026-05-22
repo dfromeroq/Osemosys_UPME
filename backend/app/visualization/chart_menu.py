@@ -142,8 +142,10 @@ MENU = [
          {"tipo": "saf_produccion",      "label": "SAF - Producción - ProductionByTechnology",           "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
          {"tipo": "imp_exp_crudo",      "label": "Crudo - Importaciones y Exportaciones - ProductionByTechnology", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
          {"tipo": "elec_consumo_liquidos", "label": "Consumo de Líquidos - Sector Eléctrico - UseByTechnology", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
-         {"tipo": "ref_produccion_importaciones", "label": "Refinerías + Importaciones de Líquidos - ProductionByTechnology", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
-     ]},
+          {"tipo": "ref_produccion_importaciones", "label": "Refinerías + Importaciones de Líquidos - ProductionByTechnology", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
+          {"tipo": "min_oil", "label": "Producción de Petróleo Crudo - ProductionByTechnology", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
+          {"tipo": "imp_oil", "label": "Importación de Petróleo Crudo - ProductionByTechnology", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
+      ]},
     {"code": "mineria", "label": "Minería & Extracción", "icon": "⛏️",
      "charts": [
          {"tipo": "min_hidrocarburos",   "label": "Minería Hidrocarburos - ProductionByTechnology",       "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},

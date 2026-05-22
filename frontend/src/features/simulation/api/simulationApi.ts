@@ -394,6 +394,7 @@ export const simulationApi = {
       facet_placement?: string;
       region?: string;
       job_display_overrides?: string;
+      exogenous_data?: string;
     },
     fmt: "png" | "svg" = "png",
   ): Promise<{ blob: Blob; filename: string }> {
@@ -415,6 +416,7 @@ export const simulationApi = {
     if (params.facet_placement) q.facet_placement = params.facet_placement;
     if (params.region) q.region = params.region;
     if (params.job_display_overrides) q.job_display_overrides = params.job_display_overrides;
+    if (params.exogenous_data) q.exogenous_data = params.exogenous_data;
 
     const response = await httpClient.get("/visualizations/export-compare-facet", {
       params: q,

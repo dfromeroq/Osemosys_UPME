@@ -68,7 +68,18 @@ import {
   saveSyntheticSeries,
   syntheticSeriesSignature,
 } from '../shared/charts/syntheticSeriesStorage';
-import type { SyntheticSeries } from '../types/domain';
+import type { ExogenousDataConfig, SyntheticSeries } from '../types/domain';
+import { ExogenousDataEditor } from '../shared/charts/ExogenousDataEditor';
+import {
+  loadExogenousData,
+  saveExogenousData,
+  exogenousDataSignature,
+} from '../shared/charts/exogenousDataStorage';
+import {
+  injectExogenousDataFacet,
+  injectExogenousDataByYear,
+  injectExogenousDataLineTotal,
+} from '../shared/charts/exogenousDataTransform';
 import { savedChartsApi } from '@/features/reports/api/savedChartsApi';
 import { useCurrentUser } from '@/app/providers/useCurrentUser';
 import { ChartSeriesConfigTab } from '@/features/reports/components/ChartSeriesConfigTab';
@@ -557,6 +568,13 @@ export function ResultDetailPage() {
   const [syntheticSeries, setSyntheticSeries] = useState<SyntheticSeries[]>([]);
   const [showSyntheticEditor, setShowSyntheticEditor] = useState(false);
   /**
+   * Datos exógenos (ej: emisiones de Refinerías). Persisten en localStorage
+   * por "firma" de gráfica + job_ids — al cambiar escenarios se cargan los
+   * datos guardados para esa combinación (o null si no hay).
+   */
+  const [exogenousData, setExogenousData] = useState<ExogenousDataConfig | null>(null);
+  const [showExogenousEditor, setShowExogenousEditor] = useState(false);
+  /**
    * Flujo "crear gráfica y agregarla al reporte". Si la URL tiene el query
    * param ?addToReport=<id>, el botón Guardar cambia de etiqueta y al guardar
    * se inserta automáticamente en el reporte indicado.
@@ -847,8 +865,11 @@ export function ResultDetailPage() {
     if (!compareChartData) return null;
     let data = reorderByYearSeries(compareChartData, customSeriesOrder);
     data = applyScenarioAliases(data, scenarioAliases, chartJobIds, historicalBarLabel);
+    if (exogenousData?.active && isComparing) {
+      data = injectExogenousDataByYear(data, exogenousData, chartJobIds);
+    }
     return data;
-  }, [compareChartData, customSeriesOrder, scenarioAliases, chartJobIds, historicalBarLabel]);
+  }, [compareChartData, customSeriesOrder, scenarioAliases, chartJobIds, historicalBarLabel, exogenousData, isComparing]);
 
   // Forzar disposición vertical para chart mixto (áreas + líneas)
   const RECURSOS_CHARTS = new Set(['recursos_vs_demanda', 'recursos_vs_demanda_gas', 'recursos_vs_demanda_carbon']);
@@ -870,9 +891,12 @@ export function ResultDetailPage() {
       if (!compareFacetData) return null;
       let data = reorderFacetSeries(compareFacetData, customSeriesOrder);
       data = applyAliasesToCompareFacetData(data, scenarioAliases);
+      if (exogenousData?.active && isComparing) {
+        data = injectExogenousDataFacet(data, exogenousData);
+      }
       return data;
     },
-    [compareFacetData, customSeriesOrder, scenarioAliases],
+    [compareFacetData, customSeriesOrder, scenarioAliases, exogenousData, isComparing],
   );
 
   const displayCompareLineData = useMemo(
@@ -880,9 +904,12 @@ export function ResultDetailPage() {
       if (!compareLineData) return null;
       let data = reorderChartSeries(compareLineData, customSeriesOrder);
       data = applyAliasesToChartDataResponse(data, scenarioAliases, chartJobIds);
+      if (exogenousData?.active && isComparing) {
+        data = injectExogenousDataLineTotal(data, exogenousData, chartJobIds);
+      }
       return data;
     },
-    [compareLineData, customSeriesOrder, scenarioAliases, chartJobIds],
+    [compareLineData, customSeriesOrder, scenarioAliases, chartJobIds, exogenousData, isComparing],
   );
 
   // Lista de series disponibles para el modal de orden, según el modo
@@ -937,6 +964,27 @@ export function ResultDetailPage() {
   useEffect(() => {
     saveSyntheticSeries(syntheticSignature, syntheticSeries);
   }, [syntheticSignature, syntheticSeries]);
+
+  // Firma estable del contexto para persistir datos exógenos por gráfica + escenarios.
+  // Excluye compare_mode para que los datos persistan al cambiar entre facet/by-year/line-total.
+  const exogenousSignatureStr = useMemo(
+    () =>
+      exogenousDataSignature({
+        tipo: chartSelection.tipo,
+        un: chartSelection.un,
+        agrupar_por: chartSelection.agrupar_por,
+        job_ids_signature: chartJobIds.slice().sort((a, b) => a - b).join(','),
+      }),
+    [chartSelection, chartJobIds],
+  );
+  // Carga desde localStorage al cambiar el contexto.
+  useEffect(() => {
+    setExogenousData(loadExogenousData(exogenousSignatureStr));
+  }, [exogenousSignatureStr]);
+  // Guarda en localStorage en cada mutación.
+  useEffect(() => {
+    saveExogenousData(exogenousSignatureStr, exogenousData);
+  }, [exogenousSignatureStr, exogenousData]);
 
   /** Al cambiar `display_name` en resúmenes, se vuelven a pedir los datos de gráficas (títulos de facetas / eje X en comparación). */
   const chartDisplayNamesSignature = useMemo(() => {
@@ -2126,7 +2174,7 @@ export function ResultDetailPage() {
                   : chartSelection.viewMode === 'area' ? 'area'
                   : 'column'
                 }
-                serverFacetExport={{ jobIds: chartJobIds, selection: chartSelection, scenarioAliases }}
+                serverFacetExport={{ jobIds: chartJobIds, selection: chartSelection, scenarioAliases, exogenousData: exogenousData && isComparing ? JSON.stringify(exogenousData) : undefined }}
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
               />
@@ -2244,6 +2292,31 @@ export function ResultDetailPage() {
               </button>
             </div>
           ) : null}
+
+          {/* Datos exógenos: solo para emisiones_gei en modo comparación. */}
+          {isComparing && chartSelection.tipo === 'emisiones_gei' ? (
+            <div className="rounded-xl border border-slate-800 bg-slate-900/30 backdrop-blur-sm p-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="m-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                  Datos exógenos — Refinerías
+                </p>
+                <p className="m-0 mt-1 text-xs text-slate-500">
+                  {exogenousData?.active && exogenousData.scenarios.some((s) => s.data.length > 0)
+                    ? 'Datos cargados. Se mostrarán como categoría en la gráfica.'
+                    : 'Agrega emisiones externas de Refinerías por escenario.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowExogenousEditor(true)}
+                className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/20"
+              >
+                {exogenousData?.active && exogenousData.scenarios.some((s) => s.data.length > 0)
+                  ? 'Editar datos exógenos'
+                  : '+ Agregar datos exógenos'}
+              </button>
+            </div>
+          ) : null}
         </>
       ) : null}
 
@@ -2257,6 +2330,28 @@ export function ResultDetailPage() {
           compareLineData?.categories
             ? compareLineData.categories.map((c) => Number(c)).filter(Number.isFinite)
             : singleChartData?.categories?.map((c) => Number(c)).filter(Number.isFinite)
+        }
+      />
+
+      <ExogenousDataEditor
+        open={showExogenousEditor}
+        onClose={() => setShowExogenousEditor(false)}
+        value={exogenousData}
+        onChange={setExogenousData}
+        scenarios={chartJobIds.map((jid, i) => ({
+          jobId: jid,
+          name: allSummaries.find((s) => Number(s.job_id) === jid)?.display_name
+            ?? allSummaries.find((s) => Number(s.job_id) === jid)?.scenario_name
+            ?? allSummaries.find((s) => Number(s.job_id) === jid)?.scenario_tag?.name
+            ?? `Escenario ${i + 1}`,
+        }))}
+        unitLabel={chartSelection.un}
+        suggestedYears={
+          compareLineData?.categories
+            ? compareLineData.categories.map((c) => Number(c)).filter(Number.isFinite)
+            : compareChartData?.subplots
+              ?.flatMap((sp) => sp.categories.map((c) => Number(c)).filter(Number.isFinite))
+            ?? singleChartData?.categories?.map((c) => Number(c)).filter(Number.isFinite)
         }
       />
 

@@ -14,6 +14,7 @@ export const HIGHCHARTS_GETSVG_MERGE_OPTIONS: Partial<Highcharts.Options> = {
     plotBorderColor: "#94a3b8",
     /** Espacio para etiquetas del eje Y (fuente grande al exportar). */
     marginLeft: 100,
+    marginTop: 50,
   },
   title: { style: { color: "#1e293b", fontSize: "28pt" } },
   xAxis: {
