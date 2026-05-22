@@ -2291,6 +2291,181 @@ class ScenarioService:
         db.delete(obj)
         db.commit()
 
+    # -----------------------------------------------------------------------
+    # Periodo del modelo (derivado de YearSplit)
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    def get_scenario_period_info(
+        db: Session,
+        *,
+        scenario_id: int,
+        current_user: User,
+    ) -> dict:
+        """Periodo de modelado del escenario: MIN/MAX/conteo de filas YearSplit.
+
+        El set ``YEAR`` que entra al modelo Pyomo se construye a partir de los
+        años que tengan fila en ``YearSplit`` (ver ``data_processing.py``).
+        Por eso este endpoint cuenta exactamente esas filas, no el universo
+        completo de ``osemosys_param_value``.
+        """
+        ScenarioService._require_access(
+            db, scenario_id=scenario_id, current_user=current_user
+        )
+        table = OsemosysParamValue.__table__
+        row = db.execute(
+            select(
+                func.min(table.c.year),
+                func.max(table.c.year),
+                func.count(table.c.id),
+                func.count(func.distinct(table.c.year)),
+            ).where(
+                table.c.id_scenario == scenario_id,
+                table.c.param_name == "YearSplit",
+            )
+        ).one()
+        min_year, max_year, total_rows, year_count = row
+        return {
+            "min_year": int(min_year) if min_year is not None else None,
+            "max_year": int(max_year) if max_year is not None else None,
+            "year_split_rows": int(total_rows or 0),
+            "year_count": int(year_count or 0),
+        }
+
+    @staticmethod
+    def extend_scenario_period(
+        db: Session,
+        *,
+        scenario_id: int,
+        current_user: User,
+    ) -> dict:
+        """Amplía el periodo del escenario en **un año**, vía carry-forward.
+
+        Algoritmo:
+            1. ``max_year`` se determina de las filas ``YearSplit`` (mismo
+               criterio que ``get_scenario_period_info``).
+            2. ``new_year = max_year + 1``.
+            3. Se eliminan todas las filas existentes con ``year = new_year``
+               para el escenario (garantiza que el nuevo año sea una copia
+               exacta de ``max_year``, sin restos parciales).
+            4. Se insertan todas las filas con ``year = max_year`` clonadas
+               con ``year = new_year``.
+
+        Es destructivo sobre datos previos del ``new_year``: el contrato es
+        "el nuevo año será idéntico al último año actual del modelo".
+        """
+        scenario = ScenarioService._require_manage_values(
+            db, scenario_id=scenario_id, current_user=current_user
+        )
+        table = OsemosysParamValue.__table__
+
+        max_year = db.execute(
+            select(func.max(table.c.year)).where(
+                table.c.id_scenario == scenario_id,
+                table.c.param_name == "YearSplit",
+            )
+        ).scalar()
+
+        if max_year is None:
+            raise ConflictError(
+                "El escenario no tiene filas en YearSplit; no se puede "
+                "determinar el periodo del modelo."
+            )
+
+        max_year = int(max_year)
+        new_year = max_year + 1
+
+        # Conteo de filas fuente — algunos drivers (psycopg) devuelven -1 en
+        # rowcount de INSERT...FROM_SELECT, así que tomamos el conteo explícito
+        # de antemano para reportarlo al cliente.
+        source_count = db.execute(
+            select(func.count(table.c.id)).where(
+                table.c.id_scenario == scenario_id,
+                table.c.year == max_year,
+            )
+        ).scalar() or 0
+
+        # 1) Limpiar lo que haya en new_year (idempotencia + evita parciales).
+        db.execute(
+            table.delete().where(
+                table.c.id_scenario == scenario_id,
+                table.c.year == new_year,
+            )
+        )
+
+        # 2) Insert ... select de max_year con year=new_year.
+        clone_select = select(
+            literal(scenario_id),
+            table.c.param_name,
+            table.c.id_region,
+            table.c.id_technology,
+            table.c.id_fuel,
+            table.c.id_emission,
+            table.c.id_timeslice,
+            table.c.id_mode_of_operation,
+            table.c.id_season,
+            table.c.id_daytype,
+            table.c.id_dailytimebracket,
+            table.c.id_storage_set,
+            table.c.id_udc_set,
+            literal(new_year),
+            table.c.value,
+        ).where(
+            table.c.id_scenario == scenario_id,
+            table.c.year == max_year,
+        )
+        result = db.execute(
+            insert(table).from_select(
+                [
+                    table.c.id_scenario,
+                    table.c.param_name,
+                    table.c.id_region,
+                    table.c.id_technology,
+                    table.c.id_fuel,
+                    table.c.id_emission,
+                    table.c.id_timeslice,
+                    table.c.id_mode_of_operation,
+                    table.c.id_season,
+                    table.c.id_daytype,
+                    table.c.id_dailytimebracket,
+                    table.c.id_storage_set,
+                    table.c.id_udc_set,
+                    table.c.year,
+                    table.c.value,
+                ],
+                clone_select,
+            )
+        )
+        # Si el driver devolvió un rowcount válido (>=0) lo usamos; si no
+        # (psycopg con FROM_SELECT a veces devuelve -1), caemos al conteo de la
+        # fuente que es equivalente porque acabamos de borrar el destino.
+        reported = int(result.rowcount or 0)
+        rows_added = reported if reported >= 0 else int(source_count)
+
+        # Marca de parámetros tocados (todos los del año de origen).
+        param_names = [
+            row[0]
+            for row in db.execute(
+                select(func.distinct(table.c.param_name)).where(
+                    table.c.id_scenario == scenario_id,
+                    table.c.year == max_year,
+                )
+            ).all()
+        ]
+        if param_names:
+            ScenarioService._track_changed_params(scenario, param_names=param_names)
+
+        db.commit()
+        logger.info(
+            "Escenario %s: periodo ampliado %d → %d (%d filas insertadas)",
+            scenario_id, max_year, new_year, rows_added,
+        )
+        return {
+            "previous_max_year": max_year,
+            "new_year": new_year,
+            "rows_added": rows_added,
+        }
+
 
 # ============================================================================
 # Arquitectura y Consideraciones Técnicas

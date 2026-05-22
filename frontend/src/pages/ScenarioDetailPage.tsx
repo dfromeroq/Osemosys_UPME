@@ -29,6 +29,7 @@ import {
   type OsemosysWideFilters,
   type OsemosysWideRow,
   type ScenarioAccess,
+  type ScenarioPeriodInfo,
   type YearRule,
 } from "@/features/scenarios/api/scenariosApi";
 import { officialImportApi } from "@/features/officialImport/api/officialImportApi";
@@ -177,6 +178,10 @@ export function ScenarioDetailPage() {
   const [excelDownloading, setExcelDownloading] = useState(false);
   const [openPermModal, setOpenPermModal] = useState(false);
   const [openMetaModal, setOpenMetaModal] = useState(false);
+  // Periodo del modelo (derivado de YearSplit) + ampliación
+  const [periodInfo, setPeriodInfo] = useState<ScenarioPeriodInfo | null>(null);
+  const [openExtendPeriodModal, setOpenExtendPeriodModal] = useState(false);
+  const [extendPeriodLoading, setExtendPeriodLoading] = useState(false);
   const [catalogSuggestions, setCatalogSuggestions] = useState<{
     parameters: string[];
     regions: string[];
@@ -774,9 +779,17 @@ export function ScenarioDetailPage() {
           setSearchParams(cleaned, { replace: true });
         }
 
+        // Carga el periodo del modelo en paralelo; si falla (p.ej. usuario sin acceso
+        // por algún edge case) no bloquea la pantalla, solo deja el panel sin info.
+        const periodPromise = scenariosApi
+          .getScenarioPeriodInfo(sc.id)
+          .then((info) => setPeriodInfo(info))
+          .catch(() => setPeriodInfo(null));
+
         await Promise.all([
           fetchOsemosysPage(sc.id, 1, osemosysPageSize, "", "", "", initialFilters),
           fetchFacets(sc.id, "", "", initialFilters),
+          periodPromise,
         ]);
 
         if (myAccess.isOwner || myAccess.can_edit_direct) {
@@ -1485,6 +1498,43 @@ export function ScenarioDetailPage() {
     }
   }
 
+  async function submitExtendPeriod() {
+    if (!scenario || !canManageValues) return;
+    setExtendPeriodLoading(true);
+    try {
+      const result = await scenariosApi.extendScenarioPeriod(scenario.id);
+      // Refresca el info del periodo y recarga valores/facets para reflejar las
+      // filas insertadas para el nuevo año.
+      const info = await scenariosApi.getScenarioPeriodInfo(scenario.id);
+      setPeriodInfo(info);
+      const merged = buildFilters(columnFilters, yearRules);
+      await Promise.all([
+        fetchOsemosysPage(
+          scenario.id,
+          osemosysPage,
+          osemosysPageSize,
+          osemosysSearch,
+          filterParamName,
+          filterYear,
+          merged,
+        ),
+        fetchFacets(scenario.id, filterParamName, filterYear, merged),
+      ]);
+      setOpenExtendPeriodModal(false);
+      push(
+        `Periodo ampliado: ${result.previous_max_year} → ${result.new_year} (${result.rows_added.toLocaleString()} filas copiadas).`,
+        "success",
+      );
+    } catch (err) {
+      push(
+        err instanceof Error ? err.message : "No se pudo ampliar el periodo del modelo.",
+        "error",
+      );
+    } finally {
+      setExtendPeriodLoading(false);
+    }
+  }
+
   async function submitPermission() {
     if (!scenario) return;
     const identifier = permForm.user_identifier.trim()
@@ -1549,23 +1599,52 @@ export function ScenarioDetailPage() {
           <small style={{ opacity: 0.7 }}>
             Política de edición: <strong>{policyLabel}</strong> · {policyExplanation}
           </small>
+          <div style={{ marginTop: 6 }}>
+            <small style={{ opacity: 0.7 }}>
+              Periodo del modelo:{" "}
+              {periodInfo && periodInfo.min_year !== null && periodInfo.max_year !== null ? (
+                <>
+                  <strong>
+                    {periodInfo.min_year}–{periodInfo.max_year}
+                  </strong>{" "}
+                  ({periodInfo.year_count} {periodInfo.year_count === 1 ? "año" : "años"} en{" "}
+                  YearSplit)
+                </>
+              ) : (
+                <em>sin YearSplit configurado</em>
+              )}
+            </small>
+          </div>
         </div>
-        {canEditScenarioMeta ? (
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setMetaForm({
-                name: scenario.name,
-                description: scenario.description ?? "",
-                edit_policy: scenario.edit_policy,
-                simulation_type: scenario.simulation_type,
-              });
-              setOpenMetaModal(true);
-            }}
-          >
-            Editar escenario
-          </Button>
-        ) : null}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
+          {canManageValues && periodInfo?.max_year != null ? (
+            <Button
+              variant="ghost"
+              onClick={() => setOpenExtendPeriodModal(true)}
+              title={`Copia todos los valores de ${periodInfo.max_year} en ${
+                periodInfo.max_year + 1
+              } y amplía el horizonte del modelo`}
+            >
+              Ampliar periodo del modelo
+            </Button>
+          ) : null}
+          {canEditScenarioMeta ? (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setMetaForm({
+                  name: scenario.name,
+                  description: scenario.description ?? "",
+                  edit_policy: scenario.edit_policy,
+                  simulation_type: scenario.simulation_type,
+                });
+                setOpenMetaModal(true);
+              }}
+            >
+              Editar escenario
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -2406,6 +2485,63 @@ export function ScenarioDetailPage() {
             value={osemosysForm.value}
             onChange={(e) => setOsemosysForm((p) => ({ ...p, value: e.target.value }))}
           />
+        </div>
+      </Modal>
+
+      <Modal
+        open={openExtendPeriodModal}
+        title="Ampliar periodo del modelo"
+        onClose={() =>
+          extendPeriodLoading ? undefined : setOpenExtendPeriodModal(false)
+        }
+        footer={
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <Button
+              variant="ghost"
+              onClick={() => setOpenExtendPeriodModal(false)}
+              disabled={extendPeriodLoading}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              onClick={submitExtendPeriod}
+              disabled={extendPeriodLoading || !periodInfo?.max_year}
+            >
+              {extendPeriodLoading ? "Ampliando…" : "Confirmar ampliación"}
+            </Button>
+          </div>
+        }
+      >
+        <div style={{ display: "grid", gap: 10 }}>
+          {periodInfo?.max_year ? (
+            <>
+              <p style={{ margin: 0 }}>
+                Se ampliará el periodo del modelo en <strong>un año</strong>:
+              </p>
+              <p style={{ margin: 0, fontSize: 16 }}>
+                <strong>
+                  {periodInfo.max_year} → {periodInfo.max_year + 1}
+                </strong>
+              </p>
+              <p style={{ margin: 0, opacity: 0.8 }}>
+                Todos los valores de <strong>osemosys_param_value</strong> del año{" "}
+                {periodInfo.max_year} se copiarán al año {periodInfo.max_year + 1}.
+                Esto incluye <em>YearSplit</em>, que es lo que activa el nuevo año
+                en el set <code>YEAR</code> del modelo.
+              </p>
+              <p style={{ margin: 0, opacity: 0.8, color: "#b45309" }}>
+                ⚠ Si ya existen filas para el año {periodInfo.max_year + 1} en
+                este escenario, serán <strong>reemplazadas</strong> para
+                garantizar una copia exacta del año {periodInfo.max_year}.
+              </p>
+            </>
+          ) : (
+            <p style={{ margin: 0 }}>
+              El escenario no tiene filas en YearSplit; no es posible determinar
+              el periodo actual del modelo.
+            </p>
+          )}
         </div>
       </Modal>
 
