@@ -857,17 +857,17 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
         return;
       }
       const layout = isStacked ? "column" : "row";
-      const totalBaseW = 1920;
+      const totalBaseW = isStacked ? 2400 : 1920;
       let sliceW: number;
       let sliceH: number;
       if (layout === "row") {
         const padding = 24 * 2;
-        const gaps = Math.max(0, n - 1) * 16;
+        const gaps = Math.max(0, n - 1) * 14;
         sliceW = Math.floor((totalBaseW - padding - gaps) / n);
         sliceH = 1080;
       } else {
         sliceW = totalBaseW - 48;
-        sliceH = Math.floor((1080 - Math.max(0, n - 1) * 16) / Math.max(n, 1));
+        sliceH = Math.floor((1080 - Math.max(0, n - 1) * 14) / Math.max(n, 1));
       }
 
       const exportXLabelPx = 20;
