@@ -297,6 +297,8 @@ class OsemosysParamAuditService:
                     "params_touched": set(),
                     "entries_count": 0,
                     "preview_rows": [],
+                    "reverted_count": 0,
+                    "is_revert_count": 0,
                 }
                 groups[key] = grp
                 order.append(key)
@@ -304,6 +306,10 @@ class OsemosysParamAuditService:
             grp["stats"][str(r.action)] = grp["stats"].get(str(r.action), 0) + 1
             grp["entries_count"] += 1
             grp["params_touched"].add(str(r.param_name))
+            if r.reverted_at is not None:
+                grp["reverted_count"] += 1
+            if bool(r.is_revert):
+                grp["is_revert_count"] += 1
             if r.created_at < grp["started_at"]:
                 grp["started_at"] = r.created_at
             if r.created_at > grp["ended_at"]:
@@ -329,6 +335,11 @@ class OsemosysParamAuditService:
                     "params_touched": sorted(grp["params_touched"]),
                     "entries_count": grp["entries_count"],
                     "preview": grp["preview_rows"],
+                    "is_revert": grp["is_revert_count"] == grp["entries_count"]
+                    and grp["entries_count"] > 0,
+                    "fully_reverted": grp["reverted_count"] == grp["entries_count"]
+                    and grp["entries_count"] > 0,
+                    "reverted_count": grp["reverted_count"],
                 }
             )
         return result, total_batches, total_entries

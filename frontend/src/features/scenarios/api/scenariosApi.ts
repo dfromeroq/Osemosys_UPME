@@ -64,6 +64,7 @@ export type OsemosysWideRow = {
   fuel_name: string | null;
   emission_name: string | null;
   udc_name: string | null;
+  timeslice_code: string | null;
   cells: Record<string, OsemosysWideCell>;
 };
 
@@ -83,6 +84,7 @@ export type OsemosysWideFacets = {
   fuel_names: string[];
   emission_names: string[];
   udc_names: string[];
+  timeslice_codes: string[];
 };
 
 export type OsemosysWideFilters = {
@@ -92,8 +94,18 @@ export type OsemosysWideFilters = {
   fuel_names?: string[];
   emission_names?: string[];
   udc_names?: string[];
+  timeslice_codes?: string[];
   /** Reglas sobre años, serializadas como `year:op[:value]` separados por coma. */
   year_rules?: string;
+};
+
+export type ScenarioDataSummary = {
+  scenario_id: number;
+  timeslice_count: number;
+  timeslice_codes: string[];
+  demands_total: number;
+  demands_with_profile: number;
+  demand_profile_rows: number;
 };
 
 export type ScenarioDeleteChild = {
@@ -145,6 +157,11 @@ export type OsemosysParamAuditEntry = {
   batch_id: string | null;
   batch_label: string | null;
   created_at: string;
+  reverted_at: string | null;
+  reverted_by: string | null;
+  reverted_by_audit_id: number | null;
+  is_revert: boolean;
+  reverts_entry_id: number | null;
 };
 
 export type OsemosysParamAuditPage = {
@@ -165,6 +182,32 @@ export type ScenarioAuditBatch = {
   params_touched: string[];
   entries_count: number;
   preview: OsemosysParamAuditEntry[];
+  is_revert: boolean;
+  fully_reverted: boolean;
+  reverted_count: number;
+};
+
+export type AuditRevertResultItem = {
+  entry_id: number;
+  status:
+    | "reverted"
+    | "skipped"
+    | "already_reverted"
+    | "conflict"
+    | "failed";
+  message: string | null;
+  current_value: number | null;
+};
+
+export type AuditRevertResult = {
+  scenario_id: number;
+  batch_id: string | null;
+  revert_batch_id: string | null;
+  total: number;
+  reverted: number;
+  skipped: number;
+  failed: number;
+  results: AuditRevertResultItem[];
 };
 
 export type ScenarioAuditPage = {
@@ -946,7 +989,7 @@ export const scenariosApi = {
     } & OsemosysWideFilters = {},
   ) => {
     // Serializa listas como CSV; axios de otro modo emite `?k[]=a&k[]=b`.
-    const { param_names, region_names, technology_names, fuel_names, emission_names, udc_names, ...rest } = params;
+    const { param_names, region_names, technology_names, fuel_names, emission_names, udc_names, timeslice_codes, ...rest } = params;
     const csv = (v?: string[]) => (v && v.length ? v.join(",") : undefined);
     return httpClient
       .get<OsemosysValuesWidePage>(`/scenarios/${scenarioId}/osemosys-values/wide`, {
@@ -958,6 +1001,7 @@ export const scenariosApi = {
           ...(csv(fuel_names) ? { fuel_names: csv(fuel_names) } : {}),
           ...(csv(emission_names) ? { emission_names: csv(emission_names) } : {}),
           ...(csv(udc_names) ? { udc_names: csv(udc_names) } : {}),
+          ...(csv(timeslice_codes) ? { timeslice_codes: csv(timeslice_codes) } : {}),
         },
       })
       .then((r) => r.data);
@@ -971,7 +1015,7 @@ export const scenariosApi = {
       limit_per_column?: number;
     } & OsemosysWideFilters = {},
   ) => {
-    const { param_names, region_names, technology_names, fuel_names, emission_names, udc_names, year_rules, ...rest } = params;
+    const { param_names, region_names, technology_names, fuel_names, emission_names, udc_names, timeslice_codes, year_rules, ...rest } = params;
     const csv = (v?: string[]) => (v && v.length ? v.join(",") : undefined);
     return httpClient
       .get<OsemosysWideFacets>(`/scenarios/${scenarioId}/osemosys-values/wide/facets`, {
@@ -983,11 +1027,16 @@ export const scenariosApi = {
           ...(csv(fuel_names) ? { fuel_names: csv(fuel_names) } : {}),
           ...(csv(emission_names) ? { emission_names: csv(emission_names) } : {}),
           ...(csv(udc_names) ? { udc_names: csv(udc_names) } : {}),
+          ...(csv(timeslice_codes) ? { timeslice_codes: csv(timeslice_codes) } : {}),
           ...(year_rules ? { year_rules } : {}),
         },
       })
       .then((r) => r.data);
   },
+  getScenarioDataSummary: (scenarioId: number) =>
+    httpClient
+      .get<ScenarioDataSummary>(`/scenarios/${scenarioId}/data-summary`)
+      .then((r) => r.data),
   listOsemosysParamAudit: (
     scenarioId: number,
     paramName: string,
@@ -1020,6 +1069,30 @@ export const scenariosApi = {
   getScenarioAuditFacets: (scenarioId: number) =>
     httpClient
       .get<ScenarioAuditFacets>(`/scenarios/${scenarioId}/audit/facets`)
+      .then((r) => r.data),
+  revertAuditEntry: (
+    scenarioId: number,
+    entryId: number,
+    options: { force?: boolean } = {},
+  ) =>
+    httpClient
+      .post<AuditRevertResult>(
+        `/scenarios/${scenarioId}/audit/entries/${entryId}/revert`,
+        null,
+        { params: { force: options.force ? true : undefined } },
+      )
+      .then((r) => r.data),
+  revertAuditBatch: (
+    scenarioId: number,
+    batchId: string,
+    options: { force?: boolean } = {},
+  ) =>
+    httpClient
+      .post<AuditRevertResult>(
+        `/scenarios/${scenarioId}/audit/batches/${encodeURIComponent(batchId)}/revert`,
+        null,
+        { params: { force: options.force ? true : undefined } },
+      )
       .then((r) => r.data),
   createOsemosysValue: (
     scenarioId: number,

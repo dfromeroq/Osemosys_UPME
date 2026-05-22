@@ -21,6 +21,7 @@ from app.models import (
     Emission,
     Fuel,
     OsemosysParamValue,
+    OsemosysParamValueAudit,
     Parameter,
     ParameterStorage,
     ParameterValue,
@@ -32,6 +33,7 @@ from app.models import (
     ScenarioTagLink,
     Solver,
     Technology,
+    Timeslice,
     UdcSet,
     User,
 )
@@ -1181,6 +1183,7 @@ class ScenarioService:
         fuel_names: list[str] | None,
         emission_names: list[str] | None,
         udc_names: list[str] | None,
+        timeslice_codes: list[str] | None = None,
         year_rules: list[tuple[int, str, float | None]] | None = None,
         skip_column: str | None = None,
     ) -> tuple[list, bool]:
@@ -1257,6 +1260,7 @@ class ScenarioService:
             ("fuel", OsemosysParamValue.id_fuel, Fuel, Fuel.name, fuel_names),
             ("emission", OsemosysParamValue.id_emission, Emission, Emission.name, emission_names),
             ("udc", OsemosysParamValue.id_udc_set, UdcSet, UdcSet.code, udc_names),
+            ("timeslice", OsemosysParamValue.id_timeslice, Timeslice, Timeslice.code, timeslice_codes),
         ]
         for col_key, id_col, model, name_col, raw in column_specs:
             if skip_column == col_key:
@@ -1377,6 +1381,7 @@ class ScenarioService:
         fuel_names: list[str] | None = None,
         emission_names: list[str] | None = None,
         udc_names: list[str] | None = None,
+        timeslice_codes: list[str] | None = None,
         year_rules: list[tuple[int, str, float | None]] | None = None,
         offset: int = 0,
         limit: int = 50,
@@ -1431,6 +1436,7 @@ class ScenarioService:
             fuel_names=fuel_names,
             emission_names=emission_names,
             udc_names=udc_names,
+            timeslice_codes=timeslice_codes,
             year_rules=year_rules,
         )
         # Para step 4 (años de surviving groups) NO aplicamos year_rules:
@@ -1447,6 +1453,7 @@ class ScenarioService:
             fuel_names=fuel_names,
             emission_names=emission_names,
             udc_names=udc_names,
+            timeslice_codes=timeslice_codes,
             year_rules=None,
         )
         search_term = (search or "").strip()
@@ -1462,6 +1469,7 @@ class ScenarioService:
                     .outerjoin(Fuel, OsemosysParamValue.id_fuel == Fuel.id)
                     .outerjoin(Emission, OsemosysParamValue.id_emission == Emission.id)
                     .outerjoin(UdcSet, OsemosysParamValue.id_udc_set == UdcSet.id)
+                    .outerjoin(Timeslice, OsemosysParamValue.id_timeslice == Timeslice.id)
                 )
                 term = f"%{search_term}%"
                 q = q.filter(
@@ -1472,6 +1480,7 @@ class ScenarioService:
                         Fuel.name.ilike(term),
                         Emission.name.ilike(term),
                         UdcSet.code.ilike(term),
+                        Timeslice.code.ilike(term),
                     )
                 )
             return q
@@ -1547,12 +1556,14 @@ class ScenarioService:
                 Fuel.name.label("fuel_name"),
                 Emission.name.label("emission_name"),
                 UdcSet.code.label("udc_name"),
+                Timeslice.code.label("timeslice_code"),
             )
             .outerjoin(Region, OsemosysParamValue.id_region == Region.id)
             .outerjoin(Technology, OsemosysParamValue.id_technology == Technology.id)
             .outerjoin(Fuel, OsemosysParamValue.id_fuel == Fuel.id)
             .outerjoin(Emission, OsemosysParamValue.id_emission == Emission.id)
             .outerjoin(UdcSet, OsemosysParamValue.id_udc_set == UdcSet.id)
+            .outerjoin(Timeslice, OsemosysParamValue.id_timeslice == Timeslice.id)
             .filter(OsemosysParamValue.id_scenario == scenario_id)
             .filter(or_(*group_conditions))
             .all()
@@ -1588,6 +1599,7 @@ class ScenarioService:
                     "fuel_name": r.fuel_name,
                     "emission_name": r.emission_name,
                     "udc_name": r.udc_name,
+                    "timeslice_code": r.timeslice_code,
                     "cells": {},
                 }
                 groups_map[key] = g
@@ -1631,6 +1643,7 @@ class ScenarioService:
         fuel_names: list[str] | None = None,
         emission_names: list[str] | None = None,
         udc_names: list[str] | None = None,
+        timeslice_codes: list[str] | None = None,
         year_rules: list[tuple[int, str, float | None]] | None = None,
         limit_per_column: int = 500,
     ) -> dict:
@@ -1661,6 +1674,7 @@ class ScenarioService:
                 fuel_names=fuel_names,
                 emission_names=emission_names,
                 udc_names=udc_names,
+                timeslice_codes=timeslice_codes,
                 year_rules=year_rules,
                 skip_column=column_key,
             )
@@ -1677,6 +1691,7 @@ class ScenarioService:
                     .outerjoin(Fuel, OsemosysParamValue.id_fuel == Fuel.id)
                     .outerjoin(Emission, OsemosysParamValue.id_emission == Emission.id)
                     .outerjoin(UdcSet, OsemosysParamValue.id_udc_set == UdcSet.id)
+                    .outerjoin(Timeslice, OsemosysParamValue.id_timeslice == Timeslice.id)
                 )
             if needs_search_joins:
                 term = f"%{(search or '').strip()}%"
@@ -1688,6 +1703,7 @@ class ScenarioService:
                         Fuel.name.ilike(term),
                         Emission.name.ilike(term),
                         UdcSet.code.ilike(term),
+                        Timeslice.code.ilike(term),
                     )
                 )
             return q
@@ -1733,6 +1749,80 @@ class ScenarioService:
             "udc_names": _facet(
                 "udc", UdcSet.code, OsemosysParamValue.id_udc_set, needs_catalog_join=True, can_be_null=True
             ),
+            "timeslice_codes": _facet(
+                "timeslice",
+                Timeslice.code,
+                OsemosysParamValue.id_timeslice,
+                needs_catalog_join=True,
+                can_be_null=True,
+            ),
+        }
+
+    @staticmethod
+    def get_scenario_data_summary(
+        db: Session,
+        *,
+        scenario_id: int,
+        current_user: User,
+    ) -> dict:
+        """KPIs ligeros de la composición del escenario.
+
+        Devuelve:
+          - `timeslice_count`: timeslices distintos con valores en el escenario.
+          - `timeslice_codes`: lista ordenada (cap. 200) para tooltips.
+          - `demands_with_profile`: nº de pares (REGION, FUEL) que aparecen
+            como demanda anual (`SpecifiedAnnualDemand` o
+            `AccumulatedAnnualDemand`) y a la vez tienen al menos una fila en
+            `SpecifiedDemandProfile`.
+          - `demands_total`: nº de pares (REGION, FUEL) con demanda anual.
+          - `demand_profile_rows`: nº de filas `SpecifiedDemandProfile`.
+        """
+        ScenarioService._require_access(db, scenario_id=scenario_id, current_user=current_user)
+
+        ts_rows = (
+            db.query(OsemosysParamValue.id_timeslice, Timeslice.code)
+            .outerjoin(Timeslice, OsemosysParamValue.id_timeslice == Timeslice.id)
+            .filter(OsemosysParamValue.id_scenario == scenario_id)
+            .filter(OsemosysParamValue.id_timeslice.is_not(None))
+            .distinct()
+            .all()
+        )
+        ts_codes = sorted({str(r[1]) for r in ts_rows if r[1] is not None})
+
+        demand_params = ("SpecifiedAnnualDemand", "AccumulatedAnnualDemand")
+        annual_pairs = set(
+            db.query(OsemosysParamValue.id_region, OsemosysParamValue.id_fuel)
+            .filter(OsemosysParamValue.id_scenario == scenario_id)
+            .filter(OsemosysParamValue.param_name.in_(demand_params))
+            .filter(OsemosysParamValue.id_fuel.is_not(None))
+            .distinct()
+            .all()
+        )
+        profile_pairs = set(
+            db.query(OsemosysParamValue.id_region, OsemosysParamValue.id_fuel)
+            .filter(OsemosysParamValue.id_scenario == scenario_id)
+            .filter(OsemosysParamValue.param_name == "SpecifiedDemandProfile")
+            .filter(OsemosysParamValue.id_fuel.is_not(None))
+            .distinct()
+            .all()
+        )
+        profile_rows = (
+            db.query(func.count())
+            .select_from(OsemosysParamValue)
+            .filter(OsemosysParamValue.id_scenario == scenario_id)
+            .filter(OsemosysParamValue.param_name == "SpecifiedDemandProfile")
+            .scalar()
+            or 0
+        )
+
+        with_profile = annual_pairs & profile_pairs
+        return {
+            "scenario_id": int(scenario_id),
+            "timeslice_count": len(ts_codes),
+            "timeslice_codes": ts_codes[:200],
+            "demands_total": len(annual_pairs),
+            "demands_with_profile": len(with_profile),
+            "demand_profile_rows": int(profile_rows),
         }
 
     @staticmethod
@@ -2290,6 +2380,506 @@ class ScenarioService:
         )
         db.delete(obj)
         db.commit()
+
+    # ------------------------------------------------------------------
+    # Revert de cambios del historial
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _find_value_by_dimensions(
+        db: Session,
+        *,
+        scenario_id: int,
+        param_name: str,
+        dims: dict,
+    ) -> OsemosysParamValue | None:
+        """Busca un OsemosysParamValue por (escenario, param, dimensiones) usando nombres."""
+        year = dims.get("year")
+        q = db.query(OsemosysParamValue).filter(
+            OsemosysParamValue.id_scenario == scenario_id,
+            OsemosysParamValue.param_name == param_name,
+            OsemosysParamValue.year == year,
+        )
+
+        def _join_by_name(model, name_key, fk_col):
+            name = dims.get(name_key)
+            if name:
+                obj = db.execute(select(model).where(model.name == name)).scalar_one_or_none()
+                if obj is None:
+                    return None
+                return fk_col == int(obj.id)
+            return fk_col.is_(None)
+
+        region_clause = _join_by_name(Region, "region_name", OsemosysParamValue.id_region)
+        if region_clause is None:
+            return None
+        tech_clause = _join_by_name(Technology, "technology_name", OsemosysParamValue.id_technology)
+        if tech_clause is None:
+            return None
+        fuel_clause = _join_by_name(Fuel, "fuel_name", OsemosysParamValue.id_fuel)
+        if fuel_clause is None:
+            return None
+        emi_clause = _join_by_name(Emission, "emission_name", OsemosysParamValue.id_emission)
+        if emi_clause is None:
+            return None
+        # UdcSet usa `code` no `name`.
+        udc_name = dims.get("udc_name")
+        if udc_name:
+            udc_obj = db.execute(select(UdcSet).where(UdcSet.code == udc_name)).scalar_one_or_none()
+            if udc_obj is None:
+                return None
+            udc_clause = OsemosysParamValue.id_udc_set == int(udc_obj.id)
+        else:
+            udc_clause = OsemosysParamValue.id_udc_set.is_(None)
+
+        return q.filter(region_clause, tech_clause, fuel_clause, emi_clause, udc_clause).one_or_none()
+
+    @staticmethod
+    def _plan_revert_entry(
+        db: Session,
+        *,
+        scenario_id: int,
+        entry: OsemosysParamValueAudit,
+    ) -> dict:
+        """Decide la acción inversa y detecta conflictos.
+
+        Retorna un dict con:
+            inverse_action: "UPDATE_VALUE" | "DELETE_VALUE" | "INSERT_VALUE" | "NOOP"
+            target_value:   float|None — para UPDATE_VALUE/INSERT_VALUE
+            current_value:  float|None — valor actual en DB para esa tupla
+            target_id:      int|None — id_osemosys_param_value si existe la fila
+            dims:           dict (dimensiones)
+            conflict:       str|None — descripción si hay conflicto
+            already_reverted: bool
+        """
+        dims = entry.dimensions_json if isinstance(entry.dimensions_json, dict) else {}
+        param_name = str(entry.param_name)
+        plan: dict = {
+            "inverse_action": "NOOP",
+            "target_value": None,
+            "current_value": None,
+            "target_id": None,
+            "dims": dims,
+            "conflict": None,
+            "already_reverted": entry.reverted_at is not None,
+        }
+        if plan["already_reverted"]:
+            plan["conflict"] = "Esta entrada ya fue revertida."
+            return plan
+
+        current = ScenarioService._find_value_by_dimensions(
+            db, scenario_id=scenario_id, param_name=param_name, dims=dims
+        )
+        current_value = float(current.value) if current is not None else None
+        current_id = int(current.id) if current is not None else None
+        plan["current_value"] = current_value
+        plan["target_id"] = current_id
+
+        action = str(entry.action)
+        new_v = entry.new_value
+        old_v = entry.old_value
+
+        if action == "INSERT":
+            # Deshacer INSERT → DELETE de la fila si sigue con el mismo new_value.
+            if current is None:
+                plan["conflict"] = "La fila ya no existe (posiblemente eliminada después)."
+                return plan
+            if new_v is not None and current_value is not None and abs(current_value - float(new_v)) > 1e-9:
+                plan["conflict"] = (
+                    f"El valor actual ({current_value}) difiere del valor insertado ({new_v}); "
+                    "alguien lo modificó después."
+                )
+            plan["inverse_action"] = "DELETE_VALUE"
+            return plan
+
+        if action == "DELETE":
+            # Deshacer DELETE → INSERT con old_value.
+            if current is not None:
+                plan["conflict"] = (
+                    f"Ya existe una fila para esas dimensiones (valor actual {current_value})."
+                )
+                return plan
+            if old_v is None:
+                plan["conflict"] = "La entrada DELETE no preservó el valor anterior."
+                return plan
+            plan["inverse_action"] = "INSERT_VALUE"
+            plan["target_value"] = float(old_v)
+            return plan
+
+        if action == "UPDATE":
+            # Deshacer UPDATE → poner old_value, siempre que el valor actual coincida con new_value.
+            if current is None:
+                plan["conflict"] = "La fila ya no existe."
+                return plan
+            if old_v is None:
+                plan["conflict"] = "La entrada UPDATE no preservó el valor anterior."
+                return plan
+            if new_v is not None and current_value is not None and abs(current_value - float(new_v)) > 1e-9:
+                plan["conflict"] = (
+                    f"El valor actual ({current_value}) ya no coincide con el resultado del "
+                    f"cambio ({new_v}); se modificó después."
+                )
+            plan["inverse_action"] = "UPDATE_VALUE"
+            plan["target_value"] = float(old_v)
+            return plan
+
+        plan["conflict"] = f"Acción desconocida: {action}"
+        return plan
+
+    @staticmethod
+    def _apply_revert_plan(
+        db: Session,
+        *,
+        scenario,
+        scenario_id: int,
+        entry: OsemosysParamValueAudit,
+        plan: dict,
+        current_user: User,
+        batch_id: str,
+        batch_label: str,
+    ) -> dict:
+        """Aplica el plan generado por `_plan_revert_entry` y crea la entrada de auditoría inversa.
+
+        Devuelve un dict resumen con `entry_id`, `status` y `message`.
+        """
+        actor = user_actor(current_user)
+        dims = plan["dims"]
+
+        if plan["inverse_action"] == "UPDATE_VALUE":
+            obj = db.get(OsemosysParamValue, plan["target_id"])
+            if obj is None:
+                return {"entry_id": int(entry.id), "status": "failed", "message": "Fila ya no existe."}
+            old_pub = ScenarioService._osemosys_value_to_public(db, value_id=int(obj.id))
+            obj.value = float(plan["target_value"])
+            db.flush()
+            new_pub = ScenarioService._osemosys_value_to_public(db, value_id=int(obj.id))
+            ScenarioService._track_changed_params(scenario, param_names=[obj.param_name])
+            revert_entry = OsemosysParamValueAudit(
+                id_scenario=scenario_id,
+                param_name=new_pub["param_name"],
+                id_osemosys_param_value=int(obj.id),
+                action="UPDATE",
+                old_value=float(old_pub["value"]),
+                new_value=float(new_pub["value"]),
+                dimensions_json=ScenarioService._audit_dimensions_from_public(new_pub),
+                source="API",
+                changed_by=actor,
+                batch_id=batch_id,
+                batch_label=batch_label,
+                is_revert=True,
+                reverts_entry_id=int(entry.id),
+            )
+            db.add(revert_entry)
+            db.flush()
+            entry.reverted_at = func.now()
+            entry.reverted_by = actor
+            entry.reverted_by_audit_id = int(revert_entry.id)
+            return {
+                "entry_id": int(entry.id),
+                "status": "reverted",
+                "message": f"Valor restaurado a {plan['target_value']}.",
+            }
+
+        if plan["inverse_action"] == "DELETE_VALUE":
+            obj = db.get(OsemosysParamValue, plan["target_id"])
+            if obj is None:
+                return {"entry_id": int(entry.id), "status": "failed", "message": "Fila ya no existe."}
+            del_pub = ScenarioService._osemosys_value_to_public(db, value_id=int(obj.id))
+            ScenarioService._track_changed_params(scenario, param_names=[obj.param_name])
+            revert_entry = OsemosysParamValueAudit(
+                id_scenario=scenario_id,
+                param_name=del_pub["param_name"],
+                id_osemosys_param_value=int(obj.id),
+                action="DELETE",
+                old_value=float(del_pub["value"]),
+                new_value=None,
+                dimensions_json=ScenarioService._audit_dimensions_from_public(del_pub),
+                source="API",
+                changed_by=actor,
+                batch_id=batch_id,
+                batch_label=batch_label,
+                is_revert=True,
+                reverts_entry_id=int(entry.id),
+            )
+            db.add(revert_entry)
+            db.flush()
+            entry.reverted_at = func.now()
+            entry.reverted_by = actor
+            entry.reverted_by_audit_id = int(revert_entry.id)
+            db.delete(obj)
+            return {
+                "entry_id": int(entry.id),
+                "status": "reverted",
+                "message": "Fila eliminada.",
+            }
+
+        if plan["inverse_action"] == "INSERT_VALUE":
+            # Reconstruir IDs a partir de nombres.
+            id_region = ScenarioService._resolve_or_create_catalog_name(
+                db, model=Region, name=dims.get("region_name"), label="Región"
+            )
+            id_technology = ScenarioService._resolve_or_create_catalog_name(
+                db, model=Technology, name=dims.get("technology_name"), label="Tecnología"
+            )
+            id_fuel = ScenarioService._resolve_or_create_catalog_name(
+                db, model=Fuel, name=dims.get("fuel_name"), label="Combustible"
+            )
+            id_emission = ScenarioService._resolve_or_create_catalog_name(
+                db, model=Emission, name=dims.get("emission_name"), label="Emisión"
+            )
+            id_udc_set = None
+            udc_code = dims.get("udc_name")
+            if udc_code:
+                udc_obj = db.execute(
+                    select(UdcSet).where(UdcSet.code == udc_code)
+                ).scalar_one_or_none()
+                if udc_obj is None:
+                    return {
+                        "entry_id": int(entry.id),
+                        "status": "failed",
+                        "message": f"UDC '{udc_code}' no existe.",
+                    }
+                id_udc_set = int(udc_obj.id)
+            new_obj = OsemosysParamValue(
+                id_scenario=scenario_id,
+                param_name=str(entry.param_name),
+                id_region=id_region,
+                id_technology=id_technology,
+                id_fuel=id_fuel,
+                id_emission=id_emission,
+                id_udc_set=id_udc_set,
+                year=dims.get("year"),
+                value=float(plan["target_value"]),
+            )
+            db.add(new_obj)
+            try:
+                db.flush()
+            except IntegrityError:
+                db.rollback()
+                return {
+                    "entry_id": int(entry.id),
+                    "status": "failed",
+                    "message": "No se pudo re-insertar (conflicto de claves).",
+                }
+            ScenarioService._track_changed_params(scenario, param_names=[str(entry.param_name)])
+            ins_pub = ScenarioService._osemosys_value_to_public(db, value_id=int(new_obj.id))
+            revert_entry = OsemosysParamValueAudit(
+                id_scenario=scenario_id,
+                param_name=ins_pub["param_name"],
+                id_osemosys_param_value=int(new_obj.id),
+                action="INSERT",
+                old_value=None,
+                new_value=float(ins_pub["value"]),
+                dimensions_json=ScenarioService._audit_dimensions_from_public(ins_pub),
+                source="API",
+                changed_by=actor,
+                batch_id=batch_id,
+                batch_label=batch_label,
+                is_revert=True,
+                reverts_entry_id=int(entry.id),
+            )
+            db.add(revert_entry)
+            db.flush()
+            entry.reverted_at = func.now()
+            entry.reverted_by = actor
+            entry.reverted_by_audit_id = int(revert_entry.id)
+            return {
+                "entry_id": int(entry.id),
+                "status": "reverted",
+                "message": f"Fila re-creada con valor {plan['target_value']}.",
+            }
+
+        return {
+            "entry_id": int(entry.id),
+            "status": "skipped",
+            "message": plan.get("conflict") or "Nada para revertir.",
+        }
+
+    @staticmethod
+    def revert_audit_entry(
+        db: Session,
+        *,
+        scenario_id: int,
+        entry_id: int,
+        current_user: User,
+        force: bool = False,
+    ) -> dict:
+        """Deshace un único cambio del historial."""
+        scenario = ScenarioService._require_manage_values(
+            db, scenario_id=scenario_id, current_user=current_user
+        )
+        entry = db.get(OsemosysParamValueAudit, entry_id)
+        if entry is None or int(entry.id_scenario) != scenario_id:
+            raise NotFoundError("Entrada de auditoría no encontrada en el escenario.")
+        if entry.is_revert:
+            raise ConflictError(
+                "Esta entrada ya es un revert; no se puede revertir un revert. "
+                "Si quieres deshacerlo, revierte la operación original."
+            )
+        plan = ScenarioService._plan_revert_entry(db, scenario_id=scenario_id, entry=entry)
+        if plan["already_reverted"]:
+            return {
+                "scenario_id": scenario_id,
+                "batch_id": None,
+                "total": 1,
+                "reverted": 0,
+                "skipped": 1,
+                "failed": 0,
+                "results": [
+                    {
+                        "entry_id": entry_id,
+                        "status": "already_reverted",
+                        "message": "Esta entrada ya fue revertida.",
+                    }
+                ],
+            }
+        if plan["conflict"] and not force:
+            return {
+                "scenario_id": scenario_id,
+                "batch_id": None,
+                "total": 1,
+                "reverted": 0,
+                "skipped": 1,
+                "failed": 0,
+                "results": [
+                    {
+                        "entry_id": entry_id,
+                        "status": "conflict",
+                        "message": plan["conflict"],
+                        "current_value": plan["current_value"],
+                    }
+                ],
+            }
+        import uuid as _uuid
+        revert_batch_id = str(_uuid.uuid4())
+        revert_label = f"Revert de cambio #{entry_id} ({entry.action} {entry.param_name})"
+        try:
+            result = ScenarioService._apply_revert_plan(
+                db,
+                scenario=scenario,
+                scenario_id=scenario_id,
+                entry=entry,
+                plan=plan,
+                current_user=current_user,
+                batch_id=revert_batch_id,
+                batch_label=revert_label,
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        return {
+            "scenario_id": scenario_id,
+            "batch_id": revert_batch_id,
+            "total": 1,
+            "reverted": 1 if result["status"] == "reverted" else 0,
+            "skipped": 1 if result["status"] in ("skipped", "already_reverted", "conflict") else 0,
+            "failed": 1 if result["status"] == "failed" else 0,
+            "results": [result],
+        }
+
+    @staticmethod
+    def revert_audit_batch(
+        db: Session,
+        *,
+        scenario_id: int,
+        batch_id: str,
+        current_user: User,
+        force: bool = False,
+    ) -> dict:
+        """Deshace todos los cambios de un batch (operación) — más recientes primero."""
+        scenario = ScenarioService._require_manage_values(
+            db, scenario_id=scenario_id, current_user=current_user
+        )
+        entries = list(
+            db.execute(
+                select(OsemosysParamValueAudit)
+                .where(OsemosysParamValueAudit.id_scenario == scenario_id)
+                .where(OsemosysParamValueAudit.batch_id == batch_id)
+                .order_by(
+                    OsemosysParamValueAudit.created_at.desc(),
+                    OsemosysParamValueAudit.id.desc(),
+                )
+            ).scalars().all()
+        )
+        if not entries:
+            raise NotFoundError(f"Batch {batch_id} no encontrado en el escenario.")
+        # Si todas son ya reverts, no permitir.
+        if all(bool(e.is_revert) for e in entries):
+            raise ConflictError("Este batch es un revert; no se puede revertir un revert.")
+
+        import uuid as _uuid
+        revert_batch_id = str(_uuid.uuid4())
+        revert_label = f"Revert del batch {batch_id[:8]} ({len(entries)} cambios)"
+
+        # Planificación previa para detectar conflictos sin tocar la BD.
+        plans: list[tuple[OsemosysParamValueAudit, dict]] = []
+        for e in entries:
+            if e.is_revert:
+                plans.append((e, {"inverse_action": "NOOP", "conflict": "es un revert", "already_reverted": False, "dims": {}, "current_value": None, "target_id": None, "target_value": None}))
+                continue
+            plans.append((e, ScenarioService._plan_revert_entry(db, scenario_id=scenario_id, entry=e)))
+
+        conflicts = [
+            {"entry_id": int(e.id), "message": p["conflict"], "current_value": p.get("current_value")}
+            for e, p in plans
+            if p.get("conflict") and not p.get("already_reverted")
+        ]
+        if conflicts and not force:
+            return {
+                "scenario_id": scenario_id,
+                "batch_id": batch_id,
+                "total": len(entries),
+                "reverted": 0,
+                "skipped": len(conflicts),
+                "failed": 0,
+                "results": [
+                    {"entry_id": c["entry_id"], "status": "conflict", "message": c["message"], "current_value": c["current_value"]}
+                    for c in conflicts
+                ],
+            }
+
+        results: list[dict] = []
+        try:
+            for e, p in plans:
+                if e.is_revert:
+                    results.append({"entry_id": int(e.id), "status": "skipped", "message": "es un revert"})
+                    continue
+                if p["already_reverted"]:
+                    results.append({"entry_id": int(e.id), "status": "already_reverted", "message": "ya revertida"})
+                    continue
+                if p.get("conflict") and not force:
+                    results.append({"entry_id": int(e.id), "status": "skipped", "message": p["conflict"]})
+                    continue
+                r = ScenarioService._apply_revert_plan(
+                    db,
+                    scenario=scenario,
+                    scenario_id=scenario_id,
+                    entry=e,
+                    plan=p,
+                    current_user=current_user,
+                    batch_id=revert_batch_id,
+                    batch_label=revert_label,
+                )
+                results.append(r)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        reverted = sum(1 for r in results if r["status"] == "reverted")
+        skipped = sum(1 for r in results if r["status"] in ("skipped", "already_reverted", "conflict"))
+        failed = sum(1 for r in results if r["status"] == "failed")
+        return {
+            "scenario_id": scenario_id,
+            "batch_id": batch_id,
+            "revert_batch_id": revert_batch_id,
+            "total": len(entries),
+            "reverted": reverted,
+            "skipped": skipped,
+            "failed": failed,
+            "results": results,
+        }
 
 
 # ============================================================================

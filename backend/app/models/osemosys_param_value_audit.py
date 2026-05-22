@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -41,6 +42,8 @@ class OsemosysParamValueAudit(Base):
         Index("ix_osemosys_param_audit_value_id", "id_osemosys_param_value"),
         Index("ix_osemosys_param_audit_scenario_batch", "id_scenario", "batch_id"),
         Index("ix_osemosys_param_audit_scenario_created", "id_scenario", "created_at"),
+        Index("ix_osemosys_param_audit_reverted_by_audit_id", "reverted_by_audit_id"),
+        Index("ix_osemosys_param_audit_reverts_entry_id", "reverts_entry_id"),
         {"schema": "osemosys"},
     )
 
@@ -67,3 +70,17 @@ class OsemosysParamValueAudit(Base):
     created_at: Mapped[object] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # Marca puesta cuando este cambio fue posteriormente revertido por otra
+    # operación. `reverted_by_audit_id` apunta a la entrada de auditoría que
+    # ejecutó el revert (que tiene `is_revert=True`).
+    reverted_at: Mapped[object | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reverted_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reverted_by_audit_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # `True` cuando esta entrada es producto de una acción de revert.
+    # `reverts_entry_id` apunta a la entrada que se está deshaciendo.
+    is_revert: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    reverts_entry_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

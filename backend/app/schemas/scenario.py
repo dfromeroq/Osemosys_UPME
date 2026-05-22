@@ -517,6 +517,7 @@ class OsemosysWideRow(BaseModel):
     fuel_name: str | None = None
     emission_name: str | None = None
     udc_name: str | None = None
+    timeslice_code: str | None = None
     cells: dict[str, OsemosysWideCell]
 
 
@@ -540,6 +541,7 @@ class OsemosysWideFacets(BaseModel):
     fuel_names: list[str]
     emission_names: list[str]
     udc_names: list[str]
+    timeslice_codes: list[str] = []
 
 
 class OsemosysParamAuditEntryPublic(BaseModel):
@@ -557,6 +559,11 @@ class OsemosysParamAuditEntryPublic(BaseModel):
     batch_id: str | None = None
     batch_label: str | None = None
     created_at: datetime
+    reverted_at: datetime | None = None
+    reverted_by: str | None = None
+    reverted_by_audit_id: int | None = None
+    is_revert: bool = False
+    reverts_entry_id: int | None = None
 
 
 class OsemosysParamAuditPage(BaseModel):
@@ -581,6 +588,9 @@ class ScenarioAuditBatchPublic(BaseModel):
     params_touched: list[str]
     entries_count: int
     preview: list[OsemosysParamAuditEntryPublic]
+    is_revert: bool = False
+    fully_reverted: bool = False
+    reverted_count: int = 0
 
 
 class ScenarioAuditPage(BaseModel):
@@ -592,6 +602,39 @@ class ScenarioAuditPage(BaseModel):
     offset: int
     limit: int
     grouped: bool
+
+
+class ScenarioDataSummary(BaseModel):
+    """KPIs de composición del escenario (datos cargados en BD)."""
+
+    scenario_id: int
+    timeslice_count: int
+    timeslice_codes: list[str]
+    demands_total: int
+    demands_with_profile: int
+    demand_profile_rows: int
+
+
+class AuditRevertResultItem(BaseModel):
+    """Resultado individual de revertir una entrada del historial."""
+
+    entry_id: int
+    status: str  # reverted | skipped | already_reverted | conflict | failed
+    message: str | None = None
+    current_value: float | None = None
+
+
+class AuditRevertResult(BaseModel):
+    """Resumen de una operación de revert (entry o batch)."""
+
+    scenario_id: int
+    batch_id: str | None = None
+    revert_batch_id: str | None = None
+    total: int
+    reverted: int
+    skipped: int
+    failed: int
+    results: list[AuditRevertResultItem]
 
 
 class ScenarioAuditFacets(BaseModel):

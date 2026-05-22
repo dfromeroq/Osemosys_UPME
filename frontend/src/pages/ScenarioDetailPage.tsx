@@ -29,6 +29,7 @@ import {
   type OsemosysWideFilters,
   type OsemosysWideRow,
   type ScenarioAccess,
+  type ScenarioDataSummary,
   type YearRule,
 } from "@/features/scenarios/api/scenariosApi";
 import { officialImportApi } from "@/features/officialImport/api/officialImportApi";
@@ -210,6 +211,7 @@ export function ScenarioDetailPage() {
     can_manage_values: false,
   });
   const [scenarioTags, setScenarioTags] = useState<ScenarioTag[]>([]);
+  const [dataSummary, setDataSummary] = useState<ScenarioDataSummary | null>(null);
   const [scenarioTagCategories, setScenarioTagCategories] = useState<
     ScenarioTagCategory[]
   >([]);
@@ -778,6 +780,12 @@ export function ScenarioDetailPage() {
           fetchOsemosysPage(sc.id, 1, osemosysPageSize, "", "", "", initialFilters),
           fetchFacets(sc.id, "", "", initialFilters),
         ]);
+
+        // KPIs ligeros (no bloqueantes para el render principal).
+        scenariosApi
+          .getScenarioDataSummary(sc.id)
+          .then((s) => setDataSummary(s))
+          .catch(() => setDataSummary(null));
 
         if (myAccess.isOwner || myAccess.can_edit_direct) {
           const [perms, pendingList] = await Promise.all([
@@ -1546,7 +1554,47 @@ export function ScenarioDetailPage() {
               ))}
             </div>
           ) : null}
-          <small style={{ opacity: 0.7 }}>
+          {dataSummary ? (
+            <div
+              style={{
+                marginTop: 10,
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                fontSize: 12,
+              }}
+            >
+              <span
+                style={{
+                  background: "rgba(56,189,248,0.10)",
+                  border: "1px solid rgba(56,189,248,0.30)",
+                  borderRadius: 6,
+                  padding: "4px 8px",
+                }}
+                title={
+                  dataSummary.timeslice_codes.length
+                    ? `Timeslices: ${dataSummary.timeslice_codes.join(", ")}`
+                    : undefined
+                }
+              >
+                <strong>{dataSummary.timeslice_count}</strong> timeslice
+                {dataSummary.timeslice_count === 1 ? "" : "s"}
+              </span>
+              <span
+                style={{
+                  background: "rgba(34,197,94,0.10)",
+                  border: "1px solid rgba(34,197,94,0.30)",
+                  borderRadius: 6,
+                  padding: "4px 8px",
+                }}
+                title={`${dataSummary.demands_with_profile} de ${dataSummary.demands_total} pares (REGION, FUEL) con demanda anual tienen al menos una fila en SpecifiedDemandProfile (${dataSummary.demand_profile_rows} filas totales)`}
+              >
+                <strong>{dataSummary.demands_with_profile}</strong> /{" "}
+                {dataSummary.demands_total} demandas con perfil
+              </span>
+            </div>
+          ) : null}
+          <small style={{ opacity: 0.7, display: "block", marginTop: 6 }}>
             Política de edición: <strong>{policyLabel}</strong> · {policyExplanation}
           </small>
         </div>
@@ -1715,7 +1763,7 @@ export function ScenarioDetailPage() {
               <span style={{ fontSize: 12, opacity: 0.85, fontWeight: 600 }}>
                 Filtros activos:
               </span>
-              {(["param_names", "region_names", "technology_names", "fuel_names", "emission_names", "udc_names"] as const).map(
+              {(["param_names", "region_names", "technology_names", "fuel_names", "emission_names", "udc_names", "timeslice_codes"] as const).map(
                 (col) => {
                   const values = columnFilters[col];
                   if (!Array.isArray(values) || values.length === 0) return null;
@@ -1726,6 +1774,7 @@ export function ScenarioDetailPage() {
                     fuel_names: "Combustible",
                     emission_names: "Emisión",
                     udc_names: "UDC",
+                    timeslice_codes: "Timeslice",
                   };
                   return (
                     <FilterChip
@@ -1786,7 +1835,14 @@ export function ScenarioDetailPage() {
                   : osemosysWideYears;
                 // Escalar se oculta si hay selección explícita de años (no lo incluye).
                 const scalarShown = osemosysHasScalar && filterYears.length === 0;
-                type CatColKey = "param_names" | "region_names" | "technology_names" | "fuel_names" | "emission_names" | "udc_names";
+                type CatColKey =
+                  | "param_names"
+                  | "region_names"
+                  | "technology_names"
+                  | "fuel_names"
+                  | "emission_names"
+                  | "udc_names"
+                  | "timeslice_codes";
                 const dimHeaders: { label: string; filterKey: CatColKey; facetKey: keyof OsemosysWideFacets }[] = [
                   { label: "Parámetro", filterKey: "param_names", facetKey: "param_names" },
                   { label: "Región", filterKey: "region_names", facetKey: "region_names" },
@@ -1794,6 +1850,7 @@ export function ScenarioDetailPage() {
                   { label: "Combustible", filterKey: "fuel_names", facetKey: "fuel_names" },
                   { label: "Emisión", filterKey: "emission_names", facetKey: "emission_names" },
                   { label: "UDC", filterKey: "udc_names", facetKey: "udc_names" },
+                  { label: "Timeslice", filterKey: "timeslice_codes", facetKey: "timeslice_codes" },
                 ];
                 const totalCols =
                   dimHeaders.length + (scalarShown ? 1 : 0) + yearsShown.length + 1;
@@ -1910,6 +1967,12 @@ export function ScenarioDetailPage() {
                                 <td style={{ padding: "4px 10px", fontSize: 13 }}>{g.fuel_name ?? "—"}</td>
                                 <td style={{ padding: "4px 10px", fontSize: 13 }}>{g.emission_name ?? "—"}</td>
                                 <td style={{ padding: "4px 10px", fontSize: 13 }}>{g.udc_name ?? "—"}</td>
+                                <td
+                                  style={{ padding: "4px 10px", fontSize: 13, fontFamily: "monospace" }}
+                                  title={g.timeslice_code ?? undefined}
+                                >
+                                  {g.timeslice_code ?? "—"}
+                                </td>
                                 {cellKeys.map((yearKey) => {
                                   const cell = g.cells[yearKey];
                                   const isEditing =
