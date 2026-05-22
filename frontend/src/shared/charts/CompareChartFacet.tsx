@@ -299,6 +299,7 @@ function FacetChart({
   facetExportInstanceId,
   yAxisMin,
   yAxisMax,
+  showLeftTitle = false,
 }: {
   facet: FacetData;
   yAxisLabel: string;
@@ -321,6 +322,8 @@ function FacetChart({
   /** Override del eje Y. */
   yAxisMin?: number | null;
   yAxisMax?: number | null;
+  /** Si true, el título del escenario se renderiza fuera de Highcharts (a la izquierda). */
+  showLeftTitle?: boolean;
 }) {
   const chartRef = useRef<Highcharts.Chart | null>(null);
   const legendDblclickStateRef = useRef(createLegendDblclickState());
@@ -384,9 +387,9 @@ function FacetChart({
     const facetTitleText = tagPart ? `${simPart} — ${tagPart}` : simPart;
 
     return {
-      title: {
-        text: null as unknown as string,
-      },
+      title: showLeftTitle
+        ? { text: null as unknown as string }
+        : { text: facetTitleText, style: { fontSize: "14pt", fontWeight: "bold", color: "#f8fafc" } },
       xAxis: {
         categories: facet.categories,
         crosshair: { color: "#334155" },
@@ -1066,20 +1069,25 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
               return (
                 <div
                   key={facet.job_id}
-                  className="flex min-w-0 gap-2 rounded-lg border border-slate-800/80 bg-[#1e293b]/30 p-2"
+                  className={
+                    "min-w-0 rounded-lg border border-slate-800/80 bg-[#1e293b]/30 p-2" +
+                    (isStacked ? " flex gap-2" : "")
+                  }
                 >
-                  <div
-                    className="flex shrink-0 items-center justify-end text-right"
-                    style={{ width: "120px", minWidth: "120px" }}
-                  >
-                    <span
-                      className="text-sm font-bold leading-tight text-slate-100"
-                      style={{ fontSize: "14px", lineHeight: "1.2" }}
+                  {isStacked ? (
+                    <div
+                      className="flex shrink-0 items-center justify-end text-right"
+                      style={{ width: "120px", minWidth: "120px" }}
                     >
-                      {facetLabel}
-                    </span>
-                  </div>
-                  <div className="min-w-0 flex-1">
+                      <span
+                        className="text-sm font-bold leading-tight text-slate-100"
+                        style={{ fontSize: "14px", lineHeight: "1.2" }}
+                      >
+                        {facetLabel}
+                      </span>
+                    </div>
+                  ) : null}
+                  <div className={isStacked ? "min-w-0 flex-1" : "w-full"}>
                     <FacetChart
                       facet={facet}
                       yAxisLabel={data.yAxisLabel}
@@ -1093,6 +1101,7 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
                       chartHeight={facetChartHeight}
                       viewMode={viewMode}
                       facetCount={n}
+                      showLeftTitle={isStacked}
                       showHighchartsLegend={
                         legendMode === "perFacet" && idx === 0
                       }
