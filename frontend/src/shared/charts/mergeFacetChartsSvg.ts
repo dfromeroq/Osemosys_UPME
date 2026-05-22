@@ -115,8 +115,10 @@ export function buildCombinedFacetSvgDocument(params: {
   sliceH: number;
   /** Leyenda compartida (mismo contenido que el panel React). */
   legendItems?: FacetExportLegendItem[];
+  /** Nombres de cada faceta (escenario) para mostrar a la izquierda. */
+  facetLabels?: string[];
 }): string {
-  const { mainTitle, fragmentInnerXmls, layout, sliceW, sliceH, legendItems } = params;
+  const { mainTitle, fragmentInnerXmls, layout, sliceW, sliceH, legendItems, facetLabels } = params;
   const n = fragmentInnerXmls.length;
   const paddingX = 24;
   const gap = 16;
@@ -124,13 +126,12 @@ export function buildCombinedFacetSvgDocument(params: {
   const titleBaselineY = 60;
   const titleToChartsGap = 28;
   const chartsToLegendGap = 28;
+  /** Ancho reservado para etiquetas de faceta a la izquierda (layout column). */
+  const facetLabelWidth = 120;
 
-  let totalW: number;
-  if (layout === "row") {
-    totalW = paddingX * 2 + n * sliceW + Math.max(0, n - 1) * gap;
-  } else {
-    totalW = paddingX * 2 + sliceW;
-  }
+  const totalW: number = (layout === "row")
+    ? paddingX * 2 + n * sliceW + Math.max(0, n - 1) * gap
+    : paddingX * 2 + facetLabelWidth + gap + sliceW;
 
   const chartStartY = titleBaselineY + titleToChartsGap;
 
@@ -139,15 +140,27 @@ export function buildCombinedFacetSvgDocument(params: {
 
   if (layout === "row") {
     let x = paddingX;
-    for (const inner of fragmentInnerXmls) {
+    for (let i = 0; i < n; i += 1) {
+      const inner = fragmentInnerXmls[i]!;
+      const rawLabel: string | undefined = facetLabels?.[i];
+      const label: string = rawLabel ? escapeXml(rawLabel) : "";
+      if (label) {
+        body += `<text x="${x}" y="${chartStartY + sliceH / 2}" fill="#1e293b" font-size="22" font-weight="bold" font-family="Verdana, sans-serif" text-anchor="end" dominant-baseline="middle" transform="rotate(-90,${x},${chartStartY + sliceH / 2})">${label}</text>`;
+      }
       body += `<g transform="translate(${x},${chartStartY})">${inner}</g>`;
       x += sliceW + gap;
     }
     chartsBottomY = chartStartY + sliceH;
   } else {
     let y = chartStartY;
-    for (const inner of fragmentInnerXmls) {
-      body += `<g transform="translate(${paddingX},${y})">${inner}</g>`;
+    for (let i = 0; i < n; i += 1) {
+      const inner = fragmentInnerXmls[i]!;
+      const rawLabel: string | undefined = facetLabels?.[i];
+      const label: string = rawLabel ? escapeXml(rawLabel) : "";
+      if (label) {
+        body += `<text x="${paddingX}" y="${y + sliceH / 2}" fill="#1e293b" font-size="22" font-weight="bold" font-family="Verdana, sans-serif" text-anchor="end" dominant-baseline="middle">${label}</text>`;
+      }
+      body += `<g transform="translate(${paddingX + facetLabelWidth + gap},${y})">${inner}</g>`;
       y += sliceH + gap;
     }
     chartsBottomY = chartStartY + (n - 1) * (sliceH + gap) + sliceH;

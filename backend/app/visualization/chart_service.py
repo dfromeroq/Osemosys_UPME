@@ -3093,6 +3093,16 @@ def _is_line_series(s: Any) -> bool:
     return bool(getattr(s, "chart_type", None) == "line")
 
 
+def _filter_hidden_series(
+    series_list: list[Any],
+    hidden_names: set[str] | None,
+) -> list[Any]:
+    """Filtra series cuyo nombre está en ``hidden_names``."""
+    if not hidden_names:
+        return series_list
+    return [s for s in series_list if s.name not in hidden_names]
+
+
 def _render_stacked_bar(
     chart: ChartDataResponse,
     title: str,
@@ -3101,6 +3111,7 @@ def _render_stacked_bar(
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
     clean: bool = False,
+    hidden_series: set[str] | None = None,
 ) -> "io.BytesIO":
     """Renderiza un ChartDataResponse como gráfica de barras apiladas con matplotlib.
 
@@ -3122,7 +3133,7 @@ def _render_stacked_bar(
     fig, ax = plt.subplots(figsize=(max(12, n_cats * 0.5), 7))
 
     # Separar series en barras y líneas (respetando chart_type)
-    all_series = list(chart.series)
+    all_series = _filter_hidden_series(list(chart.series), hidden_series)
     bar_series = [s for s in all_series if not _is_line_series(s)]
     line_series = [s for s in all_series if _is_line_series(s)]
 
@@ -3241,6 +3252,7 @@ def _render_line_chart(
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
     clean: bool = False,
+    hidden_series: set[str] | None = None,
 ) -> "io.BytesIO":
     """Renderiza un ChartDataResponse como gráfica de líneas con matplotlib."""
     import io
@@ -3257,7 +3269,7 @@ def _render_line_chart(
 
     fig, ax = plt.subplots(figsize=(max(12, n_cats * 0.5), 7))
 
-    for s in chart.series:
+    for s in _filter_hidden_series(list(chart.series), hidden_series):
         values = np.array(s.data, dtype=float)
         style = _series_style_for_render(s)
         ax.plot(
@@ -3330,6 +3342,7 @@ def _render_stacked_area(
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
     clean: bool = False,
+    hidden_series: set[str] | None = None,
 ) -> "io.BytesIO":
     """Renderiza un ChartDataResponse como áreas apiladas con matplotlib.
 
@@ -3351,7 +3364,7 @@ def _render_stacked_area(
     fig, ax = plt.subplots(figsize=(max(12, n_cats * 0.5), 7))
 
     # Separar series en áreas y líneas (respetando chart_type)
-    all_series = list(chart.series)
+    all_series = _filter_hidden_series(list(chart.series), hidden_series)
     area_series = [s for s in all_series if not _is_line_series(s)]
     line_series = [s for s in all_series if _is_line_series(s)]
 
@@ -3488,6 +3501,7 @@ def render_comparison_by_year_bytes(
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
     clean: bool = False,
+    hidden_series: set[str] | None = None,
 ) -> bytes:
     """Renderiza una comparación por año (subplots, un panel por año).
 
@@ -3526,12 +3540,12 @@ def render_comparison_by_year_bytes(
     # Paleta consistente por nombre de serie a través de subplots.
     all_names: list[str] = []
     for sp in subplots:
-        for s in sp.series:
+        for s in _filter_hidden_series(list(sp.series), hidden_series):
             if s.name not in all_names:
                 all_names.append(s.name)
     name_to_color: dict[str, str] = {}
     for sp in subplots:
-        for s in sp.series:
+        for s in _filter_hidden_series(list(sp.series), hidden_series):
             if s.name not in name_to_color and getattr(s, "color", None):
                 name_to_color[s.name] = s.color  # type: ignore[assignment]
 
@@ -3543,10 +3557,12 @@ def render_comparison_by_year_bytes(
         if nc == 0 or ns == 0:
             ax.set_axis_off()
             continue
+        visible_series = _filter_hidden_series(list(sp.series), hidden_series)
+        nvs = len(visible_series)
         x = np.arange(nc)
-        width = 0.8 / ns
-        for si, s in enumerate(sp.series):
-            offset = (si - (ns - 1) / 2) * width
+        width = 0.8 / (nvs or 1)
+        for si, s in enumerate(visible_series):
+            offset = (si - (max(nvs, 1) - 1) / 2) * width
             ax.bar(
                 x + offset,
                 s.data,
@@ -3730,6 +3746,7 @@ def render_comparison_facet_figure_bytes(
     y_axis_max: float | None = None,
     series_order: list[str] | None = None,
     clean: bool = False,
+    hidden_series: set[str] | None = None,
 ) -> bytes:
     """Una sola figura: facetas en fila/columna, título global, leyenda inferior (Matplotlib).
 
@@ -3763,7 +3780,7 @@ def render_comparison_facet_figure_bytes(
     legend_order: list[tuple[str, str]] = []
     seen_names: set[str] = set()
     for facet in facets:
-        for s in facet.series:
+        for s in _filter_hidden_series(list(facet.series), hidden_series):
             if s.name not in seen_names:
                 seen_names.add(s.name)
                 legend_order.append((s.name, s.color))
@@ -3860,7 +3877,7 @@ def render_comparison_facet_figure_bytes(
         n_cats = len(categories)
         x = np.arange(n_cats, dtype=float)
 
-        facet_series = list(facet.series)
+        facet_series = _filter_hidden_series(list(facet.series), hidden_series)
         bar_series = [s for s in facet_series if not _is_line_series(s)]
         line_series = [s for s in facet_series if _is_line_series(s)]
 
@@ -3917,27 +3934,32 @@ def render_comparison_facet_figure_bytes(
             fontsize=x_fs,
             color="#1e293b",
         )
-        # Y-label: en vertical solo en el primer subplot (shared Y)
-        if layout == "vertical" and idx > 0:
-            ax.set_ylabel("")
-        else:
-            ax.set_ylabel(
-                y_label,
-                fontsize=22,
-                color="#0f172a",
-                labelpad=8,
-            )
+        ax.set_ylabel(
+            y_label,
+            fontsize=22,
+            color="#0f172a",
+            labelpad=8,
+        )
         sim_lbl = (
             facet.display_name or facet.scenario_name or f"Job {facet.job_id}"
         ).strip()
         tag_lbl = (facet.scenario_tag_name or "").strip()
         facet_title = f"{sim_lbl} — {tag_lbl}" if tag_lbl else sim_lbl
-        ax.set_title(
-            facet_title,
-            fontsize=28,
-            color="#0f172a",
-            pad=10,
-        )
+        if layout == "vertical":
+            ax.text(
+                -0.40, 0.5, facet_title,
+                transform=ax.transAxes,
+                fontsize=22, fontweight="bold",
+                va="center", ha="right",
+                color="#0f172a",
+            )
+        else:
+            ax.set_title(
+                facet_title,
+                fontsize=28,
+                color="#0f172a",
+                pad=10,
+            )
         ax.set_axisbelow(True)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
@@ -4028,7 +4050,7 @@ def render_comparison_facet_figure_bytes(
 
     line_names: set[str] = set()
     for facet in facets:
-        for s in facet.series:
+        for s in _filter_hidden_series(list(facet.series), hidden_series):
             if _is_line_series(s):
                 line_names.add(s.name)
 
@@ -4072,9 +4094,9 @@ def render_comparison_facet_figure_bytes(
     )
 
     if layout == "vertical":
-        hspace = 0.20 if n >= 4 else 0.16
+        hspace = 0.28 if n >= 4 else 0.24
         plt.subplots_adjust(
-            left=0.10,
+            left=0.35,
             right=0.995,
             top=top_margin,
             bottom=bottom_margin,
@@ -4101,6 +4123,33 @@ def render_comparison_facet_figure_bytes(
         pad_inches=0.3,
     )
     plt.close(fig)
+    return buf.getvalue()
+
+
+def render_chart_visualization_bytes(
+    chart: ChartDataResponse,
+    fmt: str = "png",
+    view_mode: str = "column",
+    *,
+    y_axis_min: float | None = None,
+    y_axis_max: float | None = None,
+    clean: bool = False,
+    hidden_series: set[str] | None = None,
+) -> bytes:
+    """Genera PNG o SVG con Matplotlib (sin navegador).
+
+    ``view_mode``: ``"column"`` | ``"line"`` | ``"area"``.
+    Soporta filtro de series ocultas vía ``hidden_series``.
+    """
+    if fmt not in ("png", "svg"):
+        raise ValueError("fmt debe ser 'png' o 'svg'")
+    title = chart.title
+    if view_mode == "line":
+        buf = _render_line_chart(chart, title, fmt=fmt, y_axis_min=y_axis_min, y_axis_max=y_axis_max, clean=clean, hidden_series=hidden_series)
+    elif view_mode == "area":
+        buf = _render_stacked_area(chart, title, fmt=fmt, y_axis_min=y_axis_min, y_axis_max=y_axis_max, clean=clean, hidden_series=hidden_series)
+    else:
+        buf = _render_stacked_bar(chart, title, fmt=fmt, y_axis_min=y_axis_min, y_axis_max=y_axis_max, clean=clean, hidden_series=hidden_series)
     return buf.getvalue()
 
 

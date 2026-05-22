@@ -287,6 +287,11 @@ def export_comparison_facet_image(
         description='JSON con datos exógenos (ExogenousDataConfig) para inyectar '
                     'como nueva serie en cada faceta.',
     ),
+    hidden_series: str | None = Query(
+        None,
+        description='Nombres de series ocultas separados por coma (series que el usuario '
+                    'ocultó en la UI y deben omitirse del render).',
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -348,6 +353,9 @@ def export_comparison_facet_image(
                 chart_service.reorder_chart_series(facet, order_list)
 
     layout = "vertical" if facet_placement == "stacked" else "horizontal"
+    hidden_set: set[str] | None = None
+    if hidden_series:
+        hidden_set = {s.strip() for s in hidden_series.split(",") if s.strip()}
 
     try:
         img_bytes = chart_service.render_comparison_facet_figure_bytes(
@@ -357,6 +365,7 @@ def export_comparison_facet_image(
             legend_title=legend_title,
             series_order=order_list,
             clean=clean,
+            hidden_series=hidden_set,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -396,6 +405,10 @@ def export_comparison_by_year_image(
         None,
         description='JSON dict {job_id: display_name} para renombrar escenarios. '
                     'Ej: \'{"1":"Esc A","2":"Esc B"}\'',
+    ),
+    hidden_series: str | None = Query(
+        None,
+        description='Nombres de series ocultas separados por coma.',
     ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -465,6 +478,10 @@ def export_comparison_by_year_image(
             for sp in cmp_data.subplots:
                 chart_service.reorder_chart_series(sp, order_list)
 
+    hidden_set: set[str] | None = None
+    if hidden_series:
+        hidden_set = {s.strip() for s in hidden_series.split(",") if s.strip()}
+
     try:
         img_bytes = chart_service.render_comparison_by_year_bytes(
             cmp_data,
@@ -472,6 +489,7 @@ def export_comparison_by_year_image(
             y_axis_min=y_axis_min,
             y_axis_max=y_axis_max,
             clean=clean,
+            hidden_series=hidden_set,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -665,6 +683,10 @@ def export_chart(
         None,
         description="Override del valor máximo del eje Y. Vacío = auto.",
     ),
+    hidden_series: str | None = Query(
+        None,
+        description='Nombres de series ocultas separados por coma.',
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -803,11 +825,14 @@ def export_chart(
         )
 
     img_fmt = "svg" if fmt == "svg" else "png"
+    hidden_set: set[str] | None = None
+    if hidden_series:
+        hidden_set = {s.strip() for s in hidden_series.split(",") if s.strip()}
     try:
         img_bytes = chart_service.render_chart_visualization_bytes(
             chart, fmt=img_fmt, view_mode=view_mode,
             y_axis_min=y_axis_min, y_axis_max=y_axis_max,
-            clean=clean,
+            clean=clean, hidden_series=hidden_set,
         )
     except Exception as e:
         logger.exception("Error renderizando gráfica para export")

@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Highcharts from './highchartsSetup';
+import { downloadChartFromServer } from './serverChartExport';
 import {
   CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS,
   EXPORTING_CONTEXT_BUTTON_DARK,
   INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
-  buildChartExportMenuItems,
   createCleanExportMenuItem,
   onHighchartsExportError,
 } from './chartExportingShared';
@@ -237,7 +237,22 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
                   createCleanExportMenuItem('svg', CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS),
                 ];
               }
-              return buildChartExportMenuItems(serverExport);
+              const { jobId, selection } = serverExport;
+              const runServer = (fmt: "png" | "svg" | "csv", opts?: { clean?: boolean }) => {
+                const hiddenSeries = Array.from(hiddenNames);
+                void downloadChartFromServer(jobId, selection, fmt, { ...opts, hiddenSeries }).catch((e: unknown) => {
+                  console.error(e);
+                  window.alert("No se pudo descargar desde el servidor.");
+                });
+              };
+              return [
+                { text: "Descargar PNG", onclick: () => runServer("png") },
+                { text: "Descargar SVG", onclick: () => runServer("svg") },
+                { text: "Descargar CSV", onclick: () => runServer("csv") },
+                "_separator_",
+                { text: "Descargar PNG (limpia)", onclick: () => runServer("png", { clean: true }) },
+                { text: "Descargar SVG (limpia)", onclick: () => runServer("svg", { clean: true }) },
+              ];
             })() as unknown as string[],
             ...EXPORTING_CONTEXT_BUTTON_DARK,
           },

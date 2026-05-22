@@ -385,8 +385,7 @@ function FacetChart({
 
     return {
       title: {
-        text: facetTitleText,
-        style: { fontSize: "14pt", fontWeight: "bold", color: "#f8fafc" },
+        text: null as unknown as string,
       },
       xAxis: {
         categories: facet.categories,
@@ -812,6 +811,9 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
       if (serverFacetExport.exogenousData) {
         payload.exogenous_data = serverFacetExport.exogenousData;
       }
+      if (hiddenSeriesNames.size > 0) {
+        payload.hidden_series = Array.from(hiddenSeriesNames).join(",");
+      }
       payload.facet_placement = facetPlacement;
       const { blob, filename } = await simulationApi.exportCompareFacet(payload, "png");
       downloadBlob(blob, filename);
@@ -935,12 +937,18 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
             }))
           : undefined;
 
+      const facetLabels = data.facets.map((f) => {
+        const simPart = f.display_name?.trim() || f.scenario_name;
+        const tagPart = f.scenario_tag_name?.trim();
+        return tagPart ? `${simPart} — ${tagPart}` : simPart;
+      });
       const doc = buildCombinedFacetSvgDocument({
         mainTitle: data.title,
         fragmentInnerXmls: innerXmls,
         layout,
         sliceW,
         sliceH,
+        facetLabels,
         ...(exportLegendItems ? { legendItems: exportLegendItems } : {}),
         ...(facetExportClean ? { clean: true } : {}),
       });
@@ -1051,36 +1059,54 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
                   }
             }
           >
-            {data.facets.map((facet, idx) => (
-              <div
-                key={facet.job_id}
-                className="min-w-0 rounded-lg border border-slate-800/80 bg-[#1e293b]/30 p-2"
-              >
-                <FacetChart
-                  facet={facet}
-                  yAxisLabel={data.yAxisLabel}
-                  sharedYAxisMax={sharedYAxisMax}
-                  syncGroup={data.title}
-                  hiddenSeriesNames={hiddenSeriesNames}
-                  onLegendToggle={handleLegendToggle}
-                  onLegendIsolate={handleLegendIsolate}
-                  onLegendRestoreAll={handleLegendRestoreAll}
-                  inverted={inverted}
-                  chartHeight={facetChartHeight}
-                  viewMode={viewMode}
-                  facetCount={n}
-                  showHighchartsLegend={
-                    legendMode === "perFacet" && idx === 0
-                  }
-                  hoveredSeriesName={
-                    useSharedLegendPanel ? effectiveLegendHover : null
-                  }
-                  facetExportInstanceId={facetExportInstanceIdRef.current!}
-                  yAxisMin={yAxisMin ?? null}
-                  yAxisMax={yAxisMax ?? null}
-                />
-              </div>
-            ))}
+            {data.facets.map((facet, idx) => {
+              const simPart2 = facet.display_name?.trim() || facet.scenario_name;
+              const tagPart2 = facet.scenario_tag_name?.trim();
+              const facetLabel = tagPart2 ? `${simPart2} — ${tagPart2}` : simPart2;
+              return (
+                <div
+                  key={facet.job_id}
+                  className="flex min-w-0 gap-2 rounded-lg border border-slate-800/80 bg-[#1e293b]/30 p-2"
+                >
+                  <div
+                    className="flex shrink-0 items-center justify-end text-right"
+                    style={{ width: "120px", minWidth: "120px" }}
+                  >
+                    <span
+                      className="text-sm font-bold leading-tight text-slate-100"
+                      style={{ fontSize: "14px", lineHeight: "1.2" }}
+                    >
+                      {facetLabel}
+                    </span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <FacetChart
+                      facet={facet}
+                      yAxisLabel={data.yAxisLabel}
+                      sharedYAxisMax={sharedYAxisMax}
+                      syncGroup={data.title}
+                      hiddenSeriesNames={hiddenSeriesNames}
+                      onLegendToggle={handleLegendToggle}
+                      onLegendIsolate={handleLegendIsolate}
+                      onLegendRestoreAll={handleLegendRestoreAll}
+                      inverted={inverted}
+                      chartHeight={facetChartHeight}
+                      viewMode={viewMode}
+                      facetCount={n}
+                      showHighchartsLegend={
+                        legendMode === "perFacet" && idx === 0
+                      }
+                      hoveredSeriesName={
+                        useSharedLegendPanel ? effectiveLegendHover : null
+                      }
+                      facetExportInstanceId={facetExportInstanceIdRef.current!}
+                      yAxisMin={yAxisMin ?? null}
+                      yAxisMax={yAxisMax ?? null}
+                    />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
         {useSharedLegendPanel ? (
