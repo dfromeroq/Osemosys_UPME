@@ -53,6 +53,8 @@ from app.schemas.scenario import (
     ScenarioExcelImportResponse,
     ScenarioExcelPreviewResponse,
     ScenarioExcelUpdateResponse,
+    ScenarioPeriodInfo,
+    ExtendScenarioPeriodResult,
     ScenarioOsemosysValueCreate,
     ScenarioOsemosysValuePublic,
     ScenarioOsemosysValueUpdate,
@@ -1748,6 +1750,55 @@ def upsert_permission(
             can_edit_direct=payload.can_edit_direct,
             can_propose=payload.can_propose,
             can_manage_values=payload.can_manage_values,
+        )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+    except ConflictError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+
+
+# ---------------------------------------------------------------------------
+#  Periodo del modelo (YearSplit) y ampliación por carry-forward
+# ---------------------------------------------------------------------------
+
+@router.get("/{scenario_id}/period-info", response_model=ScenarioPeriodInfo)
+def get_scenario_period_info(
+    scenario_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Periodo de modelado del escenario (derivado del parámetro ``YearSplit``)."""
+    try:
+        return ScenarioService.get_scenario_period_info(
+            db, scenario_id=scenario_id, current_user=current_user,
+        )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+
+
+@router.post(
+    "/{scenario_id}/extend-period",
+    response_model=ExtendScenarioPeriodResult,
+)
+def extend_scenario_period(
+    scenario_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Amplía el periodo del modelo en un año copiando ``max_year`` → ``max_year + 1``.
+
+    Elimina previamente cualquier fila existente para ``new_year`` en el
+    escenario, garantizando que el nuevo año sea una copia exacta del
+    último año actual del modelo (no quedan valores parciales heredados).
+    Requiere permiso de edición de valores (``can_manage_values``).
+    """
+    try:
+        return ScenarioService.extend_scenario_period(
+            db, scenario_id=scenario_id, current_user=current_user,
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
