@@ -411,6 +411,8 @@ COLOR_MAP_H2_CONSUMO: dict[str, str] = {
     "UPSSMRCCS": "#1d4ed8",  # azul oscuro
     # SAF (no es H₂ puro pero a veces aparece en filtros relacionados)
     "UPSSAF":    "#a3e635",  # lima — diferenciado del verde de electrólisis
+    # Grupo unificado de transporte pesado
+    "Transporte pesado": "#dc2626",  # rojo intenso
 }
 
 COLOR_MAP_BIOENERGIA: dict[str, str] = {

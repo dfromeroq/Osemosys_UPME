@@ -58,9 +58,9 @@ _PREFIJOS_IMP_LIQUIDOS_ALL = (
     "IMPDSL",
     "IMPGSL",
     "IMPJET",
-    "IMPLNG",
+    # "IMPLNG",
     "IMPLPG",
-    "IMPOIL",
+    # "IMPOIL",
 )
 
 
@@ -252,6 +252,11 @@ def _filtro_import_liquidos(df, **kw):
 def _filtro_crudo_flujos(df, **kw):
     """Importaciones y exportaciones de crudo (IMPOIL, EXPOIL)."""
     return df[df["TECHNOLOGY"].str.startswith(("IMPOIL", "EXPOIL"))]
+
+
+def _filtro_exp_oil(df, **kw):
+    """Exportación de petróleo crudo (EXPOIL)."""
+    return df[df["TECHNOLOGY"].str.startswith("EXPOIL")]
 
 
 def _filtro_ref_produccion_importaciones(df, **kw):
@@ -466,6 +471,14 @@ def _map_h2_verde_azul_gris(tech):
         return "Hidrógeno azul"
     elif t.startswith("UPSSMR"):
         return "Hidrógeno gris"
+    return t
+
+
+def _map_h2_consumo_grupo(tech):
+    """Agrupa tecnologías de consumo de H₂ del transporte pesado."""
+    t = str(tech)
+    if t in ("DEMTRAHDGSTT", "DEMTRAHDGTCK_CSG"):
+        return "Transporte pesado"
     return t
 
 
@@ -1284,7 +1297,7 @@ CONFIGS = {
         "print": "CONSUMO DE HIDRÓGENO",
         "filtro": _filtro_h2,
         "msg_sin_datos": "Sin tecnologías que consumen hidrógeno (FUEL=HDG/HDG002)",
-        "agrupar_por": "TECNOLOGIA",
+        "agrupar_por": "H2_CONSUMO",
         "color_fn": _color_h2_consumo,
         "variable_default": "UseByTechnology",
     },
@@ -1507,6 +1520,19 @@ CONFIGS = {
         "agrupar_por": "TECNOLOGIA",
         "color_fn": _color_liquidos_import,
         "variable_default": "ProductionByTechnology",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
+        "soportaPareto": True,
+    },
+    "exp_oil_consumo": {
+        "titulo": "Exportaciones — Petróleo - UseByTechnology",
+        "figura": "Figura EXP-OIL-USE",
+        "filename": "Fig_Exp_Oil_Use",
+        "print": "EXPORTACIONES DE PETRÓLEO (UseByTechnology)",
+        "filtro": _filtro_exp_oil,
+        "msg_sin_datos": "Sin datos de exportación de petróleo crudo (EXPOIL)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_liquidos_import,
+        "variable_default": "UseByTechnology",
         "allowedGroupings": ["TECNOLOGIA", "FUEL"],
         "soportaPareto": True,
     },

@@ -90,6 +90,7 @@ from app.visualization.configs import (
     NOMBRES_COMBUSTIBLES,
     _map_electrolisis_verde,
     _map_h2_verde_azul_gris,
+    _map_h2_consumo_grupo,
 )
 from app.visualization.configs_comparacion import CONFIGS_COMPARACION
 from app.visualization.catalog_reader import (
@@ -778,6 +779,9 @@ def _asignar_categoria(
 
     elif agrupacion == "ELECTROLISIS":
         df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_electrolisis_verde)
+
+    elif agrupacion == "H2_CONSUMO":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_h2_consumo_grupo)
 
     return df
 
@@ -1571,6 +1575,8 @@ def build_chart_data(
         df["COLOR"] = df["FUEL"] if "FUEL" in df.columns else "?"
     elif agrupar_col == "ELECTROLISIS":
         df["COLOR"] = df["TECHNOLOGY"].apply(_map_electrolisis_verde)
+    elif agrupar_col == "H2_CONSUMO":
+        df["COLOR"] = df["TECHNOLOGY"].apply(_map_h2_consumo_grupo)
     elif agrupar_col == "H2_PRODUCCION":
         df["COLOR"] = df["TECHNOLOGY"].apply(_map_h2_verde_azul_gris)
     elif agrupar_col == "TRANSPORTE_GRUPO":
@@ -1630,6 +1636,8 @@ def build_chart_data(
             color_fn = _color_por_region
         elif agrupar_col == "ELECTROLISIS":
             color_fn = _color_electrolisis
+        elif agrupar_col == "H2_CONSUMO":
+            color_fn = _color_h2_consumo
         else:
             color_fn = (
                 cfg.get("color_fn")
@@ -2486,6 +2494,8 @@ def _procesar_bloque_single(
         df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_modo)
     elif agrupar_col == "ELECTROLISIS":
         df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_electrolisis_verde)
+    elif agrupar_col == "H2_CONSUMO":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_h2_consumo_grupo)
     elif agrupar_col == "H2_PRODUCCION":
         df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_h2_verde_azul_gris)
     elif agrupar_col == "YEAR":
