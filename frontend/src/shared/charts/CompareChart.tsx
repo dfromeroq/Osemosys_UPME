@@ -60,8 +60,15 @@ export const CompareChart: React.FC<CompareChartProps> = ({
     return Array.from(names);
   }, [data.subplots]);
 
+  const isByYearAltMode =
+    data.subplots.length > 0 && !!data.subplots[0]?.scenario_name;
+
+  // En modo alternativo (por escenarios), siempre forzar eje Y compartido
+  // para garantizar que todos los subplots usen la misma escala.
+  const effectiveSharedYAxis = sharedYAxis || isByYearAltMode;
+
   const sharedYAxisMax = useMemo(() => {
-    if (!sharedYAxis) return 0;
+    if (!effectiveSharedYAxis) return 0;
     let globalMax = 0;
     data.subplots.forEach((subplot) => {
       const categoryCount = subplot.categories.length;
@@ -74,9 +81,20 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       }
     });
     return globalMax;
-  }, [data.subplots, sharedYAxis]);
-  const isByYearAltMode =
-    data.subplots.length > 0 && !!data.subplots[0]?.scenario_name;
+  }, [data.subplots, effectiveSharedYAxis]);
+
+  const sharedTickInterval = useMemo(() => {
+    if (!effectiveSharedYAxis || sharedYAxisMax <= 0) return undefined;
+    const targetTicks = 5;
+    const roughInterval = sharedYAxisMax / targetTicks;
+    if (roughInterval <= 0) return undefined;
+    const magnitude = Math.pow(10, Math.floor(Math.log10(roughInterval)));
+    const normalized = roughInterval / magnitude;
+    if (normalized <= 1.5) return magnitude;
+    if (normalized <= 3.5) return 2 * magnitude;
+    if (normalized <= 7.5) return 5 * magnitude;
+    return 10 * magnitude;
+  }, [sharedYAxisMax, effectiveSharedYAxis]);
   const [hiddenNames, setHiddenNames] = useState<Set<string>>(() => new Set());
   const dataSignature = allSeriesNames.join('|');
   useEffect(() => {
@@ -161,22 +179,14 @@ export const CompareChart: React.FC<CompareChartProps> = ({
     const yAxis: Highcharts.YAxisOptions[] = [];
     const series: Highcharts.SeriesOptionsType[] = [];
 
-    const totalBars = Math.max(
-      data.subplots.reduce((sum, sp) => sum + sp.categories.length, 0),
-      1,
-    );
-
-    let cumulativeLeft = 0;
+    const GAP_PCT = 2;
+    const totalGap = (numSubplots - 1) * GAP_PCT;
+    const subplotWidth = (100 - totalGap) / numSubplots;
     const legendNamesSeen = new Set<string>();
 
     data.subplots.forEach((subplot, idx) => {
-      const barFraction = subplot.categories.length / totalBars;
-      const width = barFraction * 100;
-      const rightMargin = idx < numSubplots - 1 ? 2 : 0;
-      const effectiveWidth = width - rightMargin;
-      const leftStr = `${cumulativeLeft}%`;
-      const widthStr = `${effectiveWidth}%`;
-      cumulativeLeft += width;
+      const leftStr = `${idx * (subplotWidth + GAP_PCT)}%`;
+      const widthStr = `${subplotWidth}%`;
 
       xAxis.push({
         id: `x-${idx}`,
@@ -214,21 +224,25 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         // Use shared maximum if enabled, otherwise use individual yAxisMax
         max: typeof yAxisMax === 'number'
           ? yAxisMax
-          : (sharedYAxis && sharedYAxisMax > 0 ? sharedYAxisMax : null),
+          : (effectiveSharedYAxis && sharedYAxisMax > 0 ? sharedYAxisMax : null),
+        ...(effectiveSharedYAxis && sharedYAxisMax > 0 && sharedTickInterval !== undefined
+          ? { tickInterval: sharedTickInterval }
+          : {}),
+        ...(effectiveSharedYAxis ? { endOnTick: false } : {}),
         // Grid lines always visible on all charts for visual reference
         gridLineColor: '#334155',
         gridLineWidth: 1,
         // Only show ticks on first subplot when Y-axis is shared
-        tickWidth: (!sharedYAxis || idx === 0) ? 1 : 0,
-        tickLength: (!sharedYAxis || idx === 0) ? 6 : 0,
-        tickColor: (!sharedYAxis || idx === 0) ? '#64748b' : 'transparent',
+        tickWidth: (!effectiveSharedYAxis || idx === 0) ? 1 : 0,
+        tickLength: (!effectiveSharedYAxis || idx === 0) ? 6 : 0,
+        tickColor: (!effectiveSharedYAxis || idx === 0) ? '#64748b' : 'transparent',
         // Y-axis line always visible (provides chart boundaries between scenarios)
         // lineWidth: 1,
         lineWidth: idx === 0 ? 1 : 0,
         lineColor: '#64748b',
         labels: {
           // Only show labels on first subplot when Y-axis is shared
-          enabled: !sharedYAxis || idx === 0,
+          enabled: !effectiveSharedYAxis || idx === 0,
           style: { color: '#94a3b8', fontSize: '11pt' },
           formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
             return formatAxis3Sig(this.value as number);
@@ -281,33 +295,32 @@ export const CompareChart: React.FC<CompareChartProps> = ({
     });
 
     const exportChartYAxisOptions = (() => {
-      const totalBarsExport = Math.max(
-        data.subplots.reduce((sum, sp) => sum + sp.categories.length, 0),
-        1,
-      );
-      let cumulativeLeftExport = 0;
+      const GAP_PCT = 2;
+      const totalGap = (numSubplots - 1) * GAP_PCT;
+      const subplotWidth = (100 - totalGap) / numSubplots;
       return data.subplots.map((sp, idx) => {
-        const barFraction = sp.categories.length / totalBarsExport;
-        const width = barFraction * 100;
-        const rightMargin = idx < numSubplots - 1 ? 2 : 0;
-        const effectiveWidth = width - rightMargin;
-        const leftStr = `${cumulativeLeftExport}%`;
-        const widthStr = `${effectiveWidth}%`;
-        cumulativeLeftExport += width;
+        const leftStr = `${idx * (subplotWidth + GAP_PCT)}%`;
+        const widthStr = `${subplotWidth}%`;
         return {
           left: leftStr,
           width: widthStr,
           top: '0%',
           height: '86%',
+          ...(effectiveSharedYAxis && sharedYAxisMax > 0 ? {
+            min: 0,
+            max: sharedYAxisMax,
+            ...(sharedTickInterval !== undefined ? { tickInterval: sharedTickInterval } : {}),
+            endOnTick: false,
+          } : {}),
           gridLineColor: '#e2e8f0',
           gridLineWidth: 1,
-          lineWidth: (!sharedYAxis || idx === 0) ? 1 : 0,
-          lineColor: (!sharedYAxis || idx === 0) ? '#64748b' : 'transparent',
-          tickWidth: (!sharedYAxis || idx === 0) ? 1 : 0,
-          tickLength: (!sharedYAxis || idx === 0) ? 6 : 0,
-          tickColor: (!sharedYAxis || idx === 0) ? '#64748b' : 'transparent',
+          lineWidth: (!effectiveSharedYAxis || idx === 0) ? 1 : 0,
+          lineColor: (!effectiveSharedYAxis || idx === 0) ? '#64748b' : 'transparent',
+          tickWidth: (!effectiveSharedYAxis || idx === 0) ? 1 : 0,
+          tickLength: (!effectiveSharedYAxis || idx === 0) ? 6 : 0,
+          tickColor: (!effectiveSharedYAxis || idx === 0) ? '#64748b' : 'transparent',
           labels: {
-            enabled: !sharedYAxis || idx === 0,
+            enabled: !effectiveSharedYAxis || idx === 0,
             style: { color: '#334155', fontSize: '20pt' },
           },
           title: {
@@ -436,7 +449,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, inverted, hiddenNames, yAxisMin, yAxisMax, sharedYAxisMax, isByYearAltMode, isArea]);
+  }, [data, inverted, hiddenNames, yAxisMin, yAxisMax, sharedYAxisMax, effectiveSharedYAxis, isByYearAltMode, isArea]);
 
   return (
     <div style={{ width: '100%' }}>

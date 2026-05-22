@@ -3606,6 +3606,32 @@ def render_comparison_by_year_bytes(
             if s.name not in name_to_color and getattr(s, "color", None):
                 name_to_color[s.name] = s.color  # type: ignore[assignment]
 
+    # ── Calcular el máximo global Y para compartir escala entre subplots ──
+    global_max = 0.0
+    for sp in subplots:
+        visible_series = _filter_hidden_series(list(sp.series), hidden_series)
+        nc = len(sp.categories)
+        if nc == 0:
+            continue
+        if view_mode == "area":
+            stack = np.zeros(nc)
+            for s in visible_series:
+                values = np.nan_to_num(np.array(s.data, dtype=float), nan=0.0)
+                if values.size < nc:
+                    values = np.pad(values, (0, nc - values.size))
+                stack += values[:nc]
+            if stack.size:
+                global_max = max(global_max, float(stack.max()))
+        else:
+            for s in visible_series:
+                values = np.array(s.data, dtype=float)
+                finite = values[np.isfinite(values)]
+                if finite.size:
+                    global_max = max(global_max, float(finite.max()))
+    if global_max <= 0:
+        global_max = 1.0
+    y_top = global_max * 1.12
+
     for idx, sp in enumerate(subplots):
         ax = axes[idx // cols][idx % cols]
         categories = list(sp.categories)
@@ -3665,15 +3691,12 @@ def render_comparison_by_year_bytes(
                 labelspacing=0.55,
             )
 
-    # Override del rango Y (aplica a todos los subplots por consistencia).
-    if y_axis_min is not None or y_axis_max is not None:
-        for j in range(n):
-            ax = axes[j // cols][j % cols]
-            cur_lo, cur_hi = ax.get_ylim()
-            ax.set_ylim(
-                float(y_axis_min) if y_axis_min is not None else cur_lo,
-                float(y_axis_max) if y_axis_max is not None else cur_hi,
-            )
+    # Forzar la misma escala Y en todos los subplots.
+    effective_y_lo = float(y_axis_min) if y_axis_min is not None else 0.0
+    effective_y_hi = float(y_axis_max) if y_axis_max is not None else y_top
+    for j in range(n):
+        ax = axes[j // cols][j % cols]
+        ax.set_ylim(effective_y_lo, effective_y_hi)
 
     # Ocultar axes sobrantes
     for j in range(n, rows * cols):
