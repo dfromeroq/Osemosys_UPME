@@ -545,7 +545,11 @@ export function DashboardChartCard({
             legendMode={
               (template.facet_legend_mode ?? "shared") as "shared" | "perFacet"
             }
-            viewMode={template.view_mode === "line" ? "line" : "column"}
+            viewMode={
+              template.view_mode === "line" ? "line"
+              : template.view_mode === "area" ? "area"
+              : "column"
+            }
             serverFacetExport={{ jobIds, selection }}
             compactToolbar={compactToolbar}
             yAxisMin={template.y_axis_min ?? null}
@@ -557,6 +561,7 @@ export function DashboardChartCard({
             barOrientation={
               (template.bar_orientation ?? "vertical") as "vertical" | "horizontal"
             }
+            stackType={template.view_mode === "area" ? "area" : "column"}
             yAxisMin={template.y_axis_min ?? null}
             yAxisMax={template.y_axis_max ?? null}
           />

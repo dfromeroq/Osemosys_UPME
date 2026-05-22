@@ -418,7 +418,11 @@ export function PreviewChartModal({
               legendMode={
                 (template.facet_legend_mode ?? "shared") as "shared" | "perFacet"
               }
-              viewMode={template.view_mode === "line" ? "line" : "column"}
+              viewMode={
+                template.view_mode === "line" ? "line"
+                : template.view_mode === "area" ? "area"
+                : "column"
+              }
               serverFacetExport={{
                 jobIds: jobIds.filter((j): j is number => j != null),
                 selection: selection!,
@@ -431,6 +435,7 @@ export function PreviewChartModal({
               barOrientation={
                 (template.bar_orientation ?? "vertical") as "vertical" | "horizontal"
               }
+              stackType={template.view_mode === "area" ? "area" : "column"}
             />
           ) : template.compare_mode === "line-total" && lineTotal ? (
             <LineChart
