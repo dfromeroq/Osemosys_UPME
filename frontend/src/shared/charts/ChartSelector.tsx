@@ -208,7 +208,7 @@ const AGRUPACION_OPTIONS: { value: string; label: string; description: string }[
   },
   {
     value: 'ELECTROLISIS',
-    label: 'Electrólisis Verde',
+    label: 'Hidrógeno Verde',
     description: 'Agrupa electrolizadores (UPSALK + UPSPEM) en una sola categoría',
   },
 ];
