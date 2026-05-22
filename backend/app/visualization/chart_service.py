@@ -90,6 +90,7 @@ from app.visualization.configs import (
     NOMBRES_COMBUSTIBLES,
     _map_electrolisis_verde,
     _map_h2_verde_azul_gris,
+    _map_h2_consumo_grupo,
 )
 from app.visualization.configs_comparacion import CONFIGS_COMPARACION
 from app.visualization.catalog_reader import (
@@ -778,6 +779,9 @@ def _asignar_categoria(
 
     elif agrupacion == "ELECTROLISIS":
         df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_electrolisis_verde)
+
+    elif agrupacion == "H2_CONSUMO":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_h2_consumo_grupo)
 
     return df
 
@@ -1571,6 +1575,8 @@ def build_chart_data(
         df["COLOR"] = df["FUEL"] if "FUEL" in df.columns else "?"
     elif agrupar_col == "ELECTROLISIS":
         df["COLOR"] = df["TECHNOLOGY"].apply(_map_electrolisis_verde)
+    elif agrupar_col == "H2_CONSUMO":
+        df["COLOR"] = df["TECHNOLOGY"].apply(_map_h2_consumo_grupo)
     elif agrupar_col == "H2_PRODUCCION":
         df["COLOR"] = df["TECHNOLOGY"].apply(_map_h2_verde_azul_gris)
     elif agrupar_col == "TRANSPORTE_GRUPO":
@@ -1630,6 +1636,8 @@ def build_chart_data(
             color_fn = _color_por_region
         elif agrupar_col == "ELECTROLISIS":
             color_fn = _color_electrolisis
+        elif agrupar_col == "H2_CONSUMO":
+            color_fn = _color_h2_consumo
         else:
             color_fn = (
                 cfg.get("color_fn")
@@ -2486,6 +2494,8 @@ def _procesar_bloque_single(
         df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_modo)
     elif agrupar_col == "ELECTROLISIS":
         df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_electrolisis_verde)
+    elif agrupar_col == "H2_CONSUMO":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_h2_consumo_grupo)
     elif agrupar_col == "H2_PRODUCCION":
         df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_h2_verde_azul_gris)
     elif agrupar_col == "YEAR":
@@ -3911,7 +3921,7 @@ def render_comparison_facet_figure_bytes(
     max_leg_label_len = max((len(lab) for lab in legend_labels_full), default=0)
 
     # Leyenda: **siempre** texto completo; menos columnas si los nombres son largos.
-    LEG_NCOL_MAX = 5
+    LEG_NCOL_MAX = 8
     if max_leg_label_len > 48:
         leg_ncol = max(1, min(2, n_leg_items))
     elif max_leg_label_len > 34:
@@ -3929,20 +3939,13 @@ def render_comparison_facet_figure_bytes(
         5.0,
         min(9.0, (fig_w_target - inter_panel * max(0, n - 1)) / n),
     )
-    # Leyenda más ancha en figuras anchas — respetando cap de 5 cols.
-    if max_leg_label_len <= 40:
-        leg_ncol = min(
-            n_leg_items,
-            max(leg_ncol, min(LEG_NCOL_MAX, 3 + max(0, int(fig_w_target // 2.6)))),
-        )
-        n_leg_rows = max(1, (n_leg_items + leg_ncol - 1) // leg_ncol)
 
     leg_font_estimate = (
-        21.0
+        16.0
         if max_leg_label_len > 52 or n_leg_items > 14
-        else (21.6 if max_leg_label_len > 36 or n_leg_items > 10 else 22.8)
+        else (17.0 if max_leg_label_len > 36 or n_leg_items > 10 else 18.0)
     )
-    leg_font_estimate = float(min(leg_font_estimate, 23.5))
+    leg_font_estimate = float(min(leg_font_estimate, 19.0))
 
     title_band_inch = 1.25
     x_label_inch = 1.10
@@ -3952,15 +3955,15 @@ def render_comparison_facet_figure_bytes(
     legend_h_inch = line_h_inch * n_leg_rows + 0.12
     bottom_margin_inch = legend_pad_inch + legend_h_inch + gap_inch + x_label_inch
 
-    panel_h_inch = max(4.0, w_per_facet * 0.55)
-
     if layout == "vertical":
-        fig_w = max(9.0, w_per_facet)
+        panel_h_inch = max(4.0, w_per_facet * 0.45)
+        fig_w = max(14.0, min(w_per_facet + 4.0, 18.0))
         fig_h = panel_h_inch * n + inter_panel * max(0, n - 1) + title_band_inch + bottom_margin_inch
-        fig_h = float(min(max(fig_h, 6.0), 20.0))
+        fig_h = float(min(max(fig_h, 6.0), 26.0))
         fig, axes = plt.subplots(n, 1, figsize=(fig_w, fig_h), squeeze=False)
         facet_axes = axes[:, 0]
     else:
+        panel_h_inch = max(4.0, w_per_facet * 0.55)
         fig_w = w_per_facet * n + inter_panel * max(0, n - 1)
         fig_w = max(9.0, fig_w)
         fig_h = panel_h_inch + title_band_inch + bottom_margin_inch
@@ -4080,7 +4083,7 @@ def render_comparison_facet_figure_bytes(
         facet_title = f"{sim_lbl} — {tag_lbl}" if tag_lbl else sim_lbl
         if layout == "vertical":
             ax.text(
-                -0.40, 0.5, facet_title,
+                -0.20, 0.5, facet_title,
                 transform=ax.transAxes,
                 fontsize=22, fontweight="bold",
                 va="center", ha="right",
@@ -4237,16 +4240,17 @@ def render_comparison_facet_figure_bytes(
         fontsize=leg_font,
         frameon=False,
         labelcolor="#0f172a",
-        handlelength=1.0,
-        handletextpad=0.6,
-        columnspacing=1.85,
-        labelspacing=0.45,
+        handlelength=0.8,
+        handletextpad=0.4,
+        columnspacing=1.2,
+        labelspacing=0.28,
     )
 
     if layout == "vertical":
+        left_margin = max(0.15, min(0.35, 3.0 / fig_w))
         hspace = 0.28 if n >= 4 else 0.24
         plt.subplots_adjust(
-            left=0.35,
+            left=left_margin,
             right=0.995,
             top=top_margin,
             bottom=bottom_margin,

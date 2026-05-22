@@ -92,7 +92,7 @@ COLOR_BASE_FAMILIA = {
     "HIDRO": "#1F77B4",  # azul hidro
     "EOLICA": "#2CA02C",  # verde eólico
     "TERMICA_FOSIL": "#2B2B2B",  # casi negro (carbón/gas)
-    "NUCLEAR": "#7B3F98",  # violeta nuclear
+    "NUCLEAR": "#289fa3",  # azul nuclear
     "BIOMASA_RESIDUOS": "#8C6D31",
     "OTRAS": "#17BECF",  # cian técnico
 }
@@ -160,6 +160,7 @@ COLOR_MAP_PWR["PWRSOLRTP_ZNI"] = "#cc9b00"
 COLOR_MAP_PWR["PWRSOLUGE_BAT"] = "#ff9901"
 COLOR_MAP_PWR["PWRSOLUPE"] = "#feefa2"
 COLOR_MAP_PWR["PWRSOLUGE"] = "#feefa2"
+COLOR_MAP_PWR["PWRNUC"] = "#289fa3"
 COLOR_MAP_PWR["PWRHYDROR"] = "#9dc2e6"
 COLOR_MAP_PWR["PWRHYDROR_NDC"] = "#9dc2e6"
 COLOR_MAP_PWR["PWRHYDDAM"] = "#4572c5"
@@ -411,6 +412,10 @@ COLOR_MAP_H2_CONSUMO: dict[str, str] = {
     "UPSSMRCCS": "#1d4ed8",  # azul oscuro
     # SAF (no es H₂ puro pero a veces aparece en filtros relacionados)
     "UPSSAF":    "#a3e635",  # lima — diferenciado del verde de electrólisis
+    # Grupo unificado de transporte pesado
+    "Transporte pesado": "#dc2626",  # rojo intenso
+    # Grupo unificado de residuos sólidos industriales
+    "Residuos Sólidos": "#15803d",  # verde bosque — bioenergía/residuos
 }
 
 COLOR_MAP_BIOENERGIA: dict[str, str] = {

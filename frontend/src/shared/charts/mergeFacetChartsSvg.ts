@@ -65,16 +65,16 @@ function buildSharedLegendSvgBlock(
 
   const maxX = totalW - paddingX;
   let x = paddingX;
-  let rowY = legendHeaderBaselineY + 18;
-  const lineHeight = 22;
-  const charW = 6.5;
-  const markerSize = 10;
-  const markerGap = 8;
-  const itemPadX = 14;
+  let rowY = legendHeaderBaselineY + 16;
+  const lineHeight = 18;
+  const charW = 5.8;
+  const markerSize = 8;
+  const markerGap = 5;
+  const itemPadX = 10;
 
   const parts: string[] = [];
   parts.push(
-    `<text x="${paddingX}" y="${legendHeaderBaselineY}" fill="#64748b" font-size="20" font-weight="normal" font-family="Verdana, sans-serif" letter-spacing="0.06em">LEYENDA (TODAS LAS GRÁFICAS)</text>`,
+    `<text x="${paddingX}" y="${legendHeaderBaselineY}" fill="#64748b" font-size="16" font-weight="normal" font-family="Verdana, sans-serif" letter-spacing="0.04em">LEYENDA (TODAS LAS GRÁFICAS)</text>`,
   );
 
   for (const item of items) {
@@ -93,10 +93,10 @@ function buildSharedLegendSvgBlock(
 
     parts.push(`<g opacity="${opacity}">`);
     parts.push(
-      `<rect x="${x}" y="${rowY - markerSize + 3}" width="${markerSize}" height="${markerSize}" rx="2" fill="${markFillEsc}" stroke="#cbd5e1" stroke-width="0.75"/>`,
+      `<rect x="${x}" y="${rowY - markerSize + 2}" width="${markerSize}" height="${markerSize}" rx="2" fill="${markFillEsc}" stroke="#cbd5e1" stroke-width="0.75"/>`,
     );
     parts.push(
-      `<text x="${x + markerSize + markerGap}" y="${rowY}" fill="${textFill}" font-size="20" font-family="Verdana, sans-serif"${deco}>${nameEsc}</text>`,
+      `<text x="${x + markerSize + markerGap}" y="${rowY}" fill="${textFill}" font-size="16" font-family="Verdana, sans-serif"${deco}>${nameEsc}</text>`,
     );
     parts.push(`</g>`);
     x += itemW + itemPadX;
@@ -121,11 +121,11 @@ export function buildCombinedFacetSvgDocument(params: {
   const { mainTitle, fragmentInnerXmls, layout, sliceW, sliceH, legendItems, facetLabels } = params;
   const n = fragmentInnerXmls.length;
   const paddingX = 24;
-  const gap = 16;
-  const bottomPad = 24;
-  const titleBaselineY = 60;
-  const titleToChartsGap = 28;
-  const chartsToLegendGap = 28;
+  const gap = 14;
+  const bottomPad = 20;
+  const titleBaselineY = 54;
+  const titleToChartsGap = 24;
+  const chartsToLegendGap = 22;
   /** Ancho reservado para etiquetas de faceta a la izquierda (layout column). */
   const facetLabelWidth = 120;
 

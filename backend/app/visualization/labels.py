@@ -495,9 +495,9 @@ DISPLAY_NAMES: dict[str, str] = {
     "DEMINDNGSFUR_LOW": "Ind. GN Horno (Baja)",
     "DEMINDNGSFUR_MID": "Ind. GN Horno (Media)",
     # ── Demanda: Industrial — Residuos ────────────────────────────────────
-    "DEMINDWASBOI_HIG": "Residuos/Biomasa",
-    "DEMINDWASBOI_MID": "Residuos/Biomasa",
-    "DEMINDWASBOI_LOW": "Residuos/Biomasa",
+    "DEMINDWASBOI_HIG": "Residuos Sólidos",
+    "DEMINDWASBOI_MID": "Residuos Sólidos",
+    "DEMINDWASBOI_LOW": "Residuos Sólidos",
     "DEMINDWASFUR_HIG": "Residuos Sólidos",
     "DEMINDWASFUR_LOW": "Residuos Sólidos",
     "DEMINDWASFUR_MID": "Residuos Sólidos",
