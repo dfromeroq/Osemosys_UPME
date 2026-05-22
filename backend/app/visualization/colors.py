@@ -413,6 +413,8 @@ COLOR_MAP_H2_CONSUMO: dict[str, str] = {
     "UPSSAF":    "#a3e635",  # lima — diferenciado del verde de electrólisis
     # Grupo unificado de transporte pesado
     "Transporte pesado": "#dc2626",  # rojo intenso
+    # Grupo unificado de residuos sólidos industriales
+    "Residuos Sólidos": "#15803d",  # verde bosque — bioenergía/residuos
 }
 
 COLOR_MAP_BIOENERGIA: dict[str, str] = {

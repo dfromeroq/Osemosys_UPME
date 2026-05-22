@@ -475,10 +475,19 @@ def _map_h2_verde_azul_gris(tech):
 
 
 def _map_h2_consumo_grupo(tech):
-    """Agrupa tecnologías de consumo de H₂ del transporte pesado."""
+    """Agrupa tecnologías de consumo de H₂ del transporte pesado y residuos sólidos."""
     t = str(tech)
     if t in ("DEMTRAHDGSTT", "DEMTRAHDGTCK_CSG"):
         return "Transporte pesado"
+    if t in (
+        "DEMINDWASBOI_HIG",
+        "DEMINDWASBOI_MID",
+        "DEMINDWASBOI_LOW",
+        "DEMINDWASFUR_HIG",
+        "DEMINDWASFUR_LOW",
+        "DEMINDWASFUR_MID",
+    ):
+        return "Residuos Sólidos"
     return t
 
 
