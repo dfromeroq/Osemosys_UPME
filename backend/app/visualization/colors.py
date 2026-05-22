@@ -364,7 +364,7 @@ def _color_por_grupo_fijo(df, columna: str = "COLOR"):
 COLOR_MAP_ELECTROLISIS: dict[str, str] = {
     "UPSALK": "#16a34a",  # Electrólisis Alcalina — verde medio
     "UPSPEM": "#22c55e",  # Electrólisis PEM — verde claro
-    "Electrólisis Verde": "#22c55e",  # Grupo unificado — verde PEM
+    "Hidrógeno Verde": "#22c55e",  # Grupo unificado — verde PEM
 }
 
 # Producción de H₂ por tipo (clasificación cromática del H₂):

@@ -419,7 +419,7 @@ def _filtro_oferta_bioenergia(df, **kw):
     ]
 
 
-_H2_EXCLUIR = {"UPSHDGRST"}
+_H2_EXCLUIR = {"UPSHDGRST", "DEMTRAHDGTAX"}
 
 
 def _filtro_h2(df, **kw):
@@ -453,7 +453,7 @@ def _map_electrolisis_verde(tech):
     """Map electrolyzer technologies to unified 'Electrólisis Verde' label."""
     t = str(tech)
     if t.startswith("UPSALK") or t.startswith("UPSPEM"):
-        return "Electrólisis Verde"
+        return "Hidrógeno Verde"
     return t
 
 
