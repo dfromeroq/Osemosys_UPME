@@ -282,6 +282,11 @@ def export_comparison_facet_image(
         description='JSON dict {job_id: display_name} para renombrar escenarios. '
                     'Ej: \'{"1":"Esc A","2":"Esc B"}\'',
     ),
+    exogenous_data: str | None = Query(
+        None,
+        description='JSON con datos exógenos (ExogenousDataConfig) para inyectar '
+                    'como nueva serie en cada faceta.',
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -326,6 +331,12 @@ def export_comparison_facet_image(
 
     if not facet_payload.facets or not any(f.series for f in facet_payload.facets):
         raise HTTPException(status_code=404, detail="Sin datos para exportar con los filtros actuales")
+
+    # Inyectar datos exógenos (ej: Refinerías) antes del render
+    if exogenous_data:
+        facet_payload = chart_service._inject_exogenous_data_into_facets(
+            facet_payload, exogenous_data
+        )
 
     # Reorden custom de series — aplica a cada faceta para que el PNG/SVG
     # exportado coincida con el orden elegido por el usuario en la UI.

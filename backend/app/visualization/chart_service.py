@@ -13,6 +13,7 @@ Funciones públicas:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from typing import Any
@@ -2229,6 +2230,88 @@ def build_comparison_facet_data(
         title=title,
         facets=facets,
         yAxisLabel=y_label,
+    )
+
+
+def _inject_exogenous_data_into_facets(
+    facet_response: CompareChartFacetResponse,
+    exogenous_data_json: str,
+) -> CompareChartFacetResponse:
+    """Inyecta datos exógenos (ej: Refinerías) como nueva serie en cada facet.
+
+    Espeja la lógica de ``injectExogenousDataFacet`` en el frontend.
+    Recibe el JSON tal cual lo envía el frontend (``ExogenousDataConfig``).
+    """
+    try:
+        exo = json.loads(exogenous_data_json)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return facet_response
+
+    if not isinstance(exo, dict):
+        return facet_response
+    if not exo.get("active"):
+        return facet_response
+    scenarios = exo.get("scenarios", [])
+    if not scenarios:
+        return facet_response
+
+    category_label = exo.get("categoryLabel", "Refinerías")
+    color = exo.get("color", "#808080")
+
+    exo_by_job: dict[int, dict[int, float]] = {}
+    for s in scenarios:
+        jid = s.get("jobId")
+        if jid is None:
+            continue
+        data_pairs = s.get("data", [])
+        exo_by_job[int(jid)] = {int(k): float(v) for k, v in data_pairs if k is not None}
+
+    new_facets: list[FacetData] = []
+    for facet in facet_response.facets:
+        exo_map = exo_by_job.get(facet.job_id)
+        if not exo_map:
+            new_facets.append(facet)
+            continue
+        ref_data: list[float | None] = []
+        has_any = False
+        for cat in facet.categories:
+            try:
+                year = int(cat)
+            except (ValueError, TypeError):
+                ref_data.append(None)
+                continue
+            val = exo_map.get(year)
+            if val is not None:
+                ref_data.append(val)
+                has_any = True
+            else:
+                ref_data.append(None)
+        if not has_any:
+            new_facets.append(facet)
+            continue
+        new_facets.append(
+            FacetData(
+                scenario_name=facet.scenario_name,
+                job_id=facet.job_id,
+                display_name=facet.display_name,
+                scenario_tag_name=facet.scenario_tag_name,
+                categories=facet.categories,
+                series=[
+                    *facet.series,
+                    ChartSeries(
+                        name=category_label,
+                        data=ref_data,
+                        color=color,
+                        stack="default",
+                    ),
+                ],
+            )
+        )
+
+    return CompareChartFacetResponse(
+        title=facet_response.title,
+        facets=new_facets,
+        yAxisLabel=facet_response.yAxisLabel,
     )
 
 
