@@ -1249,4 +1249,33 @@ export const scenariosApi = {
     httpClient.get<UdcConfig>(`/scenarios/${scenarioId}/udc-config`).then((r) => r.data),
   updateUdcConfig: (scenarioId: number, config: UdcConfig) =>
     httpClient.put<UdcConfig>(`/scenarios/${scenarioId}/udc-config`, config).then((r) => r.data),
+
+  /** Periodo de modelado del escenario (derivado de YearSplit). */
+  getScenarioPeriodInfo: (scenarioId: number) =>
+    httpClient
+      .get<ScenarioPeriodInfo>(`/scenarios/${scenarioId}/period-info`)
+      .then((r) => r.data),
+
+  /**
+   * Amplía el periodo del modelo en un año por carry-forward del último año
+   * actual (copia de `max_year` → `max_year + 1`). Borra previamente cualquier
+   * fila existente para el nuevo año, así el resultado es una copia exacta.
+   */
+  extendScenarioPeriod: (scenarioId: number) =>
+    httpClient
+      .post<ExtendScenarioPeriodResult>(`/scenarios/${scenarioId}/extend-period`)
+      .then((r) => r.data),
+};
+
+export type ScenarioPeriodInfo = {
+  min_year: number | null;
+  max_year: number | null;
+  year_split_rows: number;
+  year_count: number;
+};
+
+export type ExtendScenarioPeriodResult = {
+  previous_max_year: number;
+  new_year: number;
+  rows_added: number;
 };
