@@ -2995,12 +2995,15 @@ def export_all_charts_zip(
     un: str = "PJ",
     fmt: str = "svg",
     *,
+    view_mode: str = "column",
     clean: bool = False,
 ) -> "io.BytesIO":
     """Genera un ZIP con todas las gráficas renderizadas como SVG o PNG.
 
     Para configs de capacidad genera 3 figuras (Total, Nueva, Acumulada).
     Retorna un BytesIO listo para streaming.
+
+    ``view_mode``: ``"column"`` (default), ``"line"`` o ``"area"``.
 
     Si ``clean=True`` las gráficas se renderizan sin título ni etiquetas
     numéricas sobre las barras.
@@ -3049,12 +3052,21 @@ def export_all_charts_zip(
                     charts_to_render.append((label, chart))
 
             for chart_label, chart_data in charts_to_render:
-                img_buf = _render_stacked_bar(
-                    chart_data,
-                    chart_label,
-                    fmt=ext,
-                    clean=clean,
-                )
+                if view_mode == "line":
+                    img_buf = _render_line_chart(
+                        chart_data, chart_label,
+                        fmt=ext, clean=clean,
+                    )
+                elif view_mode == "area":
+                    img_buf = _render_stacked_area(
+                        chart_data, chart_label,
+                        fmt=ext, clean=clean,
+                    )
+                else:
+                    img_buf = _render_stacked_bar(
+                        chart_data, chart_label,
+                        fmt=ext, clean=clean,
+                    )
                 safe_name = _safe_filename(chart_label)
                 if clean:
                     safe_name += "_clean"
@@ -3242,6 +3254,46 @@ def _render_stacked_bar(
     plt.close(fig)
     buf.seek(0)
     return buf
+
+
+def _series_style_for_render(s: ChartSeries) -> dict:
+    """Produce kwargs de estilo para ax.plot() a partir de atributos opcionales de la serie.
+
+    Soporta:
+    - ``lineStyle``: estilo de línea (``"solid"``, ``"dashed"``, ``"dotted"``, etc.)
+    - ``markerSymbol``: símbolo del marcador (``"circle"``, ``"diamond"``, ``"square"``, etc.)
+    - ``markerRadius``: tamaño del marcador
+    - ``lineWidth``: ancho de línea
+    """
+    style: dict = {}
+    ls = getattr(s, "lineStyle", None)
+    if ls and isinstance(ls, str):
+        dash_map = {
+            "solid": "-", "dashed": "--", "dotted": ":", "dashdot": "-.",
+            "ShortDash": "--", "ShortDot": ":", "ShortDashDot": "-.",
+            "LongDash": "--",
+        }
+        style["linestyle"] = dash_map.get(ls, ls)
+    ms = getattr(s, "markerSymbol", None)
+    if ms and isinstance(ms, str) and ms != "none":
+        marker_map = {
+            "circle": "o", "diamond": "D", "square": "s", "triangle": "^",
+            "triangle-down": "v", "cross": "x", "plus": "+",
+        }
+        style["marker"] = marker_map.get(ms, ms)
+    mr = getattr(s, "markerRadius", None)
+    if mr is not None:
+        try:
+            style["markersize"] = float(mr)
+        except (ValueError, TypeError):
+            pass
+    lw = getattr(s, "lineWidth", None)
+    if lw is not None:
+        try:
+            style["linewidth"] = float(lw)
+        except (ValueError, TypeError):
+            pass
+    return style
 
 
 def _render_line_chart(
@@ -3498,6 +3550,7 @@ def render_comparison_by_year_bytes(
     data: CompareChartResponse,
     fmt: str = "svg",
     *,
+    view_mode: str = "column",
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
     clean: bool = False,
@@ -3505,7 +3558,11 @@ def render_comparison_by_year_bytes(
 ) -> bytes:
     """Renderiza una comparación por año (subplots, un panel por año).
 
-    Cada subplot muestra barras agrupadas (una barra por escenario).
+    ``view_mode``:
+    - ``"column"`` (default): barras agrupadas (una barra por escenario).
+    - ``"area"``: áreas apiladas (aporta por escenario dentro de cada categoría).
+    - ``"line"``: líneas (un trazado por escenario).
+
     Si ``clean=True``, omite el título general.
     """
     if fmt not in ("png", "svg"):
@@ -3560,16 +3617,30 @@ def render_comparison_by_year_bytes(
         visible_series = _filter_hidden_series(list(sp.series), hidden_series)
         nvs = len(visible_series)
         x = np.arange(nc)
-        width = 0.8 / (nvs or 1)
-        for si, s in enumerate(visible_series):
-            offset = (si - (max(nvs, 1) - 1) / 2) * width
-            ax.bar(
-                x + offset,
-                s.data,
-                width=width,
-                label=s.name,
-                color=name_to_color.get(s.name) or getattr(s, "color", None),
-            )
+        if view_mode == "area":
+            ys = [
+                np.nan_to_num(np.array(s.data, dtype=float), nan=0.0)
+                for s in reversed(visible_series)
+            ]
+            labels = [s.name for s in reversed(visible_series)]
+            colors = [name_to_color.get(s.name) or getattr(s, "color", None) for s in reversed(visible_series)]
+            ax.stackplot(x, ys, labels=labels, colors=colors, alpha=0.9, linewidth=0.5, edgecolor="white")
+        elif view_mode == "line":
+            for s in visible_series:
+                values = np.array(s.data, dtype=float)
+                ax.plot(x, values, label=s.name, color=name_to_color.get(s.name) or getattr(s, "color", None),
+                        linewidth=2.0, marker="o", markersize=4)
+        else:
+            width = 0.8 / (nvs or 1)
+            for si, s in enumerate(visible_series):
+                offset = (si - (max(nvs, 1) - 1) / 2) * width
+                ax.bar(
+                    x + offset,
+                    s.data,
+                    width=width,
+                    label=s.name,
+                    color=name_to_color.get(s.name) or getattr(s, "color", None),
+                )
         ax.set_title(f"Año {sp.year}", fontsize=22)
         ax.set_xticks(x)
         ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
@@ -3741,6 +3812,7 @@ def render_comparison_facet_figure_bytes(
     fmt: str = "png",
     *,
     layout: str = "horizontal",
+    view_mode: str = "column",
     legend_title: str | None = None,
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
@@ -3752,6 +3824,11 @@ def render_comparison_facet_figure_bytes(
 
     ``layout`` puede ser ``"horizontal"`` (1 fila × N columnas) o
     ``"vertical"`` (N filas × 1 columna).
+
+    ``view_mode``:
+    - ``"column"`` (default): barras apiladas.
+    - ``"area"``: áreas apiladas.
+    - ``"line"``: líneas (un trazado por serie).
 
     Prioriza **legibilidad**: misma escala Y entre escenarios, tipografía clara, leyenda
     con marco y números formateados en ejes y totales de barra cuando aportan.
@@ -3881,42 +3958,75 @@ def render_comparison_facet_figure_bytes(
         bar_series = [s for s in facet_series if not _is_line_series(s)]
         line_series = [s for s in facet_series if _is_line_series(s)]
 
-        # Barras apiladas
-        bottom = np.zeros(n_cats, dtype=float)
-        for s in reversed(bar_series):
-            raw = np.array(s.data, dtype=float)
-            if raw.size < n_cats:
-                raw = np.pad(raw, (0, n_cats - int(raw.size)))
-            elif raw.size > n_cats:
-                raw = raw[:n_cats]
-            values = np.nan_to_num(raw, nan=0.0, posinf=0.0, neginf=0.0)
-            ax.bar(
-                x,
-                values,
-                bottom=bottom,
-                color=s.color,
-                width=0.74,
-                edgecolor="#ffffff",
-                linewidth=0.45,
-            )
-            bottom = bottom + values
+        # Render según view_mode
+        facet_bar_max = 0.0
+        if view_mode == "area":
+            # Áreas apiladas: todas las series (bar + line) como áreas
+            area_series = list(reversed(facet_series))
+            ys = []
+            for s in area_series:
+                raw = np.array(s.data, dtype=float)
+                if raw.size < n_cats:
+                    raw = np.pad(raw, (0, n_cats - int(raw.size)))
+                elif raw.size > n_cats:
+                    raw = raw[:n_cats]
+                ys.append(np.nan_to_num(raw, nan=0.0, posinf=0.0, neginf=0.0))
+            labels = [s.name for s in area_series]
+            colors = [s.color for s in area_series]
+            ax.stackplot(x, ys, labels=labels, colors=colors, alpha=0.9, linewidth=0.5, edgecolor="white")
+            for v in ys:
+                facet_bar_max = max(facet_bar_max, float(np.max(v)))
+            stack_tops.append(np.sum(ys, axis=0))
+            line_maxes.append(0.0)
+        elif view_mode == "line":
+            # Líneas: todas las series como líneas
+            for s in facet_series:
+                raw = np.array(s.data, dtype=float)
+                if raw.size < n_cats:
+                    raw = np.pad(raw, (0, n_cats - int(raw.size)))
+                elif raw.size > n_cats:
+                    raw = raw[:n_cats]
+                values = np.nan_to_num(raw, nan=float("nan"), posinf=float("nan"), neginf=float("nan"))
+                ax.plot(x, values, color=s.color, linewidth=2.0, marker="o", markersize=4)
+            stack_tops.append(np.zeros(n_cats))
+            line_maxes.append(0.0)
+        else:
+            # Barras apiladas (comportamiento original)
+            bottom = np.zeros(n_cats, dtype=float)
+            for s in reversed(bar_series):
+                raw = np.array(s.data, dtype=float)
+                if raw.size < n_cats:
+                    raw = np.pad(raw, (0, n_cats - int(raw.size)))
+                elif raw.size > n_cats:
+                    raw = raw[:n_cats]
+                values = np.nan_to_num(raw, nan=0.0, posinf=0.0, neginf=0.0)
+                facet_bar_max = max(facet_bar_max, float(np.max(values)))
+                ax.bar(
+                    x,
+                    values,
+                    bottom=bottom,
+                    color=s.color,
+                    width=0.74,
+                    edgecolor="#ffffff",
+                    linewidth=0.45,
+                )
+                bottom = bottom + values
+            stack_tops.append(bottom.copy())
 
-        stack_tops.append(bottom.copy())
-
-        # Líneas sobre las barras
-        facet_line_max = 0.0
-        for s in line_series:
-            raw = np.array(s.data, dtype=float)
-            if raw.size < n_cats:
-                raw = np.pad(raw, (0, n_cats - int(raw.size)))
-            elif raw.size > n_cats:
-                raw = raw[:n_cats]
-            values = np.nan_to_num(raw, nan=float("nan"), posinf=float("nan"), neginf=float("nan"))
-            ax.plot(x, values, color=s.color, linewidth=2.5, marker="o", markersize=4)
-            finite_values = values[np.isfinite(values)]
-            if finite_values.size:
-                facet_line_max = max(facet_line_max, float(finite_values.max()))
-        line_maxes.append(facet_line_max)
+            # Líneas sobre las barras
+            facet_line_max = 0.0
+            for s in line_series:
+                raw = np.array(s.data, dtype=float)
+                if raw.size < n_cats:
+                    raw = np.pad(raw, (0, n_cats - int(raw.size)))
+                elif raw.size > n_cats:
+                    raw = raw[:n_cats]
+                values = np.nan_to_num(raw, nan=float("nan"), posinf=float("nan"), neginf=float("nan"))
+                ax.plot(x, values, color=s.color, linewidth=2.5, marker="o", markersize=4)
+                finite_values = values[np.isfinite(values)]
+                if finite_values.size:
+                    facet_line_max = max(facet_line_max, float(finite_values.max()))
+            line_maxes.append(facet_line_max)
 
         ax.set_xticks(x)
         x_step = _facet_x_axis_label_step(categories)
@@ -3996,7 +4106,7 @@ def render_comparison_facet_figure_bytes(
         global_max = 1.0
     y_top = global_max * 1.12
 
-    show_stack_totals = all(len(b) <= 18 for b in stack_tops)
+    show_stack_totals = view_mode != "line" and all(len(b) <= 18 for b in stack_tops)
 
     effective_y_lo = float(y_axis_min) if y_axis_min is not None else 0.0
     effective_y_hi = float(y_axis_max) if y_axis_max is not None else y_top
@@ -4048,30 +4158,47 @@ def render_comparison_facet_figure_bytes(
 
     from matplotlib.lines import Line2D as _Line2D
 
-    line_names: set[str] = set()
-    for facet in facets:
-        for s in _filter_hidden_series(list(facet.series), hidden_series):
-            if _is_line_series(s):
-                line_names.add(s.name)
-
     handles = []
+    is_line_mode = view_mode == "line"
     for name, c in legend_order:
-        if name in line_names:
+        if is_line_mode:
             handles.append(
                 _Line2D(
                     [0], [0],
-                    color=c, linewidth=2.5, marker="o", markersize=5,
+                    color=c, linewidth=2.0, marker="o", markersize=5,
                     markeredgecolor=c, markerfacecolor=c,
                 )
             )
-        else:
+        elif view_mode == "area":
             handles.append(
                 _Line2D(
                     [0], [0],
-                    marker="o", color=c, linestyle="None",
+                    marker="s", color=c, linestyle="None",
                     markersize=10, markerfacecolor=c, markeredgecolor=c,
                 )
             )
+        else:
+            line_names: set[str] = set()
+            for facet in facets:
+                for s in _filter_hidden_series(list(facet.series), hidden_series):
+                    if _is_line_series(s):
+                        line_names.add(s.name)
+            if name in line_names:
+                handles.append(
+                    _Line2D(
+                        [0], [0],
+                        color=c, linewidth=2.5, marker="o", markersize=5,
+                        markeredgecolor=c, markerfacecolor=c,
+                    )
+                )
+            else:
+                handles.append(
+                    _Line2D(
+                        [0], [0],
+                        marker="o", color=c, linestyle="None",
+                        markersize=10, markerfacecolor=c, markeredgecolor=c,
+                    )
+                )
     leg_font = leg_font_estimate
 
     bottom_margin = bottom_margin_inch / fig_h

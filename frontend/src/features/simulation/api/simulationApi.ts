@@ -387,6 +387,7 @@ export const simulationApi = {
       tipo: string;
       un?: string;
       es_porcentaje?: string;
+      view_mode?: string;
       sub_filtro?: string;
       loc?: string;
       variable?: string;
@@ -410,6 +411,7 @@ export const simulationApi = {
       fmt,
     };
     if (params.es_porcentaje) q.es_porcentaje = params.es_porcentaje;
+    if (params.view_mode) q.view_mode = params.view_mode;
     if (params.clean) q.clean = "true";
     if (params.sub_filtro) q.sub_filtro = params.sub_filtro;
     if (params.loc) q.loc = params.loc;
@@ -451,6 +453,7 @@ export const simulationApi = {
       sub_filtro?: string;
       loc?: string;
       es_porcentaje?: string;
+      view_mode?: string;
       clean?: boolean;
       series_order?: string;
       region?: string;
@@ -471,6 +474,7 @@ export const simulationApi = {
     if (params.sub_filtro) q.sub_filtro = params.sub_filtro;
     if (params.loc) q.loc = params.loc;
     if (params.es_porcentaje) q.es_porcentaje = params.es_porcentaje;
+    if (params.view_mode) q.view_mode = params.view_mode;
     if (params.clean) q.clean = "true";
     if (params.series_order) q.series_order = params.series_order;
     if (params.region) q.region = params.region;

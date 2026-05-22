@@ -251,6 +251,13 @@ def export_comparison_facet_image(
     variable: str | None = Query(None),
     agrupar_por: str | None = Query(None),
     es_porcentaje: bool = Query(False, description="Si true, normaliza cada año a 100%"),
+    view_mode: str = Query(
+        "column",
+        description=(
+            "Modo de visualización: column (barras apiladas, default), "
+            "line (líneas), area (áreas apiladas)"
+        ),
+    ),
     clean: bool = Query(
         False,
         description="Si true, omite título y etiquetas sobre las barras.",
@@ -298,6 +305,11 @@ def export_comparison_facet_image(
     """Exporta comparación por facetas en una sola imagen (mismo criterio que compare-facet)."""
     if fmt not in ("png", "svg"):
         raise HTTPException(status_code=400, detail="fmt debe ser 'png' o 'svg'")
+    if view_mode not in ("column", "line", "area"):
+        raise HTTPException(
+            status_code=400,
+            detail="view_mode debe ser 'column', 'line' o 'area'",
+        )
     if facet_placement not in ("inline", "stacked"):
         raise HTTPException(status_code=400, detail="facet_placement debe ser 'inline' o 'stacked'")
     filename_mode = _normalize_compare_facet_filename_mode(filename_mode)
@@ -362,6 +374,7 @@ def export_comparison_facet_image(
             facet_payload,
             fmt=fmt,
             layout=layout,
+            view_mode=view_mode,
             legend_title=legend_title,
             series_order=order_list,
             clean=clean,
@@ -395,6 +408,13 @@ def export_comparison_by_year_image(
     sub_filtro: str | None = Query(None),
     loc: str | None = Query(None),
     es_porcentaje: bool = Query(False, description="Si true, normaliza cada año a 100%"),
+    view_mode: str = Query(
+        "column",
+        description=(
+            "Modo de visualización: column (barras apiladas, default), "
+            "line (líneas), area (áreas apiladas)"
+        ),
+    ),
     fmt: str = Query("png", description="png o svg"),
     clean: bool = Query(False, description="Si true, omite título y etiquetas sobre las barras."),
     y_axis_min: float | None = Query(None),
@@ -416,6 +436,11 @@ def export_comparison_by_year_image(
     """Exporta comparación por años como PNG/SVG (Matplotlib)."""
     if fmt not in ("png", "svg"):
         raise HTTPException(status_code=400, detail="fmt debe ser 'png' o 'svg'")
+    if view_mode not in ("column", "line", "area"):
+        raise HTTPException(
+            status_code=400,
+            detail="view_mode debe ser 'column', 'line' o 'area'",
+        )
 
     job_id_list = _validate_compare_job_ids(job_ids, db, current_user)
 
@@ -486,6 +511,7 @@ def export_comparison_by_year_image(
         img_bytes = chart_service.render_comparison_by_year_bytes(
             cmp_data,
             fmt=fmt,
+            view_mode=view_mode,
             y_axis_min=y_axis_min,
             y_axis_max=y_axis_max,
             clean=clean,
@@ -854,6 +880,13 @@ def export_all_charts(
     job_id: int,
     un: str = Query("PJ"),
     fmt: str = Query("svg", description="Formato de imagen: svg o png"),
+    view_mode: str = Query(
+        "column",
+        description=(
+            "Modo de visualización: column (barras apiladas, default), "
+            "line (líneas), area (áreas apiladas)"
+        ),
+    ),
     clean: bool = Query(
         False,
         description="True = descargar sin título ni etiquetas numéricas sobre las barras.",
@@ -864,6 +897,11 @@ def export_all_charts(
     """Genera un ZIP con todas las gráficas de un escenario como imágenes SVG o PNG."""
     if fmt not in ("svg", "png"):
         raise HTTPException(status_code=400, detail="fmt debe ser 'svg' o 'png'")
+    if view_mode not in ("column", "line", "area"):
+        raise HTTPException(
+            status_code=400,
+            detail="view_mode debe ser 'column', 'line' o 'area'",
+        )
 
     try:
         job = SimulationService.get_by_id(db, current_user=current_user, job_id=job_id)
@@ -874,7 +912,7 @@ def export_all_charts(
 
     try:
         zip_bytes = chart_service.export_all_charts_zip(
-            db=db, job_id=job["id"], un=un, fmt=fmt, clean=clean,
+            db=db, job_id=job["id"], un=un, fmt=fmt, view_mode=view_mode, clean=clean,
         )
     except Exception as e:
         logger.exception("Error generando ZIP de gráficas")

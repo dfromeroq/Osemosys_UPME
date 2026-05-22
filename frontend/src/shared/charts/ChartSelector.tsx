@@ -640,7 +640,7 @@ export function ChartSelector({
     if (newViewMode === 'table' && item.soportaTabla === false) {
       newViewMode = 'column';
     }
-    // Charts mixtos (áreas+lineas): solo columna o área
+    // Charts mixtos (áreas+lineas): solo columna o área (sin línea)
     if (CHARTS_SOLO_COLUMNAS.has(item.id) && newViewMode !== 'column' && newViewMode !== 'area') {
       newViewMode = 'column';
     }
@@ -956,7 +956,7 @@ export function ChartSelector({
                       ☰ Barras horizontales
                     </button>
                   )}
-                  {currentItem && CHARTS_SOLO_COLUMNAS.has(currentItem.id) && (
+                  {currentItem && (
                     <button
                       type="button"
                       onClick={() => {
