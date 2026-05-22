@@ -145,6 +145,7 @@ MENU = [
           {"tipo": "ref_produccion_importaciones", "label": "Refinerías + Importaciones de Líquidos - ProductionByTechnology", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
           {"tipo": "min_oil", "label": "Producción de Petróleo Crudo - ProductionByTechnology", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
           {"tipo": "imp_oil", "label": "Importación de Petróleo Crudo - ProductionByTechnology", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
+          {"tipo": "exp_oil_consumo", "label": "Exportaciones — Petróleo - UseByTechnology", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
       ]},
     {"code": "mineria", "label": "Minería & Extracción", "icon": "⛏️",
      "charts": [
