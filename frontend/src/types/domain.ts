@@ -683,6 +683,30 @@ export type SyntheticSeries = {
   lineWidth?: number | null;
 };
 
+/**
+ * Datos exógenos para un escenario (job), indexado por job_id.
+ */
+export type ExogenousScenarioEntry = {
+  jobId: number;
+  /** Nombre del escenario (solo referencia, no se usa para matching). */
+  scenarioName: string;
+  /** Pares [año, valor]. */
+  data: Array<[number, number]>;
+};
+
+/**
+ * Configuración completa de datos exógenos (ej: emisiones de Refinerías).
+ */
+export type ExogenousDataConfig = {
+  active: boolean;
+  /** Categoría mostrada en la gráfica. */
+  categoryLabel: string;
+  /** Color de la categoría. */
+  color: string;
+  /** Datos por escenario. */
+  scenarios: ExogenousScenarioEntry[];
+};
+
 /** Plantilla de gráfica guardada por un usuario para generar reportes. */
 export type SavedChartTemplate = {
   id: number;

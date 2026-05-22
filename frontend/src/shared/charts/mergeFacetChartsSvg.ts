@@ -121,7 +121,7 @@ export function buildCombinedFacetSvgDocument(params: {
   const paddingX = 24;
   const gap = 16;
   const bottomPad = 24;
-  const titleBaselineY = 44;
+  const titleBaselineY = 60;
   const titleToChartsGap = 28;
   const chartsToLegendGap = 28;
 

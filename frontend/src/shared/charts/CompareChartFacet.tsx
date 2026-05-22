@@ -244,6 +244,8 @@ interface CompareChartFacetProps {
     selection: ChartSelection;
     legendTitle?: string;
     scenarioAliases?: Record<number, string>;
+    /** Datos exógenos (Refinerías) serializados como JSON string. */
+    exogenousData?: string | undefined;
   };
   /** Si true, los controles de export se colapsan en un menú kebab "⋯". */
   compactToolbar?: boolean;
@@ -806,6 +808,9 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
       }
       if (serverFacetExport.scenarioAliases && Object.keys(serverFacetExport.scenarioAliases).some(k => serverFacetExport.scenarioAliases![Number(k)]?.trim())) {
         payload.job_display_overrides = JSON.stringify(serverFacetExport.scenarioAliases);
+      }
+      if (serverFacetExport.exogenousData) {
+        payload.exogenous_data = serverFacetExport.exogenousData;
       }
       payload.facet_placement = facetPlacement;
       const { blob, filename } = await simulationApi.exportCompareFacet(payload, "png");

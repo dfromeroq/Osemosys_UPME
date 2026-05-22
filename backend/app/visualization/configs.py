@@ -500,6 +500,16 @@ def _filtro_min_hidrocarburos(df, **kw):
     ]
 
 
+def _filtro_min_oil(df, **kw):
+    """Minería petróleo crudo (MINOIL)."""
+    return df[df["TECHNOLOGY"].str.startswith("MINOIL")]
+
+
+def _filtro_imp_oil(df, **kw):
+    """Importación de petróleo crudo (IMPOIL)."""
+    return df[df["TECHNOLOGY"].str.startswith("IMPOIL")]
+
+
 def _filtro_min_carbon(df, **kw):
     """Minería carbón (MINCOA)."""
     return df[df["TECHNOLOGY"].str.startswith("MINCOA")]
@@ -1470,6 +1480,35 @@ CONFIGS = {
         "agrupar_por": "FUEL",
         "color_fn": _color_por_grupo_fijo,
         "variable_default": "UseByTechnology",
+    },
+    # ═══════════════════════════════════════════════════════════════════════
+    # PETRÓLEO CRUDO — MINERÍA E IMPORTACIÓN
+    # ═══════════════════════════════════════════════════════════════════════
+    "min_oil": {
+        "titulo": "Producción de Petróleo Crudo - ProductionByTechnology",
+        "figura": "Figura MIN-OIL",
+        "filename": "Fig_Min_Oil",
+        "print": "PRODUCCIÓN DE PETRÓLEO CRUDO (MINOIL)",
+        "filtro": _filtro_min_oil,
+        "msg_sin_datos": "Sin datos de extracción de petróleo crudo (MINOIL)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": generar_colores_tecnologias,
+        "variable_default": "ProductionByTechnology",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
+        "soportaPareto": True,
+    },
+    "imp_oil": {
+        "titulo": "Importación de Petróleo Crudo - ProductionByTechnology",
+        "figura": "Figura IMP-OIL",
+        "filename": "Fig_Imp_Oil",
+        "print": "IMPORTACIÓN DE PETRÓLEO CRUDO (IMPOIL)",
+        "filtro": _filtro_imp_oil,
+        "msg_sin_datos": "Sin datos de importación de petróleo crudo (IMPOIL)",
+        "agrupar_por": "TECNOLOGIA",
+        "color_fn": _color_liquidos_import,
+        "variable_default": "ProductionByTechnology",
+        "allowedGroupings": ["TECNOLOGIA", "FUEL"],
+        "soportaPareto": True,
     },
     # ═══════════════════════════════════════════════════════════════════════
     # RECURSOS Y RESERVAS
