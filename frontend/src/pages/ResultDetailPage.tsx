@@ -2182,6 +2182,7 @@ export function ResultDetailPage() {
               <CompareChart
                 data={displayCompareChartData}
                 barOrientation={chartBarOrientation}
+                stackType={chartSelection.viewMode === 'area' ? 'area' : 'column'}
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
                 sharedYAxis={true}
@@ -2191,6 +2192,7 @@ export function ResultDetailPage() {
               <CompareChart
                 data={displayCompareChartData}
                 barOrientation={chartBarOrientation}
+                stackType={chartSelection.viewMode === 'area' ? 'area' : 'column'}
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
                 sharedYAxis={true}
@@ -2269,8 +2271,9 @@ export function ResultDetailPage() {
             availableTimeslices={availableTimeslices}
           />
 
-          {/* Series manuales overlay: solo aplican en gráficas de línea. */}
+          {/* Series manuales overlay: aplican en gráficas de línea y área. */}
           {(chartSelection.viewMode === 'line' ||
+            chartSelection.viewMode === 'area' ||
             chartCompareMode === 'line-total') ? (
             <div className="rounded-xl border border-slate-800 bg-slate-900/30 backdrop-blur-sm p-4 flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">

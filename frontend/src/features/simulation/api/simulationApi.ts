@@ -277,6 +277,7 @@ export const simulationApi = {
         series?: string[];
         years?: (string | number)[];
       };
+      hiddenSeries?: string[];
     },
   ): Promise<{ blob: Blob; filename: string }> {
     const params: Record<string, string> = {
@@ -314,6 +315,9 @@ export const simulationApi = {
     }
     if (typeof selection.yAxisMax === "number") {
       params.y_axis_max = String(selection.yAxisMax);
+    }
+    if (options?.hiddenSeries && options.hiddenSeries.length > 0) {
+      params.hidden_series = options.hiddenSeries.join(",");
     }
 
     const response = await httpClient.get(`/visualizations/${jobId}/export-chart`, {
@@ -383,6 +387,7 @@ export const simulationApi = {
       tipo: string;
       un?: string;
       es_porcentaje?: string;
+      view_mode?: string;
       sub_filtro?: string;
       loc?: string;
       variable?: string;
@@ -395,6 +400,7 @@ export const simulationApi = {
       region?: string;
       job_display_overrides?: string;
       exogenous_data?: string;
+      hidden_series?: string;
     },
     fmt: "png" | "svg" = "png",
   ): Promise<{ blob: Blob; filename: string }> {
@@ -405,6 +411,7 @@ export const simulationApi = {
       fmt,
     };
     if (params.es_porcentaje) q.es_porcentaje = params.es_porcentaje;
+    if (params.view_mode) q.view_mode = params.view_mode;
     if (params.clean) q.clean = "true";
     if (params.sub_filtro) q.sub_filtro = params.sub_filtro;
     if (params.loc) q.loc = params.loc;
@@ -417,6 +424,7 @@ export const simulationApi = {
     if (params.region) q.region = params.region;
     if (params.job_display_overrides) q.job_display_overrides = params.job_display_overrides;
     if (params.exogenous_data) q.exogenous_data = params.exogenous_data;
+    if (params.hidden_series) q.hidden_series = params.hidden_series;
 
     const response = await httpClient.get("/visualizations/export-compare-facet", {
       params: q,
@@ -445,10 +453,12 @@ export const simulationApi = {
       sub_filtro?: string;
       loc?: string;
       es_porcentaje?: string;
+      view_mode?: string;
       clean?: boolean;
       series_order?: string;
       region?: string;
       job_display_overrides?: string;
+      hidden_series?: string;
     },
     fmt: "png" | "svg" = "png",
   ): Promise<{ blob: Blob; filename: string }> {
@@ -464,10 +474,12 @@ export const simulationApi = {
     if (params.sub_filtro) q.sub_filtro = params.sub_filtro;
     if (params.loc) q.loc = params.loc;
     if (params.es_porcentaje) q.es_porcentaje = params.es_porcentaje;
+    if (params.view_mode) q.view_mode = params.view_mode;
     if (params.clean) q.clean = "true";
     if (params.series_order) q.series_order = params.series_order;
     if (params.region) q.region = params.region;
     if (params.job_display_overrides) q.job_display_overrides = params.job_display_overrides;
+    if (params.hidden_series) q.hidden_series = params.hidden_series;
 
     const response = await httpClient.get("/visualizations/export-compare-by-year", {
       params: q,

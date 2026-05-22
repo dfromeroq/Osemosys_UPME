@@ -23,6 +23,8 @@ import type { ChartSelection } from './ChartSelector';
 interface CompareChartProps {
   data: CompareChartResponse;
   barOrientation?: 'vertical' | 'horizontal';
+  /** Tipo de apilamiento: column (barras) o area (áreas apiladas). Por defecto column. */
+  stackType?: 'column' | 'area';
   /** Override del eje Y para todos los subplots. ``null``/undefined = auto. */
   yAxisMin?: number | null;
   yAxisMax?: number | null;
@@ -41,12 +43,14 @@ interface CompareChartProps {
 export const CompareChart: React.FC<CompareChartProps> = ({
   data,
   barOrientation = 'vertical',
+  stackType = 'column',
   yAxisMin,
   yAxisMax,
   sharedYAxis = false,
   serverCompareExport,
 }) => {
-  const inverted = barOrientation === 'horizontal';
+  const isArea = stackType === 'area';
+  const inverted = barOrientation === 'horizontal' && !isArea;
   const legendDblclickStateRef = useRef(createLegendDblclickState());
   const [exportBusy, setExportBusy] = useState(false);
 
@@ -109,11 +113,15 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       if (sel.loc) payload.loc = sel.loc;
       if (sel.agrupar_por) payload.agrupacion = sel.agrupar_por;
       if (sel.viewMode === 'porcentaje') payload.es_porcentaje = 'true';
+      if (sel.viewMode && sel.viewMode !== 'column') payload.view_mode = sel.viewMode;
       if (sel.region && sel.agrupar_por !== 'REGION') {
         payload.region = sel.region;
       }
       if (serverCompareExport.scenarioAliases && Object.keys(serverCompareExport.scenarioAliases).some(k => serverCompareExport.scenarioAliases![Number(k)]?.trim())) {
         payload.job_display_overrides = JSON.stringify(serverCompareExport.scenarioAliases);
+      }
+      if (hiddenNames.size > 0) {
+        payload.hidden_series = Array.from(hiddenNames).join(',');
       }
       const { blob, filename } = await simulationApi.exportCompareByYear(payload, 'png');
       downloadBlob(blob, filename);
@@ -151,7 +159,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
 
     const xAxis: Highcharts.XAxisOptions[] = [];
     const yAxis: Highcharts.YAxisOptions[] = [];
-    const series: Highcharts.SeriesColumnOptions[] = [];
+    const series: Highcharts.SeriesOptionsType[] = [];
 
     const totalBars = Math.max(
       data.subplots.reduce((sum, sp) => sum + sp.categories.length, 0),
@@ -244,22 +252,31 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       subplot.series.forEach((s) => {
         const isNew = !legendNamesSeen.has(s.name);
         if (isNew) legendNamesSeen.add(s.name);
-        series.push({
-          type: 'column',
+        const base: Highcharts.SeriesOptionsType = {
+          type: isArea ? 'area' : 'column',
           name: s.name,
           data: s.data,
           color: s.color,
           xAxis: `x-${idx}`,
           yAxis: `y-${idx}`,
-          stacking: 'normal',
-          borderWidth: 0,
+          stacking: 'normal' as const,
           showInLegend: isNew,
           visible: !hiddenNames.has(s.name),
           custom: {
             subplotYear: subplot.year,
             scenarioName: subplot.scenario_name || null,
           },
-        });
+        } as Highcharts.SeriesOptionsType;
+        if (isArea) {
+          Object.assign(base, {
+            fillOpacity: 0.85,
+            lineWidth: 0.5,
+            marker: { enabled: false },
+          });
+        } else {
+          Object.assign(base, { borderWidth: 0 });
+        }
+        series.push(base);
       });
     });
 
@@ -321,7 +338,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
 
     return {
       chart: {
-        type: 'column',
+        type: isArea ? 'area' : 'column',
         height: inverted ? 620 : 550,
         inverted,
         style: { fontFamily: 'Verdana, sans-serif' },
@@ -362,7 +379,13 @@ export const CompareChart: React.FC<CompareChartProps> = ({
           borderWidth: 0,
           dataLabels: { enabled: false },
           ...{ pointWidth: 50, pointPadding: 0.2, groupPadding: 0.5 },
-
+        },
+        area: {
+          stacking: 'normal',
+          lineWidth: 0.5,
+          fillOpacity: 0.85,
+          marker: { enabled: false },
+          dataLabels: { enabled: false },
         },
       },
       series: series as Highcharts.SeriesOptionsType[],
@@ -413,7 +436,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, inverted, hiddenNames, yAxisMin, yAxisMax, sharedYAxisMax, isByYearAltMode]);
+  }, [data, inverted, hiddenNames, yAxisMin, yAxisMax, sharedYAxisMax, isByYearAltMode, isArea]);
 
   return (
     <div style={{ width: '100%' }}>
