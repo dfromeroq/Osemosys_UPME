@@ -33,6 +33,11 @@ celery_app = Celery(
 celery_app.conf.update(
     # `task_track_started` permite observabilidad de transición PENDING -> STARTED.
     task_track_started=True,
+    # Ack tardío + rechazo ante WorkerLost evita consumir definitivamente una
+    # task cuando el proceso hijo muere por SIGKILL/OOM.
+    task_acks_late=True,
+    task_reject_on_worker_lost=True,
+    worker_prefetch_multiplier=1,
     # JSON reduce superficie de ataque frente a serializadores ejecutables.
     task_serializer="json",
     result_serializer="json",

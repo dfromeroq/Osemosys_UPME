@@ -118,6 +118,19 @@ def _mark_failed_by_task_or_job_id(
         return True
 
 
+def _dispatch_pending_jobs_safely() -> None:
+    try:
+        from app.services.simulation_service import SimulationService
+
+        with SessionLocal() as db:
+            SimulationService.dispatch_pending_jobs(db)
+    except Exception:
+        logger.warning(
+            "No se pudo despachar cola pendiente tras WorkerLostError",
+            exc_info=True,
+        )
+
+
 @celery_app.task(name="app.simulation.tasks.run_simulation_job", bind=True)
 def run_simulation_job(self, job_id: int) -> None:
     """Ejecuta un job de simulación en contexto worker.
@@ -141,12 +154,22 @@ def run_simulation_job(self, job_id: int) -> None:
         - CPU-bound en `run_pipeline` durante etapa de solve.
         - I/O-bound en escrituras de eventos y actualización de estado.
     """
+    try:
+        current_task_id = self.request.id  # type: ignore[attr-defined]
+    except Exception:
+        current_task_id = None
+
     with SessionLocal() as db:
-        transitioned = db.execute(
+        transition_stmt = (
             update(SimulationJob)
             .where(SimulationJob.id == job_id, SimulationJob.status == "QUEUED")
             .values(status="RUNNING", started_at=func.now(), progress=1.0)
-        ).rowcount
+        )
+        if current_task_id and not get_settings().is_sync_simulation_mode():
+            transition_stmt = transition_stmt.where(
+                SimulationJob.celery_task_id == current_task_id
+            )
+        transitioned = db.execute(transition_stmt).rowcount
         db.commit()
 
         if not transitioned:
@@ -528,6 +551,7 @@ def handle_worker_lost_failure(
             task_id,
             job_id,
         )
+    _dispatch_pending_jobs_safely()
 
 
 # ============================================================================

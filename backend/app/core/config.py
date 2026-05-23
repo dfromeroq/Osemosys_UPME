@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     sim_total_weight_limit: int = Field(default=8, alias="SIM_TOTAL_WEIGHT_LIMIT")
     sim_weight_national: int = Field(default=1, alias="SIM_WEIGHT_NATIONAL")
     sim_weight_regional: int = Field(default=3, alias="SIM_WEIGHT_REGIONAL")
+    sim_stale_task_minutes: int = Field(default=30, alias="SIM_STALE_TASK_MINUTES")
     sim_solver_tee: bool = Field(default=False, alias="SIM_SOLVER_TEE")
     sim_solver_keepfiles: bool = Field(default=False, alias="SIM_SOLVER_KEEPFILES")
     sim_solver_threads: int = Field(default=0, alias="SIM_SOLVER_THREADS")
