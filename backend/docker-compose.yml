@@ -118,6 +118,7 @@ services:
       --hostname=simulation-worker@%h
       --pool=prefork
       --prefetch-multiplier=1
+      --max-tasks-per-child=${SIM_WORKER_MAX_TASKS_PER_CHILD:-1}
     depends_on:
       db:
         condition: service_healthy

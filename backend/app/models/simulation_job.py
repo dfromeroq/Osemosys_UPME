@@ -85,6 +85,9 @@ class SimulationJob(Base):
         Boolean, nullable=False, default=True, server_default="true"
     )
     celery_task_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    celery_dispatched_at: Mapped[object | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     result_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     queued_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
