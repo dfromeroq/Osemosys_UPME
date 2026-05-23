@@ -4,13 +4,25 @@ from __future__ import annotations
 
 import threading
 
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.db.dialect import osemosys_table
-from app.models import OsemosysParamValue, Scenario, User
+from app.models import (
+    ChangeRequest,
+    ChangeRequestValue,
+    DeletionLog,
+    OsemosysParamValue,
+    OsemosysParamValueAudit,
+    Scenario,
+    ScenarioPermission,
+    SimulationJob,
+    SimulationJobEvent,
+    SimulationJobFavorite,
+    User,
+)
 from app.repositories.scenario_operation_repository import ScenarioOperationRepository
 from app.services.official_import_service import OfficialImportService
 from app.services.pagination import build_meta, normalize_pagination
@@ -154,6 +166,46 @@ class ScenarioOperationService:
         return ScenarioOperationService._to_public(job, username=current_user.username)
 
     @staticmethod
+    def submit_delete(
+        db: Session,
+        *,
+        scenario_id: int,
+        current_user: User,
+    ) -> dict:
+        scenario = db.get(Scenario, scenario_id)
+        if scenario is None:
+            raise NotFoundError("Escenario no encontrado.")
+        is_scenario_admin = bool(getattr(current_user, "can_manage_scenarios", False))
+        if scenario.owner != current_user.username and not is_scenario_admin:
+            raise ForbiddenError("No tienes permisos para eliminar este escenario.")
+
+        child_count = db.query(func.count(Scenario.id)).filter(Scenario.base_scenario_id == scenario_id).scalar() or 0
+        if int(child_count) > 0:
+            raise ConflictError(
+                "El escenario tiene escenarios derivados. Elimine o reasigne esas dependencias antes de continuar."
+            )
+        job = ScenarioOperationRepository.create_job(
+            db,
+            operation_type="DELETE_SCENARIO",
+            user_id=current_user.id,
+            scenario_id=scenario_id,
+            payload_json={"scenario_id": scenario_id, "scenario_name": scenario.name},
+        )
+        db.flush()
+        ScenarioOperationRepository.add_event(
+            db,
+            job_id=job.id,
+            event_type="INFO",
+            stage="queue",
+            message="Solicitud de eliminación encolada.",
+            progress=0.0,
+        )
+        db.commit()
+        db.refresh(job)
+        ScenarioOperationService._enqueue_job(db, job_id=int(job.id))
+        return ScenarioOperationService._to_public(job, username=current_user.username, scenario_name=scenario.name)
+
+    @staticmethod
     def list_jobs(
         db: Session,
         *,
@@ -266,6 +318,8 @@ class ScenarioOperationService:
                 ScenarioOperationService._run_clone_job(db, job=job)
             elif job.operation_type == "APPLY_EXCEL_CHANGES":
                 ScenarioOperationService._run_apply_excel_changes_job(db, job=job)
+            elif job.operation_type == "DELETE_SCENARIO":
+                ScenarioOperationService._run_delete_job(db, job=job)
             else:
                 raise RuntimeError(f"Tipo de operación no soportado: {job.operation_type}")
             job.status = "SUCCEEDED"
@@ -491,4 +545,208 @@ class ScenarioOperationService:
             progress=99.0,
             stage="finalizing",
             message="Finalizando actualización desde Excel.",
+        )
+
+    @staticmethod
+    def _run_delete_job(db: Session, *, job) -> None:
+        payload = dict(job.payload_json or {})
+        scenario_id = int(payload.get("scenario_id"))
+        scenario = db.get(Scenario, scenario_id)
+        if scenario is None:
+            job.result_json = {"scenario_id": scenario_id, "deleted": False, "reason": "already_missing"}
+            ScenarioOperationService._update_progress(
+                db,
+                job=job,
+                progress=99.0,
+                stage="finalizing",
+                message="El escenario ya no existe.",
+            )
+            return
+
+        owner = db.get(User, job.user_id)
+        if owner is None:
+            raise NotFoundError("Usuario solicitante no encontrado.")
+        is_scenario_admin = bool(getattr(owner, "can_manage_scenarios", False))
+        if scenario.owner != owner.username and not is_scenario_admin:
+            raise ForbiddenError("No tienes permisos para eliminar este escenario.")
+
+        child_count = db.query(func.count(Scenario.id)).filter(Scenario.base_scenario_id == scenario_id).scalar() or 0
+        if int(child_count) > 0:
+            raise ConflictError(
+                "El escenario tiene escenarios derivados. Elimine o reasigne esas dependencias antes de continuar."
+            )
+
+        scenario_snapshot = {
+            "name": scenario.name,
+            "description": scenario.description,
+            "owner": scenario.owner,
+            "simulation_type": scenario.simulation_type,
+            "edit_policy": scenario.edit_policy,
+            "tag_ids": [int(t.id) for t in (scenario.tags or [])],
+            "base_scenario_id": scenario.base_scenario_id,
+            "created_at": scenario.created_at.isoformat() if scenario.created_at else None,
+        }
+
+        child_jobs: list[SimulationJob] = (
+            db.query(SimulationJob).filter(SimulationJob.scenario_id == scenario_id).all()
+        )
+        for simulation_job in child_jobs:
+            job_snapshot = {
+                "scenario_id": simulation_job.scenario_id,
+                "scenario_name": scenario.name,
+                "display_name": simulation_job.display_name,
+                "input_name": simulation_job.input_name,
+                "solver_name": simulation_job.solver_name,
+                "status": simulation_job.status,
+                "queued_at": simulation_job.queued_at.isoformat() if simulation_job.queued_at else None,
+                "deleted_via": "scenario_cascade",
+                "parent_scenario_id": scenario_id,
+            }
+            db.add(
+                DeletionLog(
+                    entity_type="SIMULATION_JOB",
+                    entity_id=simulation_job.id,
+                    entity_name=(simulation_job.display_name or scenario.name or f"Job #{simulation_job.id}")[:400],
+                    deleted_by_user_id=owner.id,
+                    deleted_by_username=owner.username,
+                    details_json=job_snapshot,
+                )
+            )
+            db.query(SimulationJobFavorite).filter(SimulationJobFavorite.job_id == simulation_job.id).delete()
+            db.query(SimulationJobEvent).filter(SimulationJobEvent.job_id == simulation_job.id).delete()
+            db.delete(simulation_job)
+        db.flush()
+
+        ScenarioOperationService._update_progress(
+            db,
+            job=job,
+            progress=4.0,
+            stage="deleting_simulations",
+            message=f"Eliminando {len(child_jobs)} simulaciones asociadas.",
+        )
+
+        change_request_ids = [
+            int(row[0])
+            for row in (
+                db.query(ChangeRequest.id)
+                .join(
+                    OsemosysParamValue,
+                    ChangeRequest.id_osemosys_param_value == OsemosysParamValue.id,
+                )
+                .filter(OsemosysParamValue.id_scenario == scenario_id)
+                .all()
+            )
+        ]
+        if change_request_ids:
+            db.query(ChangeRequestValue).filter(
+                ChangeRequestValue.id_change_request.in_(change_request_ids)
+            ).delete(synchronize_session=False)
+            db.query(ChangeRequest).filter(ChangeRequest.id.in_(change_request_ids)).delete(
+                synchronize_session=False
+            )
+
+        db.query(OsemosysParamValueAudit).filter(
+            OsemosysParamValueAudit.id_scenario == scenario_id
+        ).delete(synchronize_session=False)
+
+        total_rows = int(
+            db.query(func.count(OsemosysParamValue.id))
+            .filter(OsemosysParamValue.id_scenario == scenario_id)
+            .scalar()
+            or 0
+        )
+        ScenarioOperationService._update_progress(
+            db,
+            job=job,
+            progress=5.0,
+            stage="counting_values",
+            message=f"Preparando eliminación de {total_rows} valores OSeMOSYS.",
+        )
+
+        batch_size = 25_000
+        deleted_rows = 0
+        cursor_id = 0
+        while True:
+            batch_ids = (
+                select(OsemosysParamValue.id)
+                .where(
+                    OsemosysParamValue.id_scenario == scenario_id,
+                    OsemosysParamValue.id > cursor_id,
+                )
+                .order_by(OsemosysParamValue.id)
+                .limit(batch_size)
+                .subquery()
+            )
+            batch = db.execute(
+                select(
+                    func.max(batch_ids.c.id).label("max_id"),
+                    func.count(batch_ids.c.id).label("rows_count"),
+                )
+            ).mappings().first()
+            if not batch or not batch["max_id"]:
+                break
+            max_id = int(batch["max_id"])
+            rows_count = int(batch["rows_count"] or 0)
+            db.execute(
+                delete(OsemosysParamValue).where(
+                    OsemosysParamValue.id_scenario == scenario_id,
+                    OsemosysParamValue.id > cursor_id,
+                    OsemosysParamValue.id <= max_id,
+                )
+            )
+            deleted_rows += rows_count
+            cursor_id = max_id
+            progress = 10.0 + (80.0 * float(deleted_rows) / float(total_rows)) if total_rows else 90.0
+            ScenarioOperationService._update_progress(
+                db,
+                job=job,
+                progress=progress,
+                stage="deleting_values",
+                message=f"Eliminando valores OSeMOSYS: {deleted_rows}/{total_rows} registros.",
+            )
+
+        permission_count = (
+            db.query(ScenarioPermission).filter(ScenarioPermission.id_scenario == scenario_id).delete()
+        )
+        ScenarioOperationService._update_progress(
+            db,
+            job=job,
+            progress=94.0,
+            stage="deleting_permissions",
+            message="Eliminando permisos del escenario.",
+        )
+        scenario = db.get(Scenario, scenario_id)
+        if scenario is not None:
+            db.add(
+                DeletionLog(
+                    entity_type="SCENARIO",
+                    entity_id=scenario_id,
+                    entity_name=scenario.name[:400] if scenario.name else f"Escenario #{scenario_id}",
+                    deleted_by_user_id=owner.id,
+                    deleted_by_username=owner.username,
+                    details_json={
+                        **scenario_snapshot,
+                        "cascaded_simulation_job_ids": [j.id for j in child_jobs],
+                        "deleted_change_request_ids": change_request_ids,
+                    },
+                )
+            )
+            db.delete(scenario)
+            db.commit()
+
+        job.result_json = {
+            "scenario_id": scenario_id,
+            "scenario_name": payload.get("scenario_name"),
+            "deleted": True,
+            "deleted_values": deleted_rows,
+            "deleted_permissions": int(permission_count or 0),
+            "deleted_simulation_jobs": len(child_jobs),
+            "deleted_change_requests": len(change_request_ids),
+        }
+        ScenarioOperationService._update_progress(
+            db,
+            job=job,
+            progress=99.0,
+            stage="finalizing",
+            message="Finalizando eliminación del escenario.",
         )

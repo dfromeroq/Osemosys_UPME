@@ -22,19 +22,7 @@ from io import BytesIO
 from app.api.deps import get_current_user
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.db.session import get_db
-from app.models import (
-    ChangeRequest,
-    ChangeRequestValue,
-    DeletionLog,
-    OsemosysParamValue,
-    OsemosysParamValueAudit,
-    Scenario,
-    ScenarioPermission,
-    SimulationJob,
-    SimulationJobEvent,
-    SimulationJobFavorite,
-    User,
-)
+from app.models import OsemosysParamValue, Scenario, ScenarioPermission, SimulationJob, User
 from app.schemas.pagination import PaginatedResponse
 from app.schemas.scenario import (
     ApplyExcelChangesRequest,
@@ -847,7 +835,7 @@ def _raise_if_scenario_has_children(db: Session, *, scenario: Scenario) -> None:
         detail={
             "code": "scenario_has_children",
             "message": (
-                "No se puede eliminar el escenario porque tiene escenarios hijos. "
+                "No se puede eliminar el escenario porque tiene escenarios derivados. "
                 "Primero elimínalos o independízalos."
             ),
             "scenario_id": int(scenario.id),
@@ -896,7 +884,7 @@ def detach_scenario_children(
     if scenario.owner != current_user.username and not is_scenario_admin:
         raise HTTPException(
             status_code=403,
-            detail="No tienes permisos para independizar hijos de este escenario.",
+            detail="No tienes permisos para independizar derivados de este escenario.",
         )
 
     unique_child_ids = sorted({int(child_id) for child_id in payload.child_ids})
@@ -912,7 +900,7 @@ def detach_scenario_children(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "invalid_scenario_children",
-                "message": "Algunos escenarios seleccionados ya no son hijos directos.",
+                "message": "Algunos escenarios seleccionados ya no son derivados directos.",
                 "child_ids": missing_ids,
             },
         )
@@ -923,121 +911,25 @@ def detach_scenario_children(
     return {"detached_child_ids": unique_child_ids}
 
 
-@router.delete("/{scenario_id}", status_code=204)
+@router.delete("/{scenario_id}", response_model=ScenarioOperationJobPublic, status_code=202)
 def delete_scenario(
     scenario_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> None:
-    """Elimina un escenario y sus datos asociados (cascade a simulaciones hijas).
-
-    Cada eliminación queda registrada en ``osemosys.deletion_log`` con el
-    usuario, la fecha y un snapshot con los campos clave. Las simulaciones
-    asociadas al escenario se eliminan en cascada y cada una escribe su propio
-    registro de auditoría (entity_type='SIMULATION_JOB').
-    """
-    scenario = db.get(Scenario, scenario_id)
-    if not scenario:
-        raise HTTPException(status_code=404, detail="Escenario no encontrado.")
-    is_scenario_admin = bool(getattr(current_user, "can_manage_scenarios", False))
-    if scenario.owner != current_user.username and not is_scenario_admin:
-        raise HTTPException(
-            status_code=403,
-            detail="No tienes permisos para eliminar este escenario.",
+) -> dict:
+    """Encola la eliminación para evitar timeouts en escenarios grandes."""
+    try:
+        return ScenarioOperationService.submit_delete(
+            db,
+            scenario_id=scenario_id,
+            current_user=current_user,
         )
-    _raise_if_scenario_has_children(db, scenario=scenario)
-
-    # Snapshot del escenario antes de eliminar — lo usamos para `details_json`
-    # del DeletionLog y para dejar un label humano en `entity_name`.
-    scenario_snapshot = {
-        "name": scenario.name,
-        "description": scenario.description,
-        "owner": scenario.owner,
-        "simulation_type": scenario.simulation_type,
-        "edit_policy": scenario.edit_policy,
-        "tag_ids": [int(t.id) for t in (scenario.tags or [])],
-        "base_scenario_id": scenario.base_scenario_id,
-        "created_at": scenario.created_at.isoformat() if scenario.created_at else None,
-    }
-
-    # Cascade de simulaciones hijas — la FK usa RESTRICT, así que las borramos
-    # explícitamente (con su propio registro de auditoría) antes del escenario.
-    child_jobs: list[SimulationJob] = (
-        db.query(SimulationJob).filter(SimulationJob.scenario_id == scenario_id).all()
-    )
-    for job in child_jobs:
-        job_snapshot = {
-            "scenario_id": job.scenario_id,
-            "scenario_name": scenario.name,
-            "display_name": job.display_name,
-            "input_name": job.input_name,
-            "solver_name": job.solver_name,
-            "status": job.status,
-            "queued_at": job.queued_at.isoformat() if job.queued_at else None,
-            "deleted_via": "scenario_cascade",
-            "parent_scenario_id": scenario_id,
-        }
-        db.add(
-            DeletionLog(
-                entity_type="SIMULATION_JOB",
-                entity_id=job.id,
-                entity_name=(job.display_name or scenario.name or f"Job #{job.id}")[:400],
-                deleted_by_user_id=current_user.id,
-                deleted_by_username=current_user.username,
-                details_json=job_snapshot,
-            )
-        )
-        db.query(SimulationJobFavorite).filter(SimulationJobFavorite.job_id == job.id).delete()
-        db.query(SimulationJobEvent).filter(SimulationJobEvent.job_id == job.id).delete()
-        db.delete(job)
-
-    # Forzamos el flush de las eliminaciones de simulaciones para que el DELETE
-    # del escenario no se intente antes (la FK simulation_job.scenario_id usa
-    # RESTRICT, así que borrar el escenario con hijos vivos → FK violation).
-    db.flush()
-
-    change_request_ids = [
-        int(row[0])
-        for row in (
-            db.query(ChangeRequest.id)
-            .join(
-                OsemosysParamValue,
-                ChangeRequest.id_osemosys_param_value == OsemosysParamValue.id,
-            )
-            .filter(OsemosysParamValue.id_scenario == scenario_id)
-            .all()
-        )
-    ]
-    if change_request_ids:
-        db.query(ChangeRequestValue).filter(
-            ChangeRequestValue.id_change_request.in_(change_request_ids)
-        ).delete(synchronize_session=False)
-        db.query(ChangeRequest).filter(ChangeRequest.id.in_(change_request_ids)).delete(
-            synchronize_session=False
-        )
-
-    db.query(OsemosysParamValueAudit).filter(
-        OsemosysParamValueAudit.id_scenario == scenario_id
-    ).delete(synchronize_session=False)
-    db.query(OsemosysParamValue).filter(OsemosysParamValue.id_scenario == scenario_id).delete()
-    db.query(ScenarioPermission).filter(ScenarioPermission.id_scenario == scenario_id).delete()
-
-    db.add(
-        DeletionLog(
-            entity_type="SCENARIO",
-            entity_id=scenario_id,
-            entity_name=scenario.name[:400] if scenario.name else f"Escenario #{scenario_id}",
-            deleted_by_user_id=current_user.id,
-            deleted_by_username=current_user.username,
-            details_json={
-                **scenario_snapshot,
-                "cascaded_simulation_job_ids": [j.id for j in child_jobs],
-                "deleted_change_request_ids": change_request_ids,
-            },
-        )
-    )
-    db.delete(scenario)
-    db.commit()
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+    except ConflictError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
 
 
 @router.post("/{scenario_id}/clone", response_model=ScenarioPublic, status_code=201)

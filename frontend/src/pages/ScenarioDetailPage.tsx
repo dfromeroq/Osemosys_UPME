@@ -1714,7 +1714,7 @@ export function ScenarioDetailPage() {
             {scenario.base_scenario_id ? (
               <>
                 <div style={{ opacity: 0.82 }}>
-                  Hijo de <strong>{parentScenarioName ?? scenario.base_scenario_name ?? `#${scenario.base_scenario_id}`}</strong>
+                  Derivado de <strong>{parentScenarioName ?? scenario.base_scenario_name ?? `#${scenario.base_scenario_id}`}</strong>
                 </div>
                 <small style={{ opacity: 0.76 }}>
                   Se guarda una referencia simple de los parámetros tocados en este escenario para ayudar a recordar qué cambió.
