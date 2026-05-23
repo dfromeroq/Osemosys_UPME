@@ -17,7 +17,7 @@
  * La visibilidad de acciones depende de la política del escenario (OWNER_ONLY, OPEN, RESTRICTED).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { useCurrentUser } from "@/app/providers/useCurrentUser";
 import { useToast } from "@/app/providers/useToast";
 import {
@@ -29,9 +29,11 @@ import {
   type OsemosysWideFilters,
   type OsemosysWideRow,
   type ScenarioAccess,
+  type ScenarioPeriodInfo,
   type YearRule,
 } from "@/features/scenarios/api/scenariosApi";
 import { officialImportApi } from "@/features/officialImport/api/officialImportApi";
+import { ScenarioHistorySummary } from "@/features/scenarios/components/ScenarioHistorySummary";
 import { catalogsApi } from "@/features/catalogs/api/catalogsApi";
 import { Badge } from "@/shared/components/Badge";
 import { Button } from "@/shared/components/Button";
@@ -54,7 +56,7 @@ import type {
   SimulationType,
 } from "@/types/domain";
 
-type Tab = "values" | "permissions" | "pending";
+type Tab = "values" | "permissions" | "pending" | "history";
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 const PREVIEW_PAGE_SIZE_OPTIONS = [100, 200, 500, 1000] as const;
@@ -88,6 +90,7 @@ function getPolicyExplanation(editPolicy: ScenarioEditPolicy): string {
 
 export function ScenarioDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const scenarioId = Number(id);
   const { user } = useCurrentUser();
   const { push } = useToast();
@@ -117,6 +120,9 @@ export function ScenarioDetailPage() {
   const [permissions, setPermissions] = useState<ScenarioPermission[]>([]);
   const [pending, setPending] = useState<ChangeRequest[]>([]);
   const [parentScenarioName, setParentScenarioName] = useState<string | null>(null);
+  // Marcado true cuando los filtros activos vienen del deep-link
+  // `?dq_*` (modal de calidad de datos). Se limpia al limpiar los filtros.
+  const [filtersFromDataQuality, setFiltersFromDataQuality] = useState(false);
   const [loading, setLoading] = useState(true);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -172,6 +178,10 @@ export function ScenarioDetailPage() {
   const [excelDownloading, setExcelDownloading] = useState(false);
   const [openPermModal, setOpenPermModal] = useState(false);
   const [openMetaModal, setOpenMetaModal] = useState(false);
+  // Periodo del modelo (derivado de YearSplit) + ampliación
+  const [periodInfo, setPeriodInfo] = useState<ScenarioPeriodInfo | null>(null);
+  const [openExtendPeriodModal, setOpenExtendPeriodModal] = useState(false);
+  const [extendPeriodLoading, setExtendPeriodLoading] = useState(false);
   const [catalogSuggestions, setCatalogSuggestions] = useState<{
     parameters: string[];
     regions: string[];
@@ -240,6 +250,11 @@ export function ScenarioDetailPage() {
         setScenarioTagCategories([]);
       });
   }, [user]);
+
+  // Deep-link desde DataQualityModal: la lectura de `?dq_*` se hace dentro
+  // del load inicial (más abajo, en el useEffect que carga el escenario)
+  // para que los filtros se apliquen ANTES del primer fetch — evitando la
+  // race condition con un effect tardío.
 
   const refreshScenarioHeader = useCallback(
     async (scId: number) => {
@@ -741,9 +756,40 @@ export function ScenarioDetailPage() {
           }
         }
 
+        // Si la URL trae `?dq_*` (deep-link desde DataQualityModal), aplicamos
+        // los filtros AQUÍ — antes del primer fetch — para evitar la race
+        // condition entre el load inicial y un useEffect tardío.
+        const dqParamNames = searchParams.get("dq_param_names");
+        const dqRegions = searchParams.get("dq_region_names");
+        const dqTechnologies = searchParams.get("dq_technology_names");
+        const dqYear = searchParams.get("dq_year");
+        let initialFilters: OsemosysWideFilters = {};
+        if (dqParamNames || dqRegions || dqTechnologies || dqYear) {
+          if (dqParamNames) initialFilters.param_names = dqParamNames.split(",").filter(Boolean);
+          if (dqRegions) initialFilters.region_names = dqRegions.split(",").filter(Boolean);
+          if (dqTechnologies) initialFilters.technology_names = dqTechnologies.split(",").filter(Boolean);
+          setColumnFilters(initialFilters);
+          if (dqYear) setFilterYears([dqYear]);
+          setFiltersFromDataQuality(true);
+          // Limpiar los dq_* de la URL preservando otros params.
+          const cleaned = new URLSearchParams(searchParams);
+          ["dq_param_names", "dq_region_names", "dq_technology_names", "dq_year"].forEach((k) =>
+            cleaned.delete(k),
+          );
+          setSearchParams(cleaned, { replace: true });
+        }
+
+        // Carga el periodo del modelo en paralelo; si falla (p.ej. usuario sin acceso
+        // por algún edge case) no bloquea la pantalla, solo deja el panel sin info.
+        const periodPromise = scenariosApi
+          .getScenarioPeriodInfo(sc.id)
+          .then((info) => setPeriodInfo(info))
+          .catch(() => setPeriodInfo(null));
+
         await Promise.all([
-          fetchOsemosysPage(sc.id, 1, osemosysPageSize, "", "", "", {}),
-          fetchFacets(sc.id, "", "", {}),
+          fetchOsemosysPage(sc.id, 1, osemosysPageSize, "", "", "", initialFilters),
+          fetchFacets(sc.id, "", "", initialFilters),
+          periodPromise,
         ]);
 
         if (myAccess.isOwner || myAccess.can_edit_direct) {
@@ -1452,6 +1498,43 @@ export function ScenarioDetailPage() {
     }
   }
 
+  async function submitExtendPeriod() {
+    if (!scenario || !canManageValues) return;
+    setExtendPeriodLoading(true);
+    try {
+      const result = await scenariosApi.extendScenarioPeriod(scenario.id);
+      // Refresca el info del periodo y recarga valores/facets para reflejar las
+      // filas insertadas para el nuevo año.
+      const info = await scenariosApi.getScenarioPeriodInfo(scenario.id);
+      setPeriodInfo(info);
+      const merged = buildFilters(columnFilters, yearRules);
+      await Promise.all([
+        fetchOsemosysPage(
+          scenario.id,
+          osemosysPage,
+          osemosysPageSize,
+          osemosysSearch,
+          filterParamName,
+          filterYear,
+          merged,
+        ),
+        fetchFacets(scenario.id, filterParamName, filterYear, merged),
+      ]);
+      setOpenExtendPeriodModal(false);
+      push(
+        `Periodo ampliado: ${result.previous_max_year} → ${result.new_year} (${result.rows_added.toLocaleString()} filas copiadas).`,
+        "success",
+      );
+    } catch (err) {
+      push(
+        err instanceof Error ? err.message : "No se pudo ampliar el periodo del modelo.",
+        "error",
+      );
+    } finally {
+      setExtendPeriodLoading(false);
+    }
+  }
+
   async function submitPermission() {
     if (!scenario) return;
     const identifier = permForm.user_identifier.trim()
@@ -1516,23 +1599,52 @@ export function ScenarioDetailPage() {
           <small style={{ opacity: 0.7 }}>
             Política de edición: <strong>{policyLabel}</strong> · {policyExplanation}
           </small>
+          <div style={{ marginTop: 6 }}>
+            <small style={{ opacity: 0.7 }}>
+              Periodo del modelo:{" "}
+              {periodInfo && periodInfo.min_year !== null && periodInfo.max_year !== null ? (
+                <>
+                  <strong>
+                    {periodInfo.min_year}–{periodInfo.max_year}
+                  </strong>{" "}
+                  ({periodInfo.year_count} {periodInfo.year_count === 1 ? "año" : "años"} en{" "}
+                  YearSplit)
+                </>
+              ) : (
+                <em>sin YearSplit configurado</em>
+              )}
+            </small>
+          </div>
         </div>
-        {canEditScenarioMeta ? (
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setMetaForm({
-                name: scenario.name,
-                description: scenario.description ?? "",
-                edit_policy: scenario.edit_policy,
-                simulation_type: scenario.simulation_type,
-              });
-              setOpenMetaModal(true);
-            }}
-          >
-            Editar escenario
-          </Button>
-        ) : null}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
+          {canManageValues && periodInfo?.max_year != null ? (
+            <Button
+              variant="ghost"
+              onClick={() => setOpenExtendPeriodModal(true)}
+              title={`Copia todos los valores de ${periodInfo.max_year} en ${
+                periodInfo.max_year + 1
+              } y amplía el horizonte del modelo`}
+            >
+              Ampliar periodo del modelo
+            </Button>
+          ) : null}
+          {canEditScenarioMeta ? (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setMetaForm({
+                  name: scenario.name,
+                  description: scenario.description ?? "",
+                  edit_policy: scenario.edit_policy,
+                  simulation_type: scenario.simulation_type,
+                });
+                setOpenMetaModal(true);
+              }}
+            >
+              Editar escenario
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1547,6 +1659,9 @@ export function ScenarioDetailPage() {
         </Button>
         <Button variant={tab === "pending" ? "primary" : "ghost"} onClick={() => setTab("pending")}>
           Solicitudes pendientes
+        </Button>
+        <Button variant={tab === "history" ? "primary" : "ghost"} onClick={() => setTab("history")}>
+          Historial
         </Button>
       </div>
 
@@ -1623,7 +1738,107 @@ export function ScenarioDetailPage() {
             )}
           </article>
 
-          {/* Años visibles + limpiar filtros */}
+          {/* Banner si los filtros vienen del modal de calidad. */}
+          {filtersFromDataQuality && (hasActiveColumnFilters || filterYears.length > 0) && (
+            <div
+              role="status"
+              style={{
+                padding: "10px 14px",
+                borderRadius: 8,
+                background: "rgba(245,158,11,0.10)",
+                border: "1px solid rgba(245,158,11,0.40)",
+                color: "var(--text)",
+                fontSize: 13,
+                lineHeight: 1.4,
+                display: "flex",
+                gap: 12,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <span aria-hidden style={{ fontSize: 16 }}>⚠</span>
+              <div style={{ flex: 1 }}>
+                <strong>Vista filtrada desde el reporte de calidad.</strong>{" "}
+                Estás viendo solo las filas que contribuyen al conflicto detectado.
+                Edita los valores que necesites y luego abre <em>Calidad de datos</em>
+                {" "}desde la lista de escenarios y pulsa <em>Refrescar</em> para
+                recalcular el reporte.
+              </div>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setFilterYears([]);
+                  clearAllColumnFilters();
+                  setFiltersFromDataQuality(false);
+                }}
+              >
+                Quitar filtro
+              </Button>
+            </div>
+          )}
+
+          {/* Filtros activos: chips visibles arriba de la tabla. */}
+          {(hasActiveColumnFilters || filterYears.length > 0) && (
+            <div
+              style={{
+                padding: "10px 12px",
+                borderRadius: 8,
+                background: "rgba(56,189,248,0.06)",
+                border: "1px solid rgba(56,189,248,0.30)",
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <span style={{ fontSize: 12, opacity: 0.85, fontWeight: 600 }}>
+                Filtros activos:
+              </span>
+              {(["param_names", "region_names", "technology_names", "fuel_names", "emission_names", "udc_names"] as const).map(
+                (col) => {
+                  const values = columnFilters[col];
+                  if (!Array.isArray(values) || values.length === 0) return null;
+                  const labelByCol: Record<string, string> = {
+                    param_names: "Parámetro",
+                    region_names: "Región",
+                    technology_names: "Tecnología",
+                    fuel_names: "Combustible",
+                    emission_names: "Emisión",
+                    udc_names: "UDC",
+                  };
+                  return (
+                    <FilterChip
+                      key={col}
+                      label={labelByCol[col] ?? col}
+                      values={values}
+                      onClear={() => applyColumnFilter(col, [])}
+                    />
+                  );
+                },
+              )}
+              {filterYears.length > 0 && (
+                <FilterChip
+                  label="Año"
+                  values={filterYears}
+                  onClear={() => setFilterYears([])}
+                />
+              )}
+              <div style={{ marginLeft: "auto" }}>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setFilterYears([]);
+                    clearAllColumnFilters();
+                    setFiltersFromDataQuality(false);
+                  }}
+                >
+                  Limpiar todo
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Años visibles (selector compacto) */}
           <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
               <span style={{ opacity: 0.8 }}>Años visibles:</span>
@@ -1637,17 +1852,6 @@ export function ScenarioDetailPage() {
                 {filterYears.length === 0 ? "todos" : `${filterYears.length} seleccionados`}
               </small>
             </div>
-            {hasActiveColumnFilters || filterYears.length > 0 ? (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setFilterYears([]);
-                  clearAllColumnFilters();
-                }}
-              >
-                Limpiar filtros
-              </Button>
-            ) : null}
           </div>
 
           {osemosysLoading ? (
@@ -2108,6 +2312,10 @@ export function ScenarioDetailPage() {
         </div>
       ) : null}
 
+      {tab === "history" && Number.isFinite(scenarioId) ? (
+        <ScenarioHistorySummary scenarioId={scenarioId} />
+      ) : null}
+
       <Modal
         open={openMetaModal}
         title="Editar escenario"
@@ -2277,6 +2485,63 @@ export function ScenarioDetailPage() {
             value={osemosysForm.value}
             onChange={(e) => setOsemosysForm((p) => ({ ...p, value: e.target.value }))}
           />
+        </div>
+      </Modal>
+
+      <Modal
+        open={openExtendPeriodModal}
+        title="Ampliar periodo del modelo"
+        onClose={() =>
+          extendPeriodLoading ? undefined : setOpenExtendPeriodModal(false)
+        }
+        footer={
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <Button
+              variant="ghost"
+              onClick={() => setOpenExtendPeriodModal(false)}
+              disabled={extendPeriodLoading}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              onClick={submitExtendPeriod}
+              disabled={extendPeriodLoading || !periodInfo?.max_year}
+            >
+              {extendPeriodLoading ? "Ampliando…" : "Confirmar ampliación"}
+            </Button>
+          </div>
+        }
+      >
+        <div style={{ display: "grid", gap: 10 }}>
+          {periodInfo?.max_year ? (
+            <>
+              <p style={{ margin: 0 }}>
+                Se ampliará el periodo del modelo en <strong>un año</strong>:
+              </p>
+              <p style={{ margin: 0, fontSize: 16 }}>
+                <strong>
+                  {periodInfo.max_year} → {periodInfo.max_year + 1}
+                </strong>
+              </p>
+              <p style={{ margin: 0, opacity: 0.8 }}>
+                Todos los valores de <strong>osemosys_param_value</strong> del año{" "}
+                {periodInfo.max_year} se copiarán al año {periodInfo.max_year + 1}.
+                Esto incluye <em>YearSplit</em>, que es lo que activa el nuevo año
+                en el set <code>YEAR</code> del modelo.
+              </p>
+              <p style={{ margin: 0, opacity: 0.8, color: "#b45309" }}>
+                ⚠ Si ya existen filas para el año {periodInfo.max_year + 1} en
+                este escenario, serán <strong>reemplazadas</strong> para
+                garantizar una copia exacta del año {periodInfo.max_year}.
+              </p>
+            </>
+          ) : (
+            <p style={{ margin: 0 }}>
+              El escenario no tiene filas en YearSplit; no es posible determinar
+              el periodo actual del modelo.
+            </p>
+          )}
         </div>
       </Modal>
 
@@ -2888,5 +3153,70 @@ export function ScenarioDetailPage() {
       </Modal>
 
     </section>
+  );
+}
+
+
+/**
+ * Chip que muestra un filtro activo con su valor (o conteo si son varios)
+ * y un botón "×" para limpiarlo. Usado en la barra de "Filtros activos".
+ */
+function FilterChip({
+  label,
+  values,
+  onClear,
+}: {
+  label: string;
+  values: string[];
+  onClear: () => void;
+}) {
+  const display =
+    values.length === 1
+      ? values[0]
+      : values.length <= 3
+        ? values.join(", ")
+        : `${values.slice(0, 2).join(", ")} +${values.length - 2}`;
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "4px 8px 4px 10px",
+        borderRadius: 999,
+        background: "rgba(56,189,248,0.14)",
+        border: "1px solid rgba(56,189,248,0.40)",
+        fontSize: 12,
+        maxWidth: 320,
+      }}
+      title={values.join(", ")}
+    >
+      <span style={{ opacity: 0.75 }}>{label}:</span>
+      <strong style={{
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        maxWidth: 220,
+      }}>{display}</strong>
+      <button
+        type="button"
+        onClick={onClear}
+        title={`Quitar filtro de ${label}`}
+        aria-label={`Quitar filtro de ${label}`}
+        style={{
+          marginLeft: 2,
+          background: "transparent",
+          border: "none",
+          color: "inherit",
+          cursor: "pointer",
+          fontSize: 14,
+          lineHeight: 1,
+          padding: "2px 4px",
+          opacity: 0.75,
+        }}
+      >
+        ×
+      </button>
+    </span>
   );
 }

@@ -93,6 +93,16 @@ def get_user_manager(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
+def get_system_settings_manager(current_user: User = Depends(get_current_user)) -> User:
+    """Autoriza la administración de configuración runtime del sistema."""
+    if not current_user.can_manage_system_settings:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permisos para administrar la configuración del sistema.",
+        )
+    return current_user
+
+
 def get_scenario_manager(current_user: User = Depends(get_current_user)) -> User:
     """Autoriza administración integral de escenarios ajenos.
 

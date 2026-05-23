@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -72,6 +72,7 @@ from app.services.csv_scenario_import_service import (
     find_csv_root,
     validate_csv_root,
 )
+from app.repositories.simulation_repository import SimulationRepository
 from app.services.simulation_results_service import SimulationResultsService
 from app.services.simulation_service import SimulationService
 
@@ -106,6 +107,7 @@ def submit_simulation(
             scenario_id=payload.scenario_id,
             solver_name=payload.solver_name,
             run_iis_analysis=payload.run_iis_analysis,
+            generate_lp=payload.generate_lp,
             display_name=payload.display_name,
         )
     except NotFoundError as e:
@@ -121,6 +123,7 @@ async def submit_simulation_from_csv(
     csv_zip: UploadFile = File(...),
     solver_name: str = Form("highs"),
     run_iis_analysis: bool = Form(False),
+    generate_lp: bool = Form(False),
     input_name: str | None = Form(default=None),
     simulation_type: str = Form(default="NATIONAL"),
     save_as_scenario: bool = Form(default=False),
@@ -136,10 +139,10 @@ async def submit_simulation_from_csv(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """Encola una simulación desde un ZIP con CSV procesados."""
-    if solver_name not in {"highs", "glpk"}:
+    if solver_name not in {"highs", "glpk", "gurobi"}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Solver inválido. Usa 'highs' o 'glpk'.",
+            detail="Solver inválido. Usa 'highs', 'glpk' o 'gurobi'.",
         )
     if not csv_zip.filename or not csv_zip.filename.lower().endswith(".zip"):
         raise HTTPException(
@@ -198,6 +201,8 @@ async def submit_simulation_from_csv(
                 current_user=current_user,
                 scenario_id=int(created_scenario["id"]),
                 solver_name=solver_name,
+                run_iis_analysis=run_iis_analysis,
+                generate_lp=generate_lp,
                 display_name=display_name,
             )
         keep_artifacts = True
@@ -208,6 +213,7 @@ async def submit_simulation_from_csv(
             input_name=(input_name or csv_zip.filename or "CSV upload"),
             input_ref=str(csv_root),
             run_iis_analysis=run_iis_analysis,
+            generate_lp=generate_lp,
             simulation_type=simulation_type,
             display_name=display_name,
         )
@@ -802,6 +808,104 @@ def download_infeasibility_report(
         buf,
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/{job_id}/lp-file")
+def download_lp_file(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> FileResponse:
+    """Descarga el archivo ``.lp`` del modelo Pyomo escrito durante la corrida.
+
+    Solo disponible cuando la simulación se lanzó con ``generate_lp=True``
+    y el archivo persiste en ``simulation_job.lp_path``.
+
+    Respuestas:
+    - 200: archivo ``.lp`` (``Content-Disposition: attachment``).
+    - 404: job sin acceso, sin ``lp_path``, o archivo borrado del disco.
+    """
+    from pathlib import Path as _Path
+
+    job = SimulationRepository.get_job_for_user(
+        db, job_id=job_id, user_id=current_user.id
+    )
+    if not job:
+        raise HTTPException(status_code=404, detail="Simulación no encontrada.")
+    lp_path = getattr(job, "lp_path", None)
+    if not lp_path:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Esta simulación no tiene un archivo .lp asociado. "
+                "Vuelve a lanzarla activando 'Guardar archivo .lp del modelo'."
+            ),
+        )
+    p = _Path(lp_path)
+    if not p.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="El archivo .lp ya no existe en el servidor.",
+        )
+    filename = p.name
+    return FileResponse(
+        path=str(p),
+        media_type="text/plain",
+        filename=filename,
+    )
+
+
+@router.get("/{job_id}/iis-ilp")
+def download_iis_ilp(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> FileResponse:
+    """Descarga el archivo ``.ilp`` del IIS calculado por Gurobi.
+
+    Solo disponible cuando el job se corrió con Gurobi y el análisis de
+    infactibilidad finalizó (``infeasibility_diagnostics.iis.ilp_path``
+    apunta a un archivo existente).
+
+    Respuestas:
+    - 200: archivo ``.ilp`` (``Content-Disposition: attachment``).
+    - 404: job sin acceso, sin diagnóstico, sin ``.ilp`` o archivo borrado.
+    """
+    try:
+        result = SimulationService.get_result(
+            db, current_user=current_user, job_id=job_id
+        )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ConflictError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+
+    diagnostics = result.get("infeasibility_diagnostics") or {}
+    iis_section = diagnostics.get("iis") or {}
+    ilp_path = iis_section.get("ilp_path")
+    if not ilp_path:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "El job no tiene un archivo .ilp disponible. Solo se genera "
+                "para simulaciones corridas con Gurobi tras un análisis de "
+                "infactibilidad."
+            ),
+        )
+    from pathlib import Path as _Path
+
+    p = _Path(ilp_path)
+    if not p.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="El archivo .ilp ya no existe en el servidor.",
+        )
+    filename = f"iis_job_{job_id}.ilp"
+    return FileResponse(
+        path=str(p),
+        media_type="text/plain",
+        filename=filename,
     )
 
 

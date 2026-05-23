@@ -47,6 +47,7 @@ class UserService:
         can_manage_users: bool,
         can_manage_scenarios: bool = False,
         is_admin_reports: bool = False,
+        can_manage_system_settings: bool = False,
     ) -> User:
         """Crea usuario con permisos iniciales."""
         user = User(
@@ -59,6 +60,7 @@ class UserService:
             can_manage_users=can_manage_users,
             can_manage_scenarios=can_manage_scenarios,
             is_admin_reports=is_admin_reports,
+            can_manage_system_settings=can_manage_system_settings,
         )
         db.add(user)
         try:
@@ -104,6 +106,7 @@ class UserService:
         can_manage_users: bool,
         can_manage_scenarios: bool = False,
         is_admin_reports: bool = False,
+        can_manage_system_settings: bool = False,
     ) -> User:
         """Actualiza permisos funcionales en una sola operación."""
         user = UserRepository.get_by_id(db, user_id)
@@ -115,6 +118,7 @@ class UserService:
         user.can_manage_users = can_manage_users
         user.can_manage_scenarios = can_manage_scenarios
         user.is_admin_reports = is_admin_reports
+        user.can_manage_system_settings = can_manage_system_settings
         db.commit()
         db.refresh(user)
         return user

@@ -46,6 +46,7 @@ from app.models import (
     Timeslice,
     UdcSet,
 )
+from app.db.dialect import is_sqlite_mode
 from app.services.sand_notebook_preprocess import run_notebook_preprocess
 from app.simulation.core.mode_of_operation_normalize import normalize_mode_of_operation_scalar
 
@@ -2818,6 +2819,44 @@ class OfficialImportService:
                 notebook_preprocess_error = str(e)
 
         db.commit()
+
+        # Refresca estadísticas de osemosys_param_value tras un bulk insert
+        # grande (típicamente >100K filas en SAND). Sin esto, autoanalyze de
+        # Postgres no se dispara hasta acumular ~10% de cambios sobre la tabla
+        # global (~1.25M filas) y la consulta self-join de
+        # `detect_bound_conflicts_db` queda corriendo varios minutos eligiendo
+        # un plan nested-loop catastrófico. ANALYZE es barato (~1s) y deja al
+        # planner elegir el plan correcto (~60ms) en `validate_and_persist`.
+        if fallback_scenario is not None and not is_sqlite_mode():
+            try:
+                # ANALYZE corre en una conexión separada con AUTOCOMMIT porque
+                # psycopg no permite ANALYZE dentro de la transacción activa
+                # de la sesión.
+                engine = db.get_bind()
+                with engine.connect() as _conn:
+                    _conn = _conn.execution_options(isolation_level="AUTOCOMMIT")
+                    _conn.exec_driver_sql("ANALYZE osemosys.osemosys_param_value")
+            except Exception as e:  # pragma: no cover - defensive
+                logger.warning("ANALYZE post bulk-insert fallo: %s", e)
+
+        # Validación de calidad de datos post-import: detecta bound conflicts
+        # y dead years en el escenario recién cargado, aplica la exclusión de
+        # años muertos y persiste los warnings en scenario.data_quality_warnings.
+        data_quality: dict | None = None
+        if fallback_scenario is not None:
+            try:
+                from app.simulation.core import data_validation as dv
+                report = dv.validate_and_persist(
+                    db,
+                    scenario_id=int(fallback_scenario.id),
+                    detected_during="import",
+                    apply_dead_years=True,
+                )
+                data_quality = report.to_dict()
+            except Exception as e:  # pragma: no cover - defensive
+                db.rollback()
+                logger.warning("data_validation post-import fallo: %s", e)
+
         return {
             "filename": filename,
             "imported_at": datetime.now(timezone.utc).isoformat(),
@@ -2830,6 +2869,7 @@ class OfficialImportService:
             "notebook_preprocess": notebook_preprocess,
             "notebook_preprocess_error": notebook_preprocess_error,
             "collapse_timeslices": collapse_timeslices,
+            "data_quality": data_quality,
         }
 
     @staticmethod
@@ -3038,15 +3078,28 @@ class OfficialImportService:
         *,
         scenario_id: int,
         changes: list[dict],
+        actor: str | None = None,
+        batch_label: str | None = None,
     ) -> dict:
         """Aplica cambios confirmados por el usuario tras preview.
 
         Soporta dos acciones:
         - ``update``: actualiza por ``row_id`` existente en el escenario.
         - ``insert``: inserta una nueva fila resolviendo/creando catálogos faltantes.
+
+        Todas las entradas de auditoría generadas comparten un mismo ``batch_id``
+        para que la UI de historial pueda colapsar la operación. ``actor`` debe
+        ser el username del usuario; si no se provee, queda ``system:excel_apply``
+        por compatibilidad histórica.
         """
         if not changes:
             return {"updated": 0, "inserted": 0, "skipped": 0}
+
+        import uuid as _uuid
+
+        audit_actor = actor or "system:excel_apply"
+        audit_batch_id = str(_uuid.uuid4())
+        audit_batch_label = batch_label
 
         valid_rows = db.execute(
             select(
@@ -3136,7 +3189,9 @@ class OfficialImportService:
                     new_value=new_by_id[vid],
                     dimensions_json=ScenarioService._audit_dimensions_from_public(old_pub),
                     source="EXCEL_APPLY",
-                    changed_by="system:excel_apply",
+                    changed_by=audit_actor,
+                    batch_id=audit_batch_id,
+                    batch_label=audit_batch_label,
                 )
             to_update.clear()
 
@@ -3280,7 +3335,9 @@ class OfficialImportService:
                     new_value=float(pub_ins["value"]),
                     dimensions_json=ScenarioService._audit_dimensions_from_public(pub_ins),
                     source="EXCEL_APPLY",
-                    changed_by="system:excel_apply",
+                    changed_by=audit_actor,
+                    batch_id=audit_batch_id,
+                    batch_label=audit_batch_label,
                 )
         db.commit()
         return {"updated": updated, "inserted": inserted, "skipped": skipped}

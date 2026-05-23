@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import {
+  Activity,
   DollarSign,
   LayoutGrid,
   Leaf,
@@ -22,6 +23,7 @@ import type {
 } from '../types/domain';
 import { paths } from '../routes/paths';
 import { RunDisplayNameEditor } from '../features/simulation/components/RunDisplayNameEditor';
+import { FavoriteStarButton } from '../features/simulation/components/FavoriteStarButton';
 import { ChartSelector, getChartLabel, type ChartSelection } from '../shared/charts/ChartSelector';
 import { getDefaultChartSelection } from '../shared/charts/defaultChartSelection';
 import { ScenarioComparer, type CompareViewMode } from '../shared/charts/ScenarioComparer';
@@ -66,9 +68,22 @@ import {
   saveSyntheticSeries,
   syntheticSeriesSignature,
 } from '../shared/charts/syntheticSeriesStorage';
-import type { SyntheticSeries } from '../types/domain';
+import type { ExogenousDataConfig, SyntheticSeries } from '../types/domain';
+import { ExogenousDataEditor } from '../shared/charts/ExogenousDataEditor';
+import {
+  loadExogenousData,
+  saveExogenousData,
+  exogenousDataSignature,
+} from '../shared/charts/exogenousDataStorage';
+import {
+  injectExogenousDataFacet,
+  injectExogenousDataByYear,
+  injectExogenousDataLineTotal,
+} from '../shared/charts/exogenousDataTransform';
 import { savedChartsApi } from '@/features/reports/api/savedChartsApi';
-import { FavoriteStarButton } from '../features/simulation/components/FavoriteStarButton';
+import { useCurrentUser } from '@/app/providers/useCurrentUser';
+import { ChartSeriesConfigTab } from '@/features/reports/components/ChartSeriesConfigTab';
+import { Modal } from '@/shared/components/Modal';
 
 const MAX_COMPARE_COLUMNS = 10;
 const EXECUTIONS_TABLE_PAGE_SIZE = 10;
@@ -199,7 +214,41 @@ function ScenarioCard({ summary, isCurrent = false }: ScenarioCardProps) {
           label="CO₂ Emissions (MtCO₂eq)"
           value={formatCompactNumber(summary.total_co2, 2)}
         />
+        <ReserveMarginDualRow dual={summary.reserve_margin_dual} />
       </div>
+    </div>
+  );
+}
+
+function ReserveMarginDualRow({ dual }: { dual: number | null | undefined }) {
+  const isBinding = dual != null && Math.abs(dual) > 1e-6;
+  const valueStr =
+    dual == null
+      ? '—'
+      : dual.toLocaleString('en-US', { maximumFractionDigits: 4, minimumFractionDigits: 4 });
+  return (
+    <div className="flex justify-between items-center gap-4 py-2 border-b border-slate-800/50 last:border-0">
+      <span className="text-slate-400 text-sm flex items-center gap-2 min-w-0">
+        <Activity className="w-4 h-4 shrink-0 text-slate-500" aria-hidden />
+        Dual Margen de Reserva
+      </span>
+      <span className="flex items-center gap-2 shrink-0">
+        <span className="font-mono font-bold tabular-nums text-right text-white">
+          {valueStr}
+        </span>
+        {dual != null && (
+          <span
+            className={[
+              'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide',
+              isBinding
+                ? 'border border-amber-500/30 bg-amber-500/10 text-amber-400'
+                : 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+            ].join(' ')}
+          >
+            {isBinding ? 'Binding' : 'No binding'}
+          </span>
+        )}
+      </span>
     </div>
   );
 }
@@ -233,6 +282,88 @@ function ScenarioMetricRow({
   );
 }
 
+function applyScenarioAliases(
+  data: CompareChartResponse,
+  aliases: Record<number, string>,
+  jobIds: number[],
+  historicalBarLabel?: string,
+): CompareChartResponse {
+  const hasAliases = Object.values(aliases).some((v) => v?.trim());
+  if (!hasAliases && !historicalBarLabel?.trim()) return data;
+
+  const isAltMode = data.subplots.some((sp) => sp.scenario_name);
+
+  return {
+    ...data,
+    subplots: data.subplots.map((subplot) => {
+      if (isAltMode) {
+        const jid = subplot.year;
+        const alias = aliases[jid]?.trim();
+        if (alias) {
+          return { ...subplot, scenario_name: alias };
+        }
+      } else {
+        // Barra del año histórico (categoría única) — usa historicalBarLabel si está definido
+        if (subplot.categories.length === 1 && jobIds.length > 1) {
+          if (historicalBarLabel?.trim()) {
+            return { ...subplot, categories: [historicalBarLabel.trim()] };
+          }
+          return subplot;
+        }
+        if (subplot.categories.length !== jobIds.length) return subplot;
+        const hasCategoryAliases = jobIds.some((jid) => aliases[jid]?.trim());
+        if (!hasCategoryAliases) return subplot;
+        const newCategories = subplot.categories.map((_name, i) => {
+          const jid = jobIds[i];
+          if (jid == null) return _name;
+          const alias = aliases[jid]?.trim();
+          return alias || _name;
+        });
+        return { ...subplot, categories: newCategories };
+      }
+      return subplot;
+    }),
+  };
+}
+
+function applyAliasesToCompareFacetData(
+  data: CompareChartFacetResponse,
+  aliases: Record<number, string>,
+): CompareChartFacetResponse {
+  const hasAliases = Object.values(aliases).some((v) => v?.trim());
+  if (!hasAliases) return data;
+  return {
+    ...data,
+    facets: data.facets.map((facet) => {
+      const alias = aliases[facet.job_id]?.trim();
+      if (!alias) return facet;
+      return {
+        ...facet,
+        display_name: alias,
+        scenario_name: alias,
+        scenario_tag_name: null,
+      };
+    }),
+  };
+}
+
+function applyAliasesToChartDataResponse(
+  data: ChartDataResponse,
+  aliases: Record<number, string>,
+  jobIds: (string | number)[],
+): ChartDataResponse {
+  const hasAliases = Object.values(aliases).some((v) => v?.trim());
+  if (!hasAliases) return data;
+  return {
+    ...data,
+    series: data.series.map((s, i) => {
+      const jid = Number(jobIds[i]);
+      const alias = jid != null ? aliases[jid]?.trim() : undefined;
+      return alias ? { ...s, name: alias } : s;
+    }),
+  };
+}
+
 export function ResultDetailPage() {
   const { runId } = useParams<{ runId: string }>();
   const currentRunId = Number(runId);
@@ -260,6 +391,14 @@ export function ResultDetailPage() {
 
   // Chart selector (tipo por defecto = primera gráfica del catálogo)
   const [chartSelection, setChartSelection] = useState<ChartSelection>(() => getDefaultChartSelection());
+  const { user } = useCurrentUser();
+  const isAdminReports = Boolean(user?.is_admin_reports ?? user?.can_manage_scenarios);
+  const [seriesConfigOpen, setSeriesConfigOpen] = useState(false);
+  /** Incrementar para forzar re-fetch de chart-data tras editar config global de series. */
+  const [chartConfigVersion, setChartConfigVersion] = useState(0);
+  const bumpChartConfigVersion = useCallback(() => {
+    setChartConfigVersion((v) => v + 1);
+  }, []);
 
   /**
    * Catálogo de gráficas (incluye ``data_explorer_filters`` por chart) para
@@ -297,6 +436,28 @@ export function ResultDetailPage() {
   const [compareLineData, setCompareLineData] = useState<ChartDataResponse | null>(null);
   const [paretoData, setParetoData] = useState<ParetoChartResponse | null>(null);
   const [loadingChart, setLoadingChart] = useState(false);
+  const [availableTimeslices, setAvailableTimeslices] = useState<string[]>([]);
+
+  // Cargar los timeslices presentes en los outputs del job actual.
+  // Sirve para mostrar el selector de TS en `ChartSelector` cuando hay >1.
+  useEffect(() => {
+    if (!currentRunId || Number.isNaN(currentRunId)) {
+      setAvailableTimeslices([]);
+      return;
+    }
+    let cancelled = false;
+    simulationApi
+      .getJobTimeslices(currentRunId)
+      .then((ts) => {
+        if (!cancelled) setAvailableTimeslices(Array.isArray(ts) ? ts : []);
+      })
+      .catch(() => {
+        if (!cancelled) setAvailableTimeslices([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentRunId]);
 
   const [chartBarOrientation, setChartBarOrientation] = useState<ChartBarOrientation>(() =>
     loadChartBarOrientation(),
@@ -337,17 +498,46 @@ export function ResultDetailPage() {
   const [yAxisMin, setYAxisMin] = useState<number | null>(null);
   const [yAxisMax, setYAxisMax] = useState<number | null>(null);
   const [seriesOrderOpen, setSeriesOrderOpen] = useState(false);
+  const [scenarioAliases, setScenarioAliases] = useState<Record<number, string>>({});
+  const [scenarioRenameOpen, setScenarioRenameOpen] = useState(false);
+  const [historicalBarLabel, setHistoricalBarLabel] = useState<string>('');
 
   // Resetear modificadores cuando cambia la identidad del chart
   // (otro tipo, otra agrupación, otro filtro): el conjunto de series cambia,
   // así que un orden custom anterior dejaría de tener sentido.
   const chartIdentityKey =
-    `${chartSelection.tipo}|${chartSelection.sub_filtro ?? ''}|${chartSelection.loc ?? ''}|${chartSelection.variable ?? ''}|${chartSelection.agrupar_por ?? ''}`;
+    `${chartSelection.tipo}|${chartSelection.un}|${chartSelection.sub_filtro ?? ''}|${chartSelection.loc ?? ''}|${chartSelection.variable ?? ''}|${chartSelection.agrupar_por ?? ''}|${chartSelection.region ?? ''}|${chartSelection.timeslice ?? ''}`;
   useEffect(() => {
     setCustomSeriesOrder(null);
     setYAxisMin(null);
     setYAxisMax(null);
   }, [chartIdentityKey]);
+
+  // Persistir/recuperar alias de escenarios en localStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`scenarioAliases_${currentRunId}`);
+      setScenarioAliases(raw ? JSON.parse(raw) : {});
+    } catch { setScenarioAliases({}); }
+  }, [currentRunId]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(`scenarioAliases_${currentRunId}`, JSON.stringify(scenarioAliases));
+    } catch { /* localStorage lleno */ }
+  }, [scenarioAliases, currentRunId]);
+
+  // Persistir/recuperar etiqueta personalizada del año base
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`historicalBarLabel_${currentRunId}`);
+      setHistoricalBarLabel(raw ? JSON.parse(raw) : '');
+    } catch { setHistoricalBarLabel(''); }
+  }, [currentRunId]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(`historicalBarLabel_${currentRunId}`, JSON.stringify(historicalBarLabel));
+    } catch { /* localStorage lleno */ }
+  }, [historicalBarLabel, currentRunId]);
 
   // Sincronizar los modificadores DENTRO de chartSelection — así fluyen a
   // ``simulationApi.exportChart`` (descarga ad-hoc), a ``buildChartShareUrl``
@@ -377,6 +567,13 @@ export function ResultDetailPage() {
    */
   const [syntheticSeries, setSyntheticSeries] = useState<SyntheticSeries[]>([]);
   const [showSyntheticEditor, setShowSyntheticEditor] = useState(false);
+  /**
+   * Datos exógenos (ej: emisiones de Refinerías). Persisten en localStorage
+   * por "firma" de gráfica + job_ids — al cambiar escenarios se cargan los
+   * datos guardados para esa combinación (o null si no hay).
+   */
+  const [exogenousData, setExogenousData] = useState<ExogenousDataConfig | null>(null);
+  const [showExogenousEditor, setShowExogenousEditor] = useState(false);
   /**
    * Flujo "crear gráfica y agregarla al reporte". Si la URL tiene el query
    * param ?addToReport=<id>, el botón Guardar cambia de etiqueta y al guardar
@@ -658,42 +855,92 @@ export function ResultDetailPage() {
   const isComparing = columnCompareJobIds.length >= 2;
   const chartCompareMode: CompareMode = isComparing ? compareViewMode : 'off';
 
-  // Lista de series disponibles para el modal de orden, según el modo
-  // activo. La unión de nombres permite definir un orden coherente que
-  // funcione en cualquier facet/subplot/línea-total/single.
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const seriesForModal = useMemo<{ name: string; color?: string | null | undefined }[]>(() => {
-    const seen = new Map<string, string | null | undefined>();
-    const push = (name: string, color?: string | null) => {
-      if (!seen.has(name)) seen.set(name, color);
-    };
-    if (chartCompareMode === 'facet' && compareFacetData) {
-      for (const f of compareFacetData.facets) {
-        for (const s of f.series) push(s.name, s.color);
-      }
-    } else if (chartCompareMode === 'by-year' && compareChartData) {
-      for (const sp of compareChartData.subplots) {
-        for (const s of sp.series) push(s.name, s.color);
-      }
-    } else if (chartCompareMode === 'line-total' && compareLineData) {
-      for (const s of compareLineData.series) push(s.name, s.color);
-    } else if (singleChartData) {
-      for (const s of singleChartData.series) push(s.name, s.color);
-    }
-    return Array.from(seen.entries()).map(([name, color]) => ({ name, color }));
-  }, [
-    chartCompareMode,
-    compareFacetData,
-    compareChartData,
-    compareLineData,
-    singleChartData,
-  ]);
   const chartJobIds = useMemo(() => {
     if (isComparing) return columnCompareJobIds;
     return [currentRunId];
   }, [isComparing, columnCompareJobIds, currentRunId]);
   const chartYearsToPlot = compareYearsToPlot;
 
+  const displayCompareChartData = useMemo(() => {
+    if (!compareChartData) return null;
+    let data = reorderByYearSeries(compareChartData, customSeriesOrder);
+    data = applyScenarioAliases(data, scenarioAliases, chartJobIds, historicalBarLabel);
+    if (exogenousData?.active && isComparing) {
+      data = injectExogenousDataByYear(data, exogenousData, chartJobIds);
+    }
+    return data;
+  }, [compareChartData, customSeriesOrder, scenarioAliases, chartJobIds, historicalBarLabel, exogenousData, isComparing]);
+
+  // Forzar disposición vertical para chart mixto (áreas + líneas)
+  const RECURSOS_CHARTS = new Set(['recursos_vs_demanda', 'recursos_vs_demanda_gas', 'recursos_vs_demanda_carbon']);
+  const effectiveFacetPlacement: ChartFacetPlacement =
+    chartCompareMode === 'facet' && RECURSOS_CHARTS.has(chartSelection.tipo)
+      ? 'stacked'
+      : chartFacetPlacement;
+
+  const displaySingleChartData = useMemo(
+    () =>
+      singleChartData
+        ? reorderChartSeries(singleChartData, customSeriesOrder)
+        : null,
+    [singleChartData, customSeriesOrder],
+  );
+
+  const displayCompareFacetData = useMemo(
+    () => {
+      if (!compareFacetData) return null;
+      let data = reorderFacetSeries(compareFacetData, customSeriesOrder);
+      data = applyAliasesToCompareFacetData(data, scenarioAliases);
+      if (exogenousData?.active && isComparing) {
+        data = injectExogenousDataFacet(data, exogenousData);
+      }
+      return data;
+    },
+    [compareFacetData, customSeriesOrder, scenarioAliases, exogenousData, isComparing],
+  );
+
+  const displayCompareLineData = useMemo(
+    () => {
+      if (!compareLineData) return null;
+      let data = reorderChartSeries(compareLineData, customSeriesOrder);
+      data = applyAliasesToChartDataResponse(data, scenarioAliases, chartJobIds);
+      if (exogenousData?.active && isComparing) {
+        data = injectExogenousDataLineTotal(data, exogenousData, chartJobIds);
+      }
+      return data;
+    },
+    [compareLineData, customSeriesOrder, scenarioAliases, chartJobIds, exogenousData, isComparing],
+  );
+
+  // Lista de series disponibles para el modal de orden, según el modo
+  // activo. La unión de nombres permite definir un orden coherente que
+  // funcione en cualquier facet/subplot/línea-total/single.
+  const seriesForModal = useMemo<{ name: string; color?: string | null | undefined }[]>(() => {
+    const seen = new Map<string, string | null | undefined>();
+    const push = (name: string, color?: string | null) => {
+      if (!seen.has(name)) seen.set(name, color);
+    };
+    if (chartCompareMode === 'facet' && displayCompareFacetData) {
+      for (const f of displayCompareFacetData.facets) {
+        for (const s of f.series) push(s.name, s.color);
+      }
+    } else if (chartCompareMode === 'by-year' && displayCompareChartData) {
+      for (const sp of displayCompareChartData.subplots) {
+        for (const s of sp.series) push(s.name, s.color);
+      }
+    } else if (chartCompareMode === 'line-total' && displayCompareLineData) {
+      for (const s of displayCompareLineData.series) push(s.name, s.color);
+    } else if (displaySingleChartData) {
+      for (const s of displaySingleChartData.series) push(s.name, s.color);
+    }
+    return Array.from(seen.entries()).map(([name, color]) => ({ name, color }));
+  }, [
+    chartCompareMode,
+    displayCompareFacetData,
+    displayCompareChartData,
+    displayCompareLineData,
+    displaySingleChartData,
+  ]);
   // Firma estable del contexto para persistir series sintéticas por gráfica.
   const syntheticSignature = useMemo(
     () =>
@@ -718,6 +965,27 @@ export function ResultDetailPage() {
     saveSyntheticSeries(syntheticSignature, syntheticSeries);
   }, [syntheticSignature, syntheticSeries]);
 
+  // Firma estable del contexto para persistir datos exógenos por gráfica + escenarios.
+  // Excluye compare_mode para que los datos persistan al cambiar entre facet/by-year/line-total.
+  const exogenousSignatureStr = useMemo(
+    () =>
+      exogenousDataSignature({
+        tipo: chartSelection.tipo,
+        un: chartSelection.un,
+        agrupar_por: chartSelection.agrupar_por,
+        job_ids_signature: chartJobIds.slice().sort((a, b) => a - b).join(','),
+      }),
+    [chartSelection, chartJobIds],
+  );
+  // Carga desde localStorage al cambiar el contexto.
+  useEffect(() => {
+    setExogenousData(loadExogenousData(exogenousSignatureStr));
+  }, [exogenousSignatureStr]);
+  // Guarda en localStorage en cada mutación.
+  useEffect(() => {
+    saveExogenousData(exogenousSignatureStr, exogenousData);
+  }, [exogenousSignatureStr, exogenousData]);
+
   /** Al cambiar `display_name` en resúmenes, se vuelven a pedir los datos de gráficas (títulos de facetas / eje X en comparación). */
   const chartDisplayNamesSignature = useMemo(() => {
     return chartJobIds
@@ -730,6 +998,15 @@ export function ResultDetailPage() {
       })
       .join('|');
   }, [chartJobIds, allSummaries, summary]);
+
+  const renameEntries = useMemo(() => {
+    return chartJobIds.map((jid) => {
+      const id = Number(jid);
+      const s = allSummaries.find((sum) => Number(sum.job_id) === id);
+      const originalName = s?.display_name?.trim() || s?.scenario_name?.trim() || `Job ${id}`;
+      return { jobId: id, originalName, alias: scenarioAliases[id] || '' };
+    });
+  }, [chartJobIds, allSummaries, scenarioAliases]);
 
   // 3. Fetch chart data when selection or comparison changes
   useEffect(() => {
@@ -752,6 +1029,11 @@ export function ResultDetailPage() {
       if (chartSelection.variable) params.variable = chartSelection.variable;
       if (chartSelection.agrupar_por) params.agrupar_por = chartSelection.agrupar_por;
       if (esPorcentaje) params.es_porcentaje = 'true';
+      // Filtro regional: ignorado por backend si el job no es REGIONAL.
+      // Si agrupamos por región, el filtro no aplica (mutuamente excluyente).
+      if (chartSelection.region && chartSelection.agrupar_por !== 'REGION') {
+        params.region = chartSelection.region;
+      }
 
       simulationApi
         .getCompareFacetData(params as Parameters<typeof simulationApi.getCompareFacetData>[0])
@@ -787,6 +1069,30 @@ export function ResultDetailPage() {
         })
         .catch((err: unknown) => console.error('Error loading compare data', err))
         .finally(() => setLoadingChart(false));
+    } else if (isCompare && chartCompareMode === 'by-year-alt') {
+      const params: Record<string, string> = {
+        job_ids: chartJobIds.join(','),
+        tipo: chartSelection.tipo,
+        un: chartSelection.un,
+        years_to_plot: chartYearsToPlot.join(','),
+        group_by: 'scenario',
+      };
+      if (chartSelection.sub_filtro) params.sub_filtro = chartSelection.sub_filtro;
+      if (chartSelection.loc) params.loc = chartSelection.loc;
+      if (chartSelection.agrupar_por) params.agrupacion = chartSelection.agrupar_por;
+      if (esPorcentaje) params.es_porcentaje = 'true';
+
+      simulationApi
+        .getCompareData(params as Parameters<typeof simulationApi.getCompareData>[0])
+        .then((data: CompareChartResponse) => {
+          setCompareChartData(data);
+          setCompareFacetData(null);
+          setSingleChartData(null);
+          setCompareLineData(null);
+          setParetoData(null);
+        })
+        .catch((err: unknown) => console.error('Error loading compare alt data', err))
+        .finally(() => setLoadingChart(false));
     } else if (isCompare && chartCompareMode === 'line-total') {
       const params: Record<string, string> = {
         job_ids: chartJobIds.join(','),
@@ -816,7 +1122,13 @@ export function ResultDetailPage() {
       if (chartSelection.loc) params.loc = chartSelection.loc;
       if (chartSelection.variable) params.variable = chartSelection.variable;
       if (chartSelection.agrupar_por) params.agrupar_por = chartSelection.agrupar_por;
+      if (chartSelection.timeslice) params.timeslice = chartSelection.timeslice;
       if (esPorcentaje) params.es_porcentaje = 'true';
+      // Filtro regional: ignorado por backend si el job no es REGIONAL.
+      // Si agrupamos por región, el filtro no aplica (mutuamente excluyente).
+      if (chartSelection.region && chartSelection.agrupar_por !== 'REGION') {
+        params.region = chartSelection.region;
+      }
 
       if (chartSelection.viewMode === 'pareto') {
         const paretoParams: Record<string, string> = {
@@ -864,6 +1176,7 @@ export function ResultDetailPage() {
     chartJobIds,
     chartYearsToPlot,
     chartDisplayNamesSignature,
+    chartConfigVersion,
   ]);
 
   // Cerrar dropdown al hacer clic fuera
@@ -1353,6 +1666,9 @@ export function ResultDetailPage() {
                     <th className="p-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
                       CO₂ (Mt)
                     </th>
+                    <th className="p-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      Dual Margen Reserva
+                    </th>
                   </tr>
                   <tr className="border-b border-slate-800/80 bg-slate-950/30">
                     <th className="p-2" />
@@ -1489,7 +1805,9 @@ export function ResultDetailPage() {
                           <FavoriteStarButton
                             jobId={Number(s.job_id)}
                             isFavorite={Boolean(s.is_favorite)}
-                            onToggled={(next) => handleFavoriteToggled(Number(s.job_id), next)}
+                            onToggled={(next: boolean) =>
+                              handleFavoriteToggled(Number(s.job_id), next)
+                            }
                             size={16}
                           />
                         </td>
@@ -1557,6 +1875,25 @@ export function ResultDetailPage() {
                         </td>
                         <td className="p-4 text-right font-mono text-slate-200 tabular-nums">
                           {formatCompactNumber(s.total_co2, 2)}
+                        </td>
+                        <td className="p-4 text-right">
+                          {s.reserve_margin_dual == null ? (
+                            <span className="text-slate-600">—</span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="font-mono tabular-nums text-slate-200">
+                                {s.reserve_margin_dual.toLocaleString('en-US', { maximumFractionDigits: 4, minimumFractionDigits: 4 })}
+                              </span>
+                              <span className={[
+                                'inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide',
+                                Math.abs(s.reserve_margin_dual) > 1e-6
+                                  ? 'border border-amber-500/30 bg-amber-500/10 text-amber-400'
+                                  : 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+                              ].join(' ')}>
+                                {Math.abs(s.reserve_margin_dual) > 1e-6 ? 'Binding' : 'No binding'}
+                              </span>
+                            </span>
+                          )}
                         </td>
                       </tr>
                     );
@@ -1679,7 +2016,7 @@ export function ResultDetailPage() {
                       ? compareYearsToPlot
                       : undefined,
                   facetPlacement:
-                    chartCompareMode === "facet" ? chartFacetPlacement : undefined,
+                    chartCompareMode === "facet" ? effectiveFacetPlacement : undefined,
                   facetLegendMode:
                     chartCompareMode === "facet" ? chartFacetLegendMode : undefined,
                 });
@@ -1741,6 +2078,40 @@ export function ResultDetailPage() {
                   </span>
                 ) : null}
               </button>
+              {isAdminReports ? (
+                <button
+                  type="button"
+                  onClick={() => setSeriesConfigOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700"
+                  title="Nombres, colores, orden y visibilidad globales para este tipo de gráfica y agrupación"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                    />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  Configurar series
+                </button>
+              ) : null}
+              {(chartCompareMode !== 'off') && chartJobIds.length > 1 ? (
+                <button
+                  type="button"
+                  onClick={() => setScenarioRenameOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700"
+                  title="Cambia el nombre mostrado de cada escenario en la gráfica"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  Renombrar escenarios
+                  {Object.values(scenarioAliases).some((v) => v?.trim()) ? (
+                    <span className="rounded-full bg-cyan-500/20 px-1.5 py-0.5 text-[9px] text-cyan-300">custom</span>
+                  ) : null}
+                </button>
+              ) : null}
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] text-slate-500">Eje Y:</span>
                 <input
@@ -1792,27 +2163,44 @@ export function ResultDetailPage() {
               </div>
             )}
 
-            {chartCompareMode === 'facet' && chartJobIds.length > 1 && compareFacetData ? (
+            {chartCompareMode === 'facet' && chartJobIds.length > 1 && displayCompareFacetData ? (
               <CompareChartFacet
-                data={reorderFacetSeries(compareFacetData, customSeriesOrder)}
+                data={displayCompareFacetData}
                 barOrientation={chartBarOrientation}
-                facetPlacement={chartFacetPlacement}
+                facetPlacement={effectiveFacetPlacement}
                 legendMode={chartFacetLegendMode}
-                viewMode={chartSelection.viewMode === 'line' ? 'line' : 'column'}
-                serverFacetExport={{ jobIds: chartJobIds, selection: chartSelection }}
+                viewMode={
+                  chartSelection.viewMode === 'line' ? 'line'
+                  : chartSelection.viewMode === 'area' ? 'area'
+                  : 'column'
+                }
+                serverFacetExport={{ jobIds: chartJobIds, selection: chartSelection, scenarioAliases, exogenousData: exogenousData && isComparing ? JSON.stringify(exogenousData) : undefined }}
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
               />
-            ) : chartCompareMode === 'by-year' && chartJobIds.length > 1 && compareChartData ? (
+            ) : chartCompareMode === 'by-year' && chartJobIds.length > 1 && displayCompareChartData ? (
               <CompareChart
-                data={reorderByYearSeries(compareChartData, customSeriesOrder)}
+                data={displayCompareChartData}
                 barOrientation={chartBarOrientation}
+                stackType={chartSelection.viewMode === 'area' ? 'area' : 'column'}
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
+                sharedYAxis={true}
+                serverCompareExport={{ jobIds: chartJobIds, selection: chartSelection, yearsToPlot: chartYearsToPlot, isAltMode: false, scenarioAliases }}
               />
-            ) : chartCompareMode === 'line-total' && chartJobIds.length > 1 && compareLineData ? (
+            ) : chartCompareMode === 'by-year-alt' && chartJobIds.length > 1 && displayCompareChartData ? (
+              <CompareChart
+                data={displayCompareChartData}
+                barOrientation={chartBarOrientation}
+                stackType={chartSelection.viewMode === 'area' ? 'area' : 'column'}
+                yAxisMin={yAxisMin}
+                yAxisMax={yAxisMax}
+                sharedYAxis={true}
+                serverCompareExport={{ jobIds: chartJobIds, selection: chartSelection, yearsToPlot: chartYearsToPlot, isAltMode: true, scenarioAliases }}
+              />
+            ) : chartCompareMode === 'line-total' && chartJobIds.length > 1 && displayCompareLineData ? (
               <LineChart
-                data={reorderChartSeries(compareLineData, customSeriesOrder)}
+                data={displayCompareLineData}
                 syntheticSeries={syntheticSeries.filter((s) => s.active !== false)}
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
@@ -1829,26 +2217,37 @@ export function ResultDetailPage() {
                 cumulative={Boolean(chartSelection.tableCumulative)}
                 serverExport={{ jobId: currentRunId, selection: chartSelection }}
               />
-            ) : singleChartData ? (
+            ) : displaySingleChartData ? (
               chartSelection.viewMode === 'line'
                 ? (
                     <LineChart
-                      data={reorderChartSeries(singleChartData, customSeriesOrder)}
+                      data={displaySingleChartData}
                       serverExport={{ jobId: currentRunId, selection: chartSelection }}
                       syntheticSeries={syntheticSeries.filter((s) => s.active !== false)}
                       yAxisMin={yAxisMin}
                       yAxisMax={yAxisMax}
                     />
                   )
-                : (
-                    <HighchartsChart
-                      data={reorderChartSeries(singleChartData, customSeriesOrder)}
-                      barOrientation={chartBarOrientation}
-                      serverExport={{ jobId: currentRunId, selection: chartSelection }}
-                      yAxisMin={yAxisMin}
-                      yAxisMax={yAxisMax}
-                    />
-                  )
+                : chartSelection.viewMode === 'area'
+                  ? (
+                      <HighchartsChart
+                        data={displaySingleChartData}
+                        stackType="area"
+                        barOrientation="vertical"
+                        serverExport={{ jobId: currentRunId, selection: chartSelection }}
+                        yAxisMin={yAxisMin}
+                        yAxisMax={yAxisMax}
+                      />
+                    )
+                  : (
+                      <HighchartsChart
+                        data={displaySingleChartData}
+                        barOrientation={chartBarOrientation}
+                        serverExport={{ jobId: currentRunId, selection: chartSelection }}
+                        yAxisMin={yAxisMin}
+                        yAxisMax={yAxisMax}
+                      />
+                    )
             ) : !loadingChart ? (
               <div className="flex h-[400px] flex-col items-center justify-center px-4 text-center text-slate-500">
                 <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-slate-800 bg-slate-900/50">
@@ -1868,10 +2267,13 @@ export function ResultDetailPage() {
             hideGroupBy={chartCompareMode === 'line-total'}
             barOrientation={chartBarOrientation}
             onChangeBarOrientation={setChartBarOrientation}
+            isRegionalJob={runMeta?.simulation_type === 'REGIONAL'}
+            availableTimeslices={availableTimeslices}
           />
 
-          {/* Series manuales overlay: solo aplican en gráficas de línea. */}
+          {/* Series manuales overlay: aplican en gráficas de línea y área. */}
           {(chartSelection.viewMode === 'line' ||
+            chartSelection.viewMode === 'area' ||
             chartCompareMode === 'line-total') ? (
             <div className="rounded-xl border border-slate-800 bg-slate-900/30 backdrop-blur-sm p-4 flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
@@ -1893,6 +2295,31 @@ export function ResultDetailPage() {
               </button>
             </div>
           ) : null}
+
+          {/* Datos exógenos: solo para emisiones_gei en modo comparación. */}
+          {isComparing && chartSelection.tipo === 'emisiones_gei' ? (
+            <div className="rounded-xl border border-slate-800 bg-slate-900/30 backdrop-blur-sm p-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="m-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                  Datos exógenos — Refinerías
+                </p>
+                <p className="m-0 mt-1 text-xs text-slate-500">
+                  {exogenousData?.active && exogenousData.scenarios.some((s) => s.data.length > 0)
+                    ? 'Datos cargados. Se mostrarán como categoría en la gráfica.'
+                    : 'Agrega emisiones externas de Refinerías por escenario.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowExogenousEditor(true)}
+                className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/20"
+              >
+                {exogenousData?.active && exogenousData.scenarios.some((s) => s.data.length > 0)
+                  ? 'Editar datos exógenos'
+                  : '+ Agregar datos exógenos'}
+              </button>
+            </div>
+          ) : null}
         </>
       ) : null}
 
@@ -1909,16 +2336,38 @@ export function ResultDetailPage() {
         }
       />
 
+      <ExogenousDataEditor
+        open={showExogenousEditor}
+        onClose={() => setShowExogenousEditor(false)}
+        value={exogenousData}
+        onChange={setExogenousData}
+        scenarios={chartJobIds.map((jid, i) => ({
+          jobId: jid,
+          name: allSummaries.find((s) => Number(s.job_id) === jid)?.display_name
+            ?? allSummaries.find((s) => Number(s.job_id) === jid)?.scenario_name
+            ?? allSummaries.find((s) => Number(s.job_id) === jid)?.scenario_tag?.name
+            ?? `Escenario ${i + 1}`,
+        }))}
+        unitLabel={chartSelection.un}
+        suggestedYears={
+          compareLineData?.categories
+            ? compareLineData.categories.map((c) => Number(c)).filter(Number.isFinite)
+            : compareChartData?.subplots
+              ?.flatMap((sp) => sp.categories.map((c) => Number(c)).filter(Number.isFinite))
+            ?? singleChartData?.categories?.map((c) => Number(c)).filter(Number.isFinite)
+        }
+      />
+
       <SaveChartModal
         open={showSaveChartModal}
         onClose={() => setShowSaveChartModal(false)}
         selection={chartSelection}
         compareMode={chartJobIds.length > 1 ? chartCompareMode : 'off'}
         numScenarios={chartJobIds.length > 1 ? chartJobIds.length : 1}
-        yearsToPlot={chartCompareMode === 'by-year' ? chartYearsToPlot : null}
+        yearsToPlot={chartCompareMode === 'by-year' || chartCompareMode === 'by-year-alt' ? chartYearsToPlot : null}
         syntheticSeries={syntheticSeries.length > 0 ? syntheticSeries : null}
         barOrientation={chartBarOrientation}
-        facetPlacement={chartFacetPlacement}
+        facetPlacement={effectiveFacetPlacement}
         facetLegendMode={chartFacetLegendMode}
         chartLabel={getChartLabel(chartSelection.tipo) ?? null}
         saveButtonLabel={isAddToReportFlow ? "Guardar gráfica y agregar al reporte" : undefined}
@@ -1985,6 +2434,20 @@ export function ResultDetailPage() {
         }}
       />
 
+      <Modal
+        open={seriesConfigOpen}
+        title="Configuración global de series"
+        onClose={() => setSeriesConfigOpen(false)}
+        wide
+      >
+        <ChartSeriesConfigTab
+          fixedTipo={chartSelection.tipo}
+          fixedAgruparPor={(chartSelection.agrupar_por ?? 'TECNOLOGIA').toUpperCase()}
+          presentationVariable={chartSelection.variable?.trim() || null}
+          onApplied={bumpChartConfigVersion}
+        />
+      </Modal>
+
       <SeriesOrderModal
         open={seriesOrderOpen}
         onClose={() => setSeriesOrderOpen(false)}
@@ -1992,6 +2455,101 @@ export function ResultDetailPage() {
         currentOrder={customSeriesOrder}
         onApply={(next) => setCustomSeriesOrder(next)}
       />
+
+      <Modal
+        open={scenarioRenameOpen}
+        title="Renombrar escenarios"
+        onClose={() => setScenarioRenameOpen(false)}
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-slate-400">
+            Los cambios solo afectan el nombre mostrado en la gráfica.
+            El nombre original del escenario no se modifica.
+          </p>
+
+          {chartCompareMode === 'by-year' ? (
+            <div className="border-b border-slate-700/50 pb-3">
+              <label className="mb-1.5 block text-[11px] font-medium text-slate-500">
+                Nombre del año base
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={historicalBarLabel}
+                  onChange={(e) => setHistoricalBarLabel(e.target.value)}
+                  placeholder="Ej: Línea Base 2024"
+                  className="flex-1 rounded border border-slate-700 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-600"
+                />
+                {historicalBarLabel ? (
+                  <button
+                    type="button"
+                    onClick={() => setHistoricalBarLabel('')}
+                    className="text-slate-500 hover:text-slate-300"
+                    title="Restablecer nombre original"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          {renameEntries.map(({ jobId, originalName, alias }) => (
+            <div key={jobId} className="flex items-center gap-3">
+              <span className="text-[11px] font-mono text-slate-500 w-16 shrink-0">#{jobId}</span>
+              <span className="text-xs text-slate-400 truncate flex-1" title={originalName}>
+                {originalName}
+              </span>
+              <input
+                type="text"
+                value={alias}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setScenarioAliases((prev) => {
+                    const next = { ...prev };
+                    if (v.trim()) next[jobId] = v;
+                    else delete next[jobId];
+                    return next;
+                  });
+                }}
+                placeholder="Nombre personalizado"
+                className="w-48 rounded border border-slate-700 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-600"
+              />
+              {alias ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScenarioAliases((prev) => {
+                      const next = { ...prev };
+                      delete next[jobId];
+                      return next;
+                    });
+                  }}
+                  className="text-slate-500 hover:text-slate-300"
+                  title="Restablecer nombre original"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              ) : null}
+            </div>
+          ))}
+          {Object.values(scenarioAliases).some((v) => v?.trim()) ? (
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setScenarioAliases({})}
+                className="rounded border border-slate-700 bg-slate-800/40 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-700"
+              >
+                Restablecer todos
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </Modal>
 
       {savedChartToast ? (
         <div

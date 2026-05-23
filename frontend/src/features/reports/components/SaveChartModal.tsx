@@ -17,7 +17,7 @@ import type {
 } from "@/types/domain";
 import type { ChartSelection } from "@/shared/charts/ChartSelector";
 
-export type SaveCompareMode = "off" | "facet" | "by-year" | "line-total";
+export type SaveCompareMode = "off" | "facet" | "by-year" | "by-year-alt" | "line-total";
 
 type Props = {
   open: boolean;
@@ -41,6 +41,7 @@ type Props = {
 function compareModeLabel(mode: SaveCompareMode, numScenarios: number): string {
   if (mode === "facet") return `facet × ${numScenarios}`;
   if (mode === "by-year") return `por año × ${numScenarios}`;
+  if (mode === "by-year-alt") return `por año (alt) × ${numScenarios}`;
   if (mode === "line-total") return `líneas totales × ${numScenarios}`;
   return `1 escenario`;
 }
@@ -96,6 +97,11 @@ function buildDescription(params: {
     const years = params.yearsToPlot?.join(", ") || "—";
     lines.push(
       `Modo: comparación por años (${years}) · ${params.numScenarios} escenarios`,
+    );
+  } else if (params.compareMode === "by-year-alt") {
+    const years = params.yearsToPlot?.join(", ") || "—";
+    lines.push(
+      `Modo: comparación por años (alt) (${years}) · ${params.numScenarios} escenarios`,
     );
   } else if (params.compareMode === "line-total") {
     lines.push(

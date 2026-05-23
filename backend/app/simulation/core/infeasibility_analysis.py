@@ -835,6 +835,13 @@ class IISReport:
     method: str | None
     constraint_names: list[str] = field(default_factory=list)
     variable_names: list[str] = field(default_factory=list)
+    #: Conflictos por cota de variable que reporta Gurobi (`IISLB` / `IISUB`).
+    #: HiGHS no expone esta distinción, así que la lista queda vacía en su caso.
+    #: Cada entry: ``{"name": "<varname>", "side": "LB" | "UB"}``.
+    bound_conflicts: list[dict[str, str]] = field(default_factory=list)
+    #: Ruta absoluta al ``.ilp`` generado por Gurobi (``Model.write``). ``None``
+    #: cuando el solver no es Gurobi o no se pudo escribir.
+    ilp_path: str | None = None
     unavailable_reason: str | None = None
     glpk_violations: list[dict] = field(default_factory=list)
 
@@ -992,27 +999,243 @@ def _try_import_highspy() -> tuple[Any | None, str | None]:
         return None, f"highspy no disponible: {exc!r}"
 
 
+def _try_import_gurobipy() -> tuple[Any | None, str | None]:
+    try:
+        import gurobipy  # type: ignore
+
+        return gurobipy, None
+    except Exception as exc:  # pragma: no cover - depende del entorno
+        return None, f"gurobipy no disponible: {exc!r}"
+
+
+def _release_gurobi(model: Any | None) -> None:
+    """Libera el modelo y el environment default de gurobipy.
+
+    Replica el patrón usado en :func:`solver._release_solver`: con licencia
+    Single-Use mantener el ``Env`` vivo bloquea futuros solves; con WLS no
+    bloquea pero igual liberamos por higiene.
+    """
+    if model is not None:
+        try:
+            model.dispose()
+        except Exception:  # pragma: no cover
+            logger.debug("Error disposing gurobi model", exc_info=True)
+    try:
+        import gurobipy as gp
+
+        dispose_default = getattr(gp, "disposeDefaultEnv", None)
+        if callable(dispose_default):
+            dispose_default()
+    except Exception:  # pragma: no cover
+        pass
+
+
+def _try_compute_iis_gurobi(
+    lp_path: Path,
+    *,
+    ilp_out: Path | None = None,
+) -> IISReport:
+    """Calcula el IIS de un LP infactible usando ``gurobipy.Model.computeIIS``.
+
+    Gurobi entrega un IIS minimal (``Model.IISMinimal == 1``) y diferencia
+    conflictos de ``IISLB`` / ``IISUB`` por variable, además de las
+    restricciones (``IISConstr``) y constraints generalizadas (``IISGenConstr``).
+    Si se pasa ``ilp_out``, se escribe el subsistema como archivo ``.ilp``
+    reproducible en cualquier herramienta LP.
+    """
+    gp, err = _try_import_gurobipy()
+    if gp is None:
+        return IISReport(available=False, method=None, unavailable_reason=err)
+
+    GRB = getattr(gp, "GRB", None)
+    if GRB is None:  # pragma: no cover
+        return IISReport(
+            available=False,
+            method=None,
+            unavailable_reason="gurobipy.GRB no disponible.",
+        )
+
+    model: Any | None = None
+    try:
+        try:
+            model = gp.read(str(lp_path))
+        except Exception as exc:
+            return IISReport(
+                available=False,
+                method=None,
+                unavailable_reason=f"Gurobi no pudo leer el LP: {exc!r}",
+            )
+
+        # Silenciar logs y aplicar threads configurados (BD o env var).
+        try:
+            model.setParam("OutputFlag", 0)
+        except Exception:  # pragma: no cover
+            pass
+        try:
+            from app.core.config import get_settings  # noqa: WPS433
+            from app.simulation.core.solver import _resolve_solver_threads  # noqa: WPS433
+
+            threads = _resolve_solver_threads(get_settings())
+            if threads > 0:
+                model.setParam("Threads", threads)
+        except Exception:
+            logger.debug(
+                "No se pudo aplicar Threads al modelo Gurobi del IIS",
+                exc_info=True,
+            )
+
+        try:
+            model.optimize()
+        except Exception as exc:
+            return IISReport(
+                available=False,
+                method=None,
+                unavailable_reason=f"Gurobi optimize() falló: {exc!r}",
+            )
+
+        if model.status != GRB.INFEASIBLE:
+            return IISReport(
+                available=False,
+                method=None,
+                unavailable_reason=(
+                    f"Gurobi reporta status={model.status}; el modelo no es "
+                    "infactible o terminó por otro motivo."
+                ),
+            )
+
+        try:
+            model.computeIIS()
+        except Exception as exc:
+            return IISReport(
+                available=False,
+                method=None,
+                unavailable_reason=f"Gurobi computeIIS() falló: {exc!r}",
+            )
+
+        constraint_names: list[str] = []
+        try:
+            for c in model.getConstrs():
+                if int(getattr(c, "IISConstr", 0) or 0) == 1:
+                    constraint_names.append(c.ConstrName)
+        except Exception:  # pragma: no cover
+            logger.debug("Error leyendo IISConstr", exc_info=True)
+
+        # Constraints generalizadas (indicators, etc.).
+        try:
+            for gc in model.getGenConstrs():
+                if int(getattr(gc, "IISGenConstr", 0) or 0) == 1:
+                    constraint_names.append(gc.GenConstrName)
+        except Exception:  # pragma: no cover
+            pass
+
+        bound_conflicts: list[dict[str, str]] = []
+        variable_names: list[str] = []
+        seen_vars: set[str] = set()
+        try:
+            for v in model.getVars():
+                in_lb = int(getattr(v, "IISLB", 0) or 0) == 1
+                in_ub = int(getattr(v, "IISUB", 0) or 0) == 1
+                if in_lb:
+                    bound_conflicts.append({"name": v.VarName, "side": "LB"})
+                if in_ub:
+                    bound_conflicts.append({"name": v.VarName, "side": "UB"})
+                if (in_lb or in_ub) and v.VarName not in seen_vars:
+                    variable_names.append(v.VarName)
+                    seen_vars.add(v.VarName)
+        except Exception:  # pragma: no cover
+            logger.debug("Error leyendo IISLB/IISUB", exc_info=True)
+
+        ilp_path_str: str | None = None
+        if ilp_out is not None:
+            try:
+                ilp_out.parent.mkdir(parents=True, exist_ok=True)
+                model.write(str(ilp_out))
+                ilp_path_str = str(ilp_out)
+            except Exception:
+                logger.exception("No se pudo escribir el .ilp en %s", ilp_out)
+
+        if not constraint_names and not variable_names:
+            return IISReport(
+                available=False,
+                method="gurobi.computeIIS",
+                unavailable_reason=(
+                    "Gurobi ejecutó computeIIS pero el resultado quedó vacío. "
+                    "Verifica que el LP realmente sea infactible."
+                ),
+                ilp_path=ilp_path_str,
+            )
+
+        return IISReport(
+            available=True,
+            method="gurobi.computeIIS",
+            constraint_names=constraint_names,
+            variable_names=variable_names,
+            bound_conflicts=bound_conflicts,
+            ilp_path=ilp_path_str,
+        )
+    finally:
+        _release_gurobi(model)
+
+
 def try_compute_iis(
     instance: Any | None,
     solver_name: str,
     *,
     lp_path: Path | None = None,
+    ilp_out: Path | None = None,
 ) -> IISReport:
-    """Intenta calcular un IIS (HiGHS) o violaciones forzadas (GLPK).
+    """Intenta calcular un IIS o un análisis equivalente según el solver.
 
     Estrategia según solver:
 
-    * ``highs``: usa ``highspy`` para computar un IIS real (mínimo conjunto
-      de restricciones conflictivas).  Pasos: escribe LP simbólico → instancia
-      ``highspy.Highs`` → ``run()`` → ``getIis()``.
+    * ``gurobi``: usa ``Model.computeIIS()`` (vía gurobipy) sobre el ``.lp``
+      ya escrito durante el solve. Si ``ilp_out`` se provee, persiste el
+      ``.ilp`` allí.
+    * ``highs``: ruta legacy con ``highspy`` — escribe LP simbólico, lo carga
+      en ``highspy.Highs``, llama ``run()`` + ``getIis()``.
     * ``glpk``: ejecuta ``glpsol --nopresol`` para forzar el simplex completo
-      y parsear las restricciones cuya actividad viola sus cotas.  No es un IIS
+      y parsea las restricciones cuya actividad viola sus cotas. No es un IIS
       verdadero pero alimenta ``CONSTRAINT_PARAM_MAP`` con la misma interfaz.
-    * Cualquier otro solver → ``IISReport(available=False)``.
+    * Cualquier otro solver → ``IISReport(available=False, ...)``.
 
     En cualquier fallo devuelve ``IISReport(available=False, ...)`` con el motivo.
     """
-    if solver_name == "glpk":
+    sn = (solver_name or "").lower()
+
+    if sn == "gurobi":
+        if lp_path is None or not Path(lp_path).exists():
+            # Intentar exportar el LP a partir de la instancia Pyomo si
+            # fue provista. Replica la misma lógica del path HiGHS.
+            if instance is None:
+                return IISReport(
+                    available=False,
+                    method=None,
+                    unavailable_reason=(
+                        "No hay LP ni instancia Pyomo para computar IIS con Gurobi."
+                    ),
+                )
+            try:
+                from app.simulation.core.solver import write_lp_file  # noqa: WPS433
+            except Exception as exc:
+                return IISReport(
+                    available=False,
+                    method=None,
+                    unavailable_reason=f"No se pudo importar write_lp_file: {exc!r}",
+                )
+            tmp_dir = Path("tmp/infeasibility-reports")
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+            lp_path = tmp_dir / "iis_input.lp"
+            try:
+                write_lp_file(instance, lp_path)
+            except Exception as exc:  # pragma: no cover
+                return IISReport(
+                    available=False,
+                    method=None,
+                    unavailable_reason=f"No se pudo exportar LP para IIS: {exc!r}",
+                )
+        return _try_compute_iis_gurobi(Path(lp_path), ilp_out=ilp_out)
+
+    if sn == "glpk":
         if instance is None:
             return IISReport(
                 available=False,
@@ -1041,11 +1264,14 @@ def try_compute_iis(
                 )
         return _try_violations_glpk(lp_path)
 
-    if solver_name != "highs":
+    if sn != "highs":
         return IISReport(
             available=False,
             method=None,
-            unavailable_reason=f"IIS sólo soportado para HiGHS y GLPK; solver actual: {solver_name}",
+            unavailable_reason=(
+                f"IIS no soportado para el solver '{solver_name}'. "
+                "Usa HiGHS, Gurobi o GLPK."
+            ),
         )
     if instance is None:
         return IISReport(
@@ -1396,6 +1622,8 @@ def analyze(
     csv_dir: Path | str | None = None,
     top_n: int = 20,
     lp_path: Path | None = None,
+    job_id: int | None = None,
+    ilp_out: Path | None = None,
 ) -> InfeasibilityReport:
     """Construye el reporte enriquecido a partir del dict que retorna ``solve_model``.
 
@@ -1424,8 +1652,13 @@ def analyze(
     )
     violations.sort(key=lambda v: -float(v.get("violation") or 0.0))
 
-    # 1) IIS (opcional, vía HiGHS).
-    iis = try_compute_iis(instance, solver_name=solver_name, lp_path=lp_path)
+    # 1) IIS (HiGHS o Gurobi). Para Gurobi, si no se pasa `ilp_out` explícito
+    #    pero sí `job_id`, se persiste como `tmp/infeasibility-reports/job_<id>.ilp`.
+    if ilp_out is None and job_id is not None and solver_name == "gurobi":
+        ilp_out = Path("tmp/infeasibility-reports") / f"job_{int(job_id)}.ilp"
+    iis = try_compute_iis(
+        instance, solver_name=solver_name, lp_path=lp_path, ilp_out=ilp_out
+    )
 
     # 2) Índices rápidos: canónico → nombre Pyomo (para IIS → Pyomo),
     # canónico → dict de violación básica (para anexar body/bounds si hay).
@@ -1536,6 +1769,8 @@ def enrich_solution_dict(
     instance: Any | None,
     csv_dir: Path | str | None,
     top_n: int = 50,
+    job_id: int | None = None,
+    lp_path: Path | None = None,
 ) -> InfeasibilityReport | None:
     """Corre :func:`analyze` y **muta** ``solution['infeasibility_diagnostics']``.
 
@@ -1557,6 +1792,8 @@ def enrich_solution_dict(
         instance=instance,
         csv_dir=csv_dir,
         top_n=top_n,
+        job_id=job_id,
+        lp_path=lp_path,
     )
 
     diag["iis"] = asdict(report.iis)

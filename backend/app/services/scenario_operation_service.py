@@ -487,10 +487,15 @@ class ScenarioOperationService:
             stage="validating_payload",
             message="Validando cambios a aplicar.",
         )
+        actor_user = db.get(User, job.user_id) if job.user_id else None
+        actor_username = str(actor_user.username) if actor_user is not None else None
+        n_changes = len(changes)
         result = OfficialImportService.apply_excel_changes(
             db,
             scenario_id=scenario_id,
             changes=changes,
+            actor=actor_username,
+            batch_label=f"Aplicación Excel async ({n_changes} {'fila' if n_changes == 1 else 'filas'})",
         )
         ScenarioService.sync_catalogs_from_scenario_values(db, scenario_id=scenario_id)
         ScenarioOperationService._update_progress(

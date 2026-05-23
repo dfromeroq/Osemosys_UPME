@@ -58,6 +58,12 @@ FAMILIAS_TEC = {
     "TERMICA_FOSIL": [
         "PWRCOA",
         "PWRCOACCS",
+        # ``PWRNGS`` es la tecnología consolidada que aparece en charts donde
+        # se aplica ``PWR_TECH_ALIASES`` (cap_electricidad / prd_electricidad
+        # / elec_produccion). Agrupa NGS_CC + NGS_CS + NGSCCS + JET + LPG.
+        # En el resto de charts NGS_CC/NGS_CS/NGSCCS/JET/LPG conservan su
+        # color individual.
+        "PWRNGS",
         "PWRNGS_CC",
         "PWRNGS_CS",
         "PWRNGSCCS",
@@ -86,7 +92,7 @@ COLOR_BASE_FAMILIA = {
     "HIDRO": "#1F77B4",  # azul hidro
     "EOLICA": "#2CA02C",  # verde eólico
     "TERMICA_FOSIL": "#2B2B2B",  # casi negro (carbón/gas)
-    "NUCLEAR": "#7B3F98",  # violeta nuclear
+    "NUCLEAR": "#289fa3",  # azul nuclear
     "BIOMASA_RESIDUOS": "#8C6D31",
     "OTRAS": "#17BECF",  # cian técnico
 }
@@ -144,6 +150,25 @@ COLOR_MAP_PWR["PWRSOLRTP"] = _orig_bat
 COLOR_MAP_PWR["PWRSOLUGE_BAT"] = _orig_rtp
 del _orig_rtp, _orig_bat
 
+# Override colores de tecnologías eléctricas con paleta explícita
+COLOR_MAP_PWR["PWRGEO"] = "#ff0001"
+COLOR_MAP_PWR["PWRWNDOFS_FIX"] = "#e2c5fe"
+COLOR_MAP_PWR["PWRWNDOFS_FLO"] = "#e2c5fe"
+COLOR_MAP_PWR["PWRWNDONS"] = "#7031a0"
+COLOR_MAP_PWR["PWRSOLRTP"] = "#ffc000"
+COLOR_MAP_PWR["PWRSOLRTP_ZNI"] = "#cc9b00"
+COLOR_MAP_PWR["PWRSOLUGE_BAT"] = "#ff9901"
+COLOR_MAP_PWR["PWRSOLUPE"] = "#feefa2"
+COLOR_MAP_PWR["PWRSOLUGE"] = "#feefa2"
+COLOR_MAP_PWR["PWRNUC"] = "#289fa3"
+COLOR_MAP_PWR["PWRHYDROR"] = "#9dc2e6"
+COLOR_MAP_PWR["PWRHYDROR_NDC"] = "#9dc2e6"
+COLOR_MAP_PWR["PWRHYDDAM"] = "#4572c5"
+for _tech in ("PWRCOA", "PWRCOACCS", "PWRNGS_CC", "PWRNGS_CS",
+              "PWRNGSCCS", "PWRDSL", "PWRFOL", "PWRJET", "PWRLPG"):
+    COLOR_MAP_PWR[_tech] = "#777071"
+del _tech
+
 _TECHS_CLASIFICADAS: frozenset[str] = frozenset(
     t for fam in FAMILIAS_TEC.values() for t in fam
 )
@@ -154,21 +179,21 @@ _TECHS_CLASIFICADAS: frozenset[str] = frozenset(
 # ══════════════════════════════════════════════════════════════════════════
 
 COLORES_GRUPOS = {
-    "NGS": "#1f77b4",
+    "NGS": "#d9d9d9",
     # JETSAF debe ir ANTES de "JET" para que asignar_grupo("JETSAF") no
     # haga match con "JET" (substring) antes de llegar a la clave específica.
-    "JETSAF": "#6baed6",
-    "JET": "#ff7f0e",
-    "BGS": "#2ca02c",
+    "JETSAF": "#00ba55",
+    "JET": "#375e67",
+    "BGS": "#2a7e29",
     "BDL": "#d62728",
     "WAS": "#9467bd",
-    "WOO": "#8c564b",
-    "GSL": "#e377c2",
-    "COA": "#7f7f7f",
-    "ELC": "#bcbd22",
-    "BAG": "#17becf",
-    "DSL": "#aec7e8",
-    "LPG": "#ffbb78",
+    "WOO": "#ff9901",
+    "GSL": "#abbdd9",
+    "COA": "#000000",
+    "ELC": "#ffd519",
+    "BAG": "#70ad47",
+    "DSL": "#415e89",
+    "LPG": "#4c98d9",
     "FOL": "#98df8a",
     "AUT": "#ff9896",
     # Crudos (FUEL en UseByTechnology para refinerías).
@@ -180,14 +205,14 @@ COLORES_GRUPOS = {
     "OIL": "#000000",
     "PHEV": "#c5b0d5",
     "HEV": "#f7b6d2",
-    "SAF": "#ffd92f",
+    "SAF": "#00ba55",
     "BJS": "#e5c494",
     "OPL": "#b3b3b3",
     "AFR": "#fbb4ae",
     "SGC": "#b3cde3",
     # Hidrógeno (HDG002 debe ir antes que HDG para asignar_grupo)
-    "HDG002": "#0096c7",
-    "HDG": "#00b4d8",
+    "HDG002": "#01ffff",
+    "HDG": "#01ffff",
     # Petróleos/crudos (orden específico: más largo primero; escala de grises)
     "MINOIL_3PES": "#2d2d2d",  # Crudo pesado - gris oscuro
     "MINOIL_2MID": "#5c5c5c",  # Crudo intermedio - gris medio
@@ -199,6 +224,23 @@ COLORES_GRUPOS = {
     "DEMAGF": "#28a745",
     "DEMMIN": "#fd7e14",
     "DEMCOQ": "#6f42c1",
+
+    # Transporte — grupos para agrupación TRANSPORTE_GRUPO
+    "Motos":       "#e6194b",
+    "Livianos":    "#3cb44b",
+    "Buses":       "#ffe119",
+    "Microbuses":  "#911eb4",
+    "Carga":       "#46f0f0",
+    "Barcos":      "#f032e6",
+    "Metro":       "#008080",
+    "Aviación":    "#e6beff",
+    "Otros":       "#808080",
+
+    # Transporte — modo de transporte (agrupación MODO)
+    "CARRETERA":   "#e6194b",
+    "AVI":         "#e6beff",
+    "BOT":         "#f032e6",
+    "MET":         "#008080",
 }
 
 
@@ -266,6 +308,14 @@ def _color_por_sector(df, columna: str = "COLOR"):
     return _ordered_color_list(COLORES_SECTOR, df, columna)
 
 
+def _color_por_sector_gei(df, columna: str = "COLOR"):
+    """COLORES_SECTOR con Transporte en #1e335c — solo para emisiones GEI."""
+    from app.visualization.configs_comparacion import COLORES_SECTOR  # lazy: evita circular
+    colores = dict(COLORES_SECTOR)
+    colores["Transporte"] = "#1e335c"
+    return _ordered_color_list(colores, df, columna)
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # 4. COLORES PARA TIPOS DE EMISIÓN (contaminantes y GEI)
 # ══════════════════════════════════════════════════════════════════════════
@@ -290,6 +340,16 @@ def _color_por_emision(df, columna: str = "COLOR"):
     return _ordered_color_list(COLORES_EMISIONES, df, columna)
 
 
+def _color_por_region(df, columna: str = "COLOR"):
+    """Paleta fija para las 7 regiones del SIN.
+
+    La columna ``columna`` debe contener los códigos AN/CA/IN/NE/OR/SE/SO
+    insertados previamente por ``transform_regional_df``.
+    """
+    from app.visualization.regional import REGION_COLORS  # lazy: evita ciclo
+    return _ordered_color_list(REGION_COLORS, df, columna)
+
+
 def _color_por_grupo_fijo(df, columna: str = "COLOR"):
     """Paleta fija según COLORES_GRUPOS — para gas y refinerías."""
     grupos_presentes = df[columna].unique()
@@ -305,6 +365,7 @@ def _color_por_grupo_fijo(df, columna: str = "COLOR"):
 COLOR_MAP_ELECTROLISIS: dict[str, str] = {
     "UPSALK": "#16a34a",  # Electrólisis Alcalina — verde medio
     "UPSPEM": "#22c55e",  # Electrólisis PEM — verde claro
+    "Hidrógeno Verde": "#22c55e",  # Grupo unificado — verde PEM
 }
 
 # Producción de H₂ por tipo (clasificación cromática del H₂):
@@ -351,6 +412,10 @@ COLOR_MAP_H2_CONSUMO: dict[str, str] = {
     "UPSSMRCCS": "#1d4ed8",  # azul oscuro
     # SAF (no es H₂ puro pero a veces aparece en filtros relacionados)
     "UPSSAF":    "#a3e635",  # lima — diferenciado del verde de electrólisis
+    # Grupo unificado de transporte pesado
+    "Transporte pesado": "#dc2626",  # rojo intenso
+    # Grupo unificado de residuos sólidos industriales
+    "Residuos Sólidos": "#15803d",  # verde bosque — bioenergía/residuos
 }
 
 COLOR_MAP_BIOENERGIA: dict[str, str] = {
@@ -365,6 +430,8 @@ COLOR_MAP_BIOENERGIA: dict[str, str] = {
 COLOR_MAP_GAS_PROD: dict[str, str] = {
     "MINNGS":  "#4472c4",  # Gas Natural Nacional — azul
     "UPSREG":  "#e85020",  # Importación de Gas Natural — rojo-naranja
+    "IMPLNG":  "#c44e52",  # Importación GNL — rojo
+    "EXPNGS":  "#4c72b0",  # Exportación Gas Natural — azul
 }
 
 COLOR_MAP_LIQUIDOS_IMPORT: dict[str, str] = {
@@ -379,6 +446,9 @@ COLOR_MAP_LIQUIDOS_IMPORT: dict[str, str] = {
     "EXPGSL":     "#f07050",
     "EXPJET":     "#4aaa6a",
     "EXPLPG":     "#a060c0",
+    "IMPOIL":     "#8B4513",  # Importación Petróleo — marrón
+    "EXPOIL":     "#CD853F",  # Exportación Petróleo — marrón claro
+    "EXPCOA":     "#333333",  # Exportación Carbón — gris oscuro
 }
 
 
@@ -395,6 +465,13 @@ _color_h2_consumo      = _make_color_fn_fija(COLOR_MAP_H2_CONSUMO)
 _color_bioenergia      = _make_color_fn_fija(COLOR_MAP_BIOENERGIA)
 _color_gas_produccion  = _make_color_fn_fija(COLOR_MAP_GAS_PROD)
 _color_liquidos_import = _make_color_fn_fija(COLOR_MAP_LIQUIDOS_IMPORT)
+
+
+# Paleta fija para agrupación TRANSPORTE_GRUPO
+_color_transporte_grupo = _make_color_fn_fija(COLORES_GRUPOS)
+
+# Paleta fija para agrupación MODO
+_color_por_modo = _make_color_fn_fija(COLORES_GRUPOS)
 
 
 # ══════════════════════════════════════════════════════════════════════════

@@ -364,7 +364,14 @@ UDC_RESERVE_MARGIN_DICT = {
 # ========================================================================
 
 def generate_notebook_csvs(excel_path: str, csv_dir: str, div: int = 1) -> None:
-    """Genera CSVs exactamente como lo hace el notebook."""
+    """Genera CSVs exactamente como lo hace el notebook.
+
+    ``div`` controla el submuestreo de timeslices (toma una fila de cada ``div``
+    en parámetros indexados por TIMESLICE):
+      - ``div=1`` (default): preserva todos los timeslices del SAND.
+      - ``div=N``: toma 1 de cada N (legacy: pasar ``96`` reproduce el
+        comportamiento previo que colapsaba a un único timeslice).
+    """
     path_csv = csv_dir + os.sep
 
     print(f"  Leyendo Excel SAND: {excel_path}")
@@ -374,12 +381,12 @@ def generate_notebook_csvs(excel_path: str, csv_dir: str, div: int = 1) -> None:
     print(f"  Parámetros encontrados: {len(df_colombia['Parameter'].unique())}")
 
     print("  Generando sets...")
-    SAND_SETS_to_CSV(df_colombia, path_csv, 96 / div)
+    SAND_SETS_to_CSV(df_colombia, path_csv, div)
 
     print("  Generando parámetros...")
     df_parametros = df_colombia["Parameter"].unique()
     for p in df_parametros:
-        SAND_to_CSV(df_colombia, p, path_csv, 96 / div)
+        SAND_to_CSV(df_colombia, p, path_csv, div)
 
     print("  Filtrando parámetros por sets...")
     filter_params_by_sets(path_csv, df_colombia)
@@ -404,13 +411,14 @@ def generate_notebook_csvs(excel_path: str, csv_dir: str, div: int = 1) -> None:
             path_csv,
         )
 
-    print("  Generando UDC...")
-    crear_csv_UDC(["UDC_Margin"], path_csv)
-    for mtype in ["TotalCapacity", "NewCapacity", "Activity"]:
-        crear_UDCMultiplier(path_csv, mtype, valor_default=0)
-    crear_UDC_parametros(path_csv, valor_constant_default=0.0, valor_tag_default=2.0)
-    actualizar_UDCMultiplier("TotalCapacity", path_csv, UDC_RESERVE_MARGIN_DICT)
-    actualizar_UDCTag(0, path_csv)
+    ## UDC de margen de reserva desactivada 
+    # print("  Generando UDC...")
+    # crear_csv_UDC(["UDC_Margin"], path_csv)
+    # for mtype in ["TotalCapacity", "NewCapacity", "Activity"]:
+    #     crear_UDCMultiplier(path_csv, mtype, valor_default=0)
+    # crear_UDC_parametros(path_csv, valor_constant_default=0.0, valor_tag_default=2.0)
+    # actualizar_UDCMultiplier("TotalCapacity", path_csv, UDC_RESERVE_MARGIN_DICT)
+    # actualizar_UDCTag(0, path_csv)
 
     csv_files = [f for f in os.listdir(csv_dir) if f.endswith('.csv')]
     print(f"  Total CSVs generados: {len(csv_files)}")

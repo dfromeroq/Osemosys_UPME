@@ -4,12 +4,29 @@ import type { ChartSelection } from './ChartSelector';
 
 /**
  * Descarga PNG/SVG/CSV/XLSX generados en el servidor, sin offline-exporting.
+ *
+ * ``tableExportFilters`` (opcional) restringe la exportación cuando
+ * ``view_mode === 'table'`` a un subconjunto de series y/o años elegidos en la UI.
+ * ``hiddenSeries`` (opcional) omite del render las series que el usuario ocultó en la UI.
  */
 export async function downloadChartFromServer(
   jobId: number,
   selection: ChartSelection,
   fmt: 'png' | 'svg' | 'csv' | 'xlsx',
+  options?: {
+    clean?: boolean;
+    tableExportFilters?: {
+      series?: string[];
+      years?: (string | number)[];
+    };
+    hiddenSeries?: string[];
+  },
 ): Promise<void> {
-  const { blob, filename } = await simulationApi.exportChart(jobId, selection, fmt);
+  const { blob, filename } = await simulationApi.exportChart(
+    jobId,
+    selection,
+    fmt,
+    options,
+  );
   downloadBlob(blob, filename);
 }

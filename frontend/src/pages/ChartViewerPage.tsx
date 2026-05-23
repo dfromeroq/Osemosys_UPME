@@ -477,12 +477,16 @@ export function ChartViewerPage() {
                 barOrientation={chartBarOrientation}
                 facetPlacement={facetPlacement}
                 legendMode={facetLegendMode}
-                viewMode={chartSelection.viewMode === "line" ? "line" : "column"}
+                viewMode={
+                  chartSelection.viewMode === "line" ? "line"
+                  : chartSelection.viewMode === "area" ? "area"
+                  : "column"
+                }
                 serverFacetExport={{ jobIds: compareJobIds, selection: chartSelection }}
                 compactToolbar
               />
             ) : effectiveCompareMode === "by-year" && byYearData ? (
-              <CompareChart data={byYearData} barOrientation={chartBarOrientation} />
+              <CompareChart data={byYearData} barOrientation={chartBarOrientation} stackType={chartSelection.viewMode === "area" ? "area" : "column"} sharedYAxis={true} />
             ) : effectiveCompareMode === "line-total" && lineTotalData ? (
               <LineChart data={lineTotalData} amplified chartHeight={chartHeight} />
             ) : chartSelection.viewMode === "pareto" && paretoData ? (

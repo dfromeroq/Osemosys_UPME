@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Highcharts from './highchartsSetup';
+import { downloadChartFromServer } from './serverChartExport';
 import {
+  CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS,
   EXPORTING_CONTEXT_BUTTON_DARK,
-  buildChartExportMenuItems,
+  INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
+  createCleanExportMenuItem,
   onHighchartsExportError,
 } from './chartExportingShared';
 import { buildStackedTooltipOptions } from './chartTooltips';
@@ -84,19 +87,27 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
       return false;
     };
     const isArea = stackType === 'area';
-    const series = data.series.map((s) => ({
-      type: (isArea ? 'area' : 'column') as 'column' | 'area',
-      name: s.name,
-      data: s.data,
-      color: s.color,
-      stacking: 'normal' as const,
-      stack: s.stack,
-      borderWidth: 0,
-      fillOpacity: isArea ? 0.85 : undefined,
-      lineWidth: isArea ? 0.5 : undefined,
-      marker: isArea ? { enabled: false } : undefined,
-      visible: !hiddenNames.has(s.name),
-    }));
+    const series = data.series.map((s) => {
+      const effectiveType = s.chart_type ?? (isArea ? 'area' : 'column');
+      const isLine = effectiveType === 'line';
+      return {
+        type: effectiveType as 'column' | 'area' | 'line',
+        name: s.name,
+        data: s.data,
+        color: s.color,
+        stacking: isLine ? undefined as unknown as 'normal' : 'normal' as const,
+        stack: isLine ? undefined as unknown as string : s.stack,
+        borderWidth: 0,
+        fillOpacity: isArea ? 0.85 : undefined,
+        lineWidth: isArea ? 0.5 : (isLine ? 2 : undefined),
+        marker: isLine
+          ? { enabled: true, radius: 3, symbol: 'circle' }
+          : isArea
+            ? { enabled: false }
+            : undefined,
+        visible: !hiddenNames.has(s.name),
+      };
+    });
 
     // En modo amplificado: +3pt en todas las fuentes.
     const fb = (s: string) => (amplified ? bumpFontSize(s, 3) ?? s : s);
@@ -121,7 +132,7 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
       title: {
         text: data.title,
         style: {
-          fontSize: fb('16px'),
+          fontSize: fb('14pt'),
           fontWeight: 'bold',
           color: '#f8fafc',
         },
@@ -129,7 +140,7 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
       xAxis: {
         categories: data.categories,
         crosshair: { color: '#334155' },
-        labels: { style: { color: '#94a3b8', fontSize: fb('13px') } },
+        labels: { style: { color: '#94a3b8', fontSize: fb('11pt') } },
         lineColor: '#334155',
         tickColor: '#334155',
       },
@@ -141,10 +152,10 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
         ...(typeof yAxisMax === 'number' ? { max: yAxisMax } : null),
         title: {
           text: data.yAxisLabel,
-          style: { color: '#94a3b8', fontSize: fb('14px') },
+          style: { color: '#94a3b8', fontSize: fb('14pt') },
         },
         labels: {
-          style: { color: '#94a3b8', fontSize: fb('13px') },
+          style: { color: '#94a3b8', fontSize: fb('11pt') },
           // Mínimo 3 cifras significativas (sin notación científica).
           formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
             return formatAxis3Sig(this.value as number);
@@ -157,7 +168,7 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
             fontWeight: 'bold',
             color: '#94a3b8',
             textOutline: 'none',
-            fontSize: fb('10px'),
+            fontSize: fb('11pt'),
           },
           // Highcharts invoca el formatter con `this` como StackItemObject; no usar flecha.
           // Mostrar solo cada 2 categorías (0, 2, 4, …) con 1 decimal máximo.
@@ -185,6 +196,10 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
           marker: { enabled: false },
           dataLabels: { enabled: false },
         },
+        line: {
+          marker: { enabled: true, radius: 3 },
+          dataLabels: { enabled: false },
+        },
       },
       series: series as Highcharts.SeriesOptionsType[],
       exporting: {
@@ -194,26 +209,51 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
         scale: 1,
         fallbackToExportServer: false,
         error: onHighchartsExportError,
-        chartOptions: {
-          chart: { backgroundColor: '#FFFFFF' },
-          title: { style: { color: '#1e293b', fontSize: '28px' } },
+          chartOptions: {
+          chart: { backgroundColor: '#FFFFFF', spacingTop: 50 },
+          title: { style: { color: '#1e293b', fontSize: '28pt' } },
           xAxis: {
-            labels: { style: { color: '#334155', fontSize: '20px' } },
+            labels: { style: { color: '#334155', fontSize: '20pt' } },
             lineColor: '#cbd5e1',
             tickColor: '#cbd5e1',
           },
           yAxis: {
-            labels: { style: { color: '#334155', fontSize: '20px' } },
-            title: { style: { color: '#334155', fontSize: '22px' } },
+            labels: { style: { color: '#334155', fontSize: '20pt' } },
+            title: { style: { color: '#334155', fontSize: '28pt' } },
             gridLineColor: '#e2e8f0',
-            stackLabels: { style: { color: '#1e293b', fontSize: '16px' } },
+            stackLabels: { style: { color: '#1e293b', fontSize: '20pt', fontWeight: 'normal' } },
           },
-          legend: { itemStyle: { color: '#334155', fontSize: '20px' } },
+          legend: { itemStyle: { color: '#334155', fontSize: '20pt' } },
         },
         buttons: {
           contextButton: {
             // Highcharts admite objetos { text, onclick }; los tipos suelen declarar solo string[].
-            menuItems: buildChartExportMenuItems(serverExport) as string[],
+            menuItems: (() => {
+              if (!serverExport) {
+                return [
+                  ...INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
+                  '_separator_',
+                  createCleanExportMenuItem('png', CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS),
+                  createCleanExportMenuItem('svg', CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS),
+                ];
+              }
+              const { jobId, selection } = serverExport;
+              const runServer = (fmt: "png" | "svg" | "csv", opts?: { clean?: boolean }) => {
+                const hiddenSeries = Array.from(hiddenNames);
+                void downloadChartFromServer(jobId, selection, fmt, { ...opts, hiddenSeries }).catch((e: unknown) => {
+                  console.error(e);
+                  window.alert("No se pudo descargar desde el servidor.");
+                });
+              };
+              return [
+                { text: "Descargar PNG", onclick: () => runServer("png") },
+                { text: "Descargar SVG", onclick: () => runServer("svg") },
+                { text: "Descargar CSV", onclick: () => runServer("csv") },
+                "_separator_",
+                { text: "Descargar PNG (limpia)", onclick: () => runServer("png", { clean: true }) },
+                { text: "Descargar SVG (limpia)", onclick: () => runServer("svg", { clean: true }) },
+              ];
+            })() as unknown as string[],
             ...EXPORTING_CONTEXT_BUTTON_DARK,
           },
         },
@@ -227,7 +267,7 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
         // (que queda arriba del stack) aparece al final de la leyenda. Así la
         // leyenda se lee de abajo hacia arriba igual que las barras.
         reversed: true,
-        itemStyle: { color: '#94a3b8', fontWeight: 'normal', fontSize: fb('13px') },
+        itemStyle: { color: '#94a3b8', fontWeight: 'normal', fontSize: fb('11pt') },
         itemHoverStyle: { color: '#f8fafc' },
       },
     };

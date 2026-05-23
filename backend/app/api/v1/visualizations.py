@@ -7,6 +7,7 @@ comparación entre múltiples escenarios.
 from __future__ import annotations
 
 import io
+import json
 import logging
 from typing import List
 
@@ -97,6 +98,7 @@ def get_comparison_data(
     sub_filtro: str | None = Query(None),
     loc: str | None = Query(None),
     es_porcentaje: bool = Query(False, description="Si true, normaliza cada año/escenario a 100%"),
+    group_by: str = Query("year", description="Agrupación: 'year' (default) o 'scenario' para modo alternativo"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -106,19 +108,19 @@ def get_comparison_data(
         job_id_list = [int(x.strip()) for x in job_ids.split(",") if x.strip()]
     except ValueError:
         raise HTTPException(status_code=400, detail="job_ids inválidos")
-
+    
     if not job_id_list:
         raise HTTPException(status_code=400, detail="Debe proveer al menos un job_id")
     
     if len(job_id_list) > 10:
         raise HTTPException(status_code=400, detail="Máximo 10 jobs para comparar")
-
+    
     year_list = []
     try:
         year_list = [int(x.strip()) for x in years_to_plot.split(",") if x.strip()]
     except ValueError:
         raise HTTPException(status_code=400, detail="years_to_plot inválidos")
-
+    
     # Validar acceso a todos los jobs
     for jid in job_id_list:
         try:
@@ -129,19 +131,32 @@ def get_comparison_data(
                 )
         except NotFoundError:
             raise HTTPException(status_code=404, detail=f"Job {jid} no encontrado o sin acceso")
-
+    
     try:
-        return chart_service.build_comparison_data(
-            db=db,
-            job_ids=job_id_list,
-            tipo=tipo,
-            un=un,
-            years_to_plot=year_list,
-            agrupacion=agrupacion,
-            sub_filtro=sub_filtro,
-            loc=loc,
-            es_porcentaje_override=es_porcentaje,
-        )
+        if group_by == "scenario":
+            return chart_service.build_comparison_data_by_year_alt(
+                db=db,
+                job_ids=job_id_list,
+                tipo=tipo,
+                un=un,
+                years_to_plot=year_list,
+                agrupacion=agrupacion,
+                sub_filtro=sub_filtro,
+                loc=loc,
+                es_porcentaje_override=es_porcentaje,
+            )
+        else:
+            return chart_service.build_comparison_data(
+                db=db,
+                job_ids=job_id_list,
+                tipo=tipo,
+                un=un,
+                years_to_plot=year_list,
+                agrupacion=agrupacion,
+                sub_filtro=sub_filtro,
+                loc=loc,
+                es_porcentaje_override=es_porcentaje,
+            )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -154,8 +169,9 @@ def get_comparison_facet_data(
     sub_filtro: str | None = Query(None),
     loc: str | None = Query(None),
     variable: str | None = Query(None),
-    agrupar_por: str | None = Query(None, description="Override de agrupación: TECNOLOGIA, FUEL, GROUP"),
+    agrupar_por: str | None = Query(None, description="Override de agrupación: TECNOLOGIA, FUEL, GROUP, REGION"),
     es_porcentaje: bool = Query(False, description="Si true, normaliza cada año a 100%"),
+    region: str | None = Query(None, description="Filtro regional (AN, CA, IN, NE, OR, SE, SO) — solo en jobs REGIONAL"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -173,6 +189,7 @@ def get_comparison_facet_data(
             variable=variable,
             agrupar_por=agrupar_por,
             es_porcentaje_override=es_porcentaje,
+            region=region,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -233,6 +250,18 @@ def export_comparison_facet_image(
     loc: str | None = Query(None),
     variable: str | None = Query(None),
     agrupar_por: str | None = Query(None),
+    es_porcentaje: bool = Query(False, description="Si true, normaliza cada año a 100%"),
+    view_mode: str = Query(
+        "column",
+        description=(
+            "Modo de visualización: column (barras apiladas, default), "
+            "line (líneas), area (áreas apiladas)"
+        ),
+    ),
+    clean: bool = Query(
+        False,
+        description="Si true, omite título y etiquetas sobre las barras.",
+    ),
     fmt: str = Query("png", description="png o svg"),
     filename_mode: str = Query(
         "result",
@@ -245,12 +274,44 @@ def export_comparison_facet_image(
         None,
         description="Título opcional sobre la leyenda (p. ej. Combustible / tecnología)",
     ),
+    series_order: str | None = Query(
+        None,
+        description="Lista de nombres de series separados por coma — define el "
+                    "orden custom (la primera queda arriba del stack).",
+    ),
+    facet_placement: str = Query(
+        "inline",
+        description="inline (horizontal) o stacked (vertical).",
+    ),
+    region: str | None = Query(None, description="Filtro regional (AN, CA, IN, NE, OR, SE, SO) — solo en jobs REGIONAL"),
+    job_display_overrides: str | None = Query(
+        None,
+        description='JSON dict {job_id: display_name} para renombrar escenarios. '
+                    'Ej: \'{"1":"Esc A","2":"Esc B"}\'',
+    ),
+    exogenous_data: str | None = Query(
+        None,
+        description='JSON con datos exógenos (ExogenousDataConfig) para inyectar '
+                    'como nueva serie en cada faceta.',
+    ),
+    hidden_series: str | None = Query(
+        None,
+        description='Nombres de series ocultas separados por coma (series que el usuario '
+                    'ocultó en la UI y deben omitirse del render).',
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Exporta comparación por facetas en una sola imagen (mismo criterio que compare-facet)."""
     if fmt not in ("png", "svg"):
         raise HTTPException(status_code=400, detail="fmt debe ser 'png' o 'svg'")
+    if view_mode not in ("column", "line", "area"):
+        raise HTTPException(
+            status_code=400,
+            detail="view_mode debe ser 'column', 'line' o 'area'",
+        )
+    if facet_placement not in ("inline", "stacked"):
+        raise HTTPException(status_code=400, detail="facet_placement debe ser 'inline' o 'stacked'")
     filename_mode = _normalize_compare_facet_filename_mode(filename_mode)
     if filename_mode not in _COMPARE_FACET_FILENAME_MODES:
         raise HTTPException(
@@ -259,6 +320,14 @@ def export_comparison_facet_image(
         )
 
     job_id_list = _validate_compare_job_ids(job_ids, db, current_user)
+
+    _overrides: dict[int, str] | None = None
+    if job_display_overrides:
+        try:
+            raw = json.loads(job_display_overrides)
+            _overrides = {int(k): str(v) for k, v in raw.items()}
+        except (json.JSONDecodeError, ValueError, TypeError):
+            pass
 
     try:
         facet_payload = chart_service.build_comparison_facet_data(
@@ -270,6 +339,9 @@ def export_comparison_facet_image(
             loc=loc,
             variable=variable,
             agrupar_por=agrupar_por,
+            es_porcentaje_override=es_porcentaje,
+            region=region,
+            job_display_overrides=_overrides,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -277,11 +349,36 @@ def export_comparison_facet_image(
     if not facet_payload.facets or not any(f.series for f in facet_payload.facets):
         raise HTTPException(status_code=404, detail="Sin datos para exportar con los filtros actuales")
 
+    # Inyectar datos exógenos (ej: Refinerías) antes del render
+    if exogenous_data:
+        facet_payload = chart_service._inject_exogenous_data_into_facets(
+            facet_payload, exogenous_data
+        )
+
+    # Reorden custom de series — aplica a cada faceta para que el PNG/SVG
+    # exportado coincida con el orden elegido por el usuario en la UI.
+    order_list: list[str] | None = None
+    if series_order:
+        order_list = [s.strip() for s in series_order.split(",") if s.strip()] or None
+        if order_list:
+            for facet in facet_payload.facets:
+                chart_service.reorder_chart_series(facet, order_list)
+
+    layout = "vertical" if facet_placement == "stacked" else "horizontal"
+    hidden_set: set[str] | None = None
+    if hidden_series:
+        hidden_set = {s.strip() for s in hidden_series.split(",") if s.strip()}
+
     try:
         img_bytes = chart_service.render_comparison_facet_figure_bytes(
             facet_payload,
             fmt=fmt,
+            layout=layout,
+            view_mode=view_mode,
             legend_title=legend_title,
+            series_order=order_list,
+            clean=clean,
+            hidden_series=hidden_set,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -292,6 +389,143 @@ def export_comparison_facet_image(
     base_name = _compare_facet_export_basename(facet_payload, filename_mode)
     ext = "svg" if fmt == "svg" else "png"
     filename = f"{base_name}_facet.{ext}"
+    media = "image/svg+xml" if fmt == "svg" else "image/png"
+    return StreamingResponse(
+        io.BytesIO(img_bytes),
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/export-compare-by-year")
+def export_comparison_by_year_image(
+    job_ids: str = Query(..., description="Job IDs separados por coma (max 10)"),
+    tipo: str = Query(...),
+    un: str = Query("PJ"),
+    years_to_plot: str = Query("2024,2030,2050", description="Años a plotear separados por coma"),
+    group_by: str = Query("year", description="Agrupación: 'year' (default) o 'scenario'"),
+    agrupacion: str | None = Query(None),
+    sub_filtro: str | None = Query(None),
+    loc: str | None = Query(None),
+    es_porcentaje: bool = Query(False, description="Si true, normaliza cada año a 100%"),
+    view_mode: str = Query(
+        "column",
+        description=(
+            "Modo de visualización: column (barras apiladas, default), "
+            "line (líneas), area (áreas apiladas)"
+        ),
+    ),
+    fmt: str = Query("png", description="png o svg"),
+    clean: bool = Query(False, description="Si true, omite título y etiquetas sobre las barras."),
+    y_axis_min: float | None = Query(None),
+    y_axis_max: float | None = Query(None),
+    series_order: str | None = Query(None, description="Orden custom de series separado por coma."),
+    region: str | None = Query(None, description="Filtro regional (AN, CA, IN, NE, OR, SE, SO) — solo en jobs REGIONAL"),
+    job_display_overrides: str | None = Query(
+        None,
+        description='JSON dict {job_id: display_name} para renombrar escenarios. '
+                    'Ej: \'{"1":"Esc A","2":"Esc B"}\'',
+    ),
+    hidden_series: str | None = Query(
+        None,
+        description='Nombres de series ocultas separados por coma.',
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Exporta comparación por años como PNG/SVG (Matplotlib)."""
+    if fmt not in ("png", "svg"):
+        raise HTTPException(status_code=400, detail="fmt debe ser 'png' o 'svg'")
+    if view_mode not in ("column", "line", "area"):
+        raise HTTPException(
+            status_code=400,
+            detail="view_mode debe ser 'column', 'line' o 'area'",
+        )
+
+    job_id_list = _validate_compare_job_ids(job_ids, db, current_user)
+
+    year_list = []
+    try:
+        year_list = [int(x.strip()) for x in years_to_plot.split(",") if x.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="years_to_plot inválidos")
+
+    _overrides: dict[int, str] | None = None
+    if job_display_overrides:
+        try:
+            raw = json.loads(job_display_overrides)
+            _overrides = {int(k): str(v) for k, v in raw.items()}
+        except (json.JSONDecodeError, ValueError, TypeError):
+            pass
+
+    try:
+        if group_by == "scenario":
+            cmp_data = chart_service.build_comparison_data_by_year_alt(
+                db=db,
+                job_ids=job_id_list,
+                tipo=tipo,
+                un=un,
+                years_to_plot=year_list,
+                agrupacion=agrupacion,
+                sub_filtro=sub_filtro,
+                loc=loc,
+                es_porcentaje_override=es_porcentaje,
+                region=region,
+                job_display_overrides=_overrides,
+            )
+        else:
+            cmp_data = chart_service.build_comparison_data(
+                db=db,
+                job_ids=job_id_list,
+                tipo=tipo,
+                un=un,
+                years_to_plot=year_list,
+                agrupacion=agrupacion,
+                sub_filtro=sub_filtro,
+                loc=loc,
+                es_porcentaje_override=es_porcentaje,
+                region=region,
+                job_display_overrides=_overrides,
+            )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not cmp_data.subplots or not any(s.series for s in cmp_data.subplots):
+        raise HTTPException(
+            status_code=404,
+            detail="Sin datos para exportar con los filtros actuales",
+        )
+
+    order_list: list[str] | None = None
+    if series_order:
+        order_list = [s.strip() for s in series_order.split(",") if s.strip()] or None
+        if order_list:
+            for sp in cmp_data.subplots:
+                chart_service.reorder_chart_series(sp, order_list)
+
+    hidden_set: set[str] | None = None
+    if hidden_series:
+        hidden_set = {s.strip() for s in hidden_series.split(",") if s.strip()}
+
+    try:
+        img_bytes = chart_service.render_comparison_by_year_bytes(
+            cmp_data,
+            fmt=fmt,
+            view_mode=view_mode,
+            y_axis_min=y_axis_min,
+            y_axis_max=y_axis_max,
+            clean=clean,
+            hidden_series=hidden_set,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Error renderizando export compare-by-year")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    base_name = _safe_export_basename(cmp_data.title)
+    ext = "svg" if fmt == "svg" else "png"
+    filename = f"{base_name}_comparacion_anual.{ext}"
     media = "image/svg+xml" if fmt == "svg" else "image/png"
     return StreamingResponse(
         io.BytesIO(img_bytes),
@@ -353,8 +587,13 @@ def get_chart_data(
     sub_filtro: str | None = Query(None),
     loc: str | None = Query(None),
     variable: str | None = Query(None),
-    agrupar_por: str | None = Query(None, description="Override de agrupación: TECNOLOGIA, FUEL, GROUP"),
+    agrupar_por: str | None = Query(None, description="Override de agrupación: TECNOLOGIA, FUEL, GROUP, REGION"),
     es_porcentaje: bool = Query(False, description="Si true, normaliza cada año a 100%"),
+    region: str | None = Query(None, description="Filtro regional (AN, CA, IN, NE, OR, SE, SO) — solo en jobs REGIONAL"),
+    timeslice: str | None = Query(
+        None,
+        description="Código de timeslice (p.ej. 'S101'). Si se omite, se agregan todos los TS.",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -377,9 +616,43 @@ def get_chart_data(
             variable=variable,
             agrupar_por=agrupar_por,
             es_porcentaje_override=es_porcentaje,
+            region=region,
+            timeslice=timeslice,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{job_id}/timeslices", response_model=list[str])
+def list_job_timeslices(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[str]:
+    """Lista los códigos de timeslice presentes en los outputs del job.
+
+    Útil para poblar un selector en el frontend que permita filtrar la
+    gráfica a un timeslice específico. Si retorna ``[]`` o una sola entrada
+    no tiene sentido mostrar el selector.
+    """
+    from app.models import OsemosysOutputParamValue, Timeslice
+
+    try:
+        job = SimulationService.get_by_id(db, current_user=current_user, job_id=job_id)
+        if job["status"] != "SUCCEEDED":
+            raise HTTPException(status_code=400, detail="Job no está en estado SUCCEEDED")
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Job no encontrado o sin acceso")
+
+    rows = (
+        db.query(Timeslice.code)
+        .join(OsemosysOutputParamValue, OsemosysOutputParamValue.id_timeslice == Timeslice.id)
+        .filter(OsemosysOutputParamValue.id_simulation_job == job["id"])
+        .distinct()
+        .order_by(Timeslice.code)
+        .all()
+    )
+    return [r[0] for r in rows if r[0]]
 
 
 @router.get("/{job_id}/export-chart")
@@ -399,6 +672,10 @@ def export_chart(
             "pareto o table; el view_mode afecta el render PNG/SVG"
         ),
     ),
+    clean: bool = Query(
+        False,
+        description="Si true, omite título y etiquetas sobre las barras.",
+    ),
     table_period_years: int | None = Query(
         None,
         ge=1,
@@ -408,6 +685,16 @@ def export_chart(
     table_cumulative: bool = Query(
         False,
         description="Solo cuando view_mode=table: muestra valores acumulados.",
+    ),
+    table_series: str | None = Query(
+        None,
+        description="Solo cuando view_mode=table: lista de nombres de series "
+                    "separados por coma — restringe la exportación a esas series.",
+    ),
+    table_years: str | None = Query(
+        None,
+        description="Solo cuando view_mode=table: lista de años separados por "
+                    "coma — restringe las columnas de la exportación a esos años.",
     ),
     series_order: str | None = Query(
         None,
@@ -421,6 +708,10 @@ def export_chart(
     y_axis_max: float | None = Query(
         None,
         description="Override del valor máximo del eje Y. Vacío = auto.",
+    ),
+    hidden_series: str | None = Query(
+        None,
+        description='Nombres de series ocultas separados por coma.',
     ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -480,12 +771,13 @@ def export_chart(
 
         img_fmt = "svg" if fmt == "svg" else "png"
         try:
-            img_bytes = chart_service.render_pareto_chart_bytes(pareto, fmt=img_fmt)
+            img_bytes = chart_service.render_pareto_chart_bytes(pareto, fmt=img_fmt, clean=clean)
         except Exception as e:
             logger.exception("Error renderizando Pareto para export")
             raise HTTPException(status_code=500, detail=str(e))
 
-        filename = f"{base_name}.{img_fmt}"
+        suffix = "_clean" if clean else ""
+        filename = f"{base_name}{suffix}.{img_fmt}"
         media = "image/svg+xml" if img_fmt == "svg" else "image/png"
         return StreamingResponse(
             io.BytesIO(img_bytes),
@@ -518,6 +810,14 @@ def export_chart(
             chart_service.apply_cumulative_series(chart)
         if table_period_years and table_period_years >= 2:
             chart_service.apply_period_years(chart, table_period_years)
+        # Filtros explícitos: el usuario eligió un subconjunto de series y/o años
+        # en la UI. Si la lista viene vacía, no aplica.
+        if table_series:
+            names = [s.strip() for s in table_series.split(",") if s.strip()]
+            chart_service.filter_chart_series(chart, names)
+        if table_years:
+            years = [y.strip() for y in table_years.split(",") if y.strip()]
+            chart_service.filter_chart_categories(chart, years)
 
     # Reorden custom de series — aplica a todos los formatos.
     if series_order:
@@ -551,17 +851,22 @@ def export_chart(
         )
 
     img_fmt = "svg" if fmt == "svg" else "png"
+    hidden_set: set[str] | None = None
+    if hidden_series:
+        hidden_set = {s.strip() for s in hidden_series.split(",") if s.strip()}
     try:
         img_bytes = chart_service.render_chart_visualization_bytes(
             chart, fmt=img_fmt, view_mode=view_mode,
             y_axis_min=y_axis_min, y_axis_max=y_axis_max,
+            clean=clean, hidden_series=hidden_set,
         )
     except Exception as e:
         logger.exception("Error renderizando gráfica para export")
         raise HTTPException(status_code=500, detail=str(e))
 
     ext = img_fmt
-    filename = f"{base_name}.{ext}"
+    suffix = "_clean" if clean else ""
+    filename = f"{base_name}{suffix}.{ext}"
     media = "image/svg+xml" if img_fmt == "svg" else "image/png"
     return StreamingResponse(
         io.BytesIO(img_bytes),
@@ -575,12 +880,28 @@ def export_all_charts(
     job_id: int,
     un: str = Query("PJ"),
     fmt: str = Query("svg", description="Formato de imagen: svg o png"),
+    view_mode: str = Query(
+        "column",
+        description=(
+            "Modo de visualización: column (barras apiladas, default), "
+            "line (líneas), area (áreas apiladas)"
+        ),
+    ),
+    clean: bool = Query(
+        False,
+        description="True = descargar sin título ni etiquetas numéricas sobre las barras.",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Genera un ZIP con todas las gráficas de un escenario como imágenes SVG o PNG."""
     if fmt not in ("svg", "png"):
         raise HTTPException(status_code=400, detail="fmt debe ser 'svg' o 'png'")
+    if view_mode not in ("column", "line", "area"):
+        raise HTTPException(
+            status_code=400,
+            detail="view_mode debe ser 'column', 'line' o 'area'",
+        )
 
     try:
         job = SimulationService.get_by_id(db, current_user=current_user, job_id=job_id)
@@ -591,7 +912,7 @@ def export_all_charts(
 
     try:
         zip_bytes = chart_service.export_all_charts_zip(
-            db=db, job_id=job["id"], un=un, fmt=fmt,
+            db=db, job_id=job["id"], un=un, fmt=fmt, view_mode=view_mode, clean=clean,
         )
     except Exception as e:
         logger.exception("Error generando ZIP de gráficas")

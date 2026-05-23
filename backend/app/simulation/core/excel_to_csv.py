@@ -44,8 +44,10 @@ def generate_csvs_from_excel(
     if not excel_path.is_file():
         raise FileNotFoundError(f"No existe el archivo Excel: {excel_path}")
 
-    # Cargar el script compare_notebook_vs_app desde backend/scripts
-    backend_root = Path(__file__).resolve().parents[2]  # app/simulation/core -> backend
+    # Cargar el script compare_notebook_vs_app desde backend/scripts.
+    # Layout: backend/app/simulation/core/excel_to_csv.py — subir 4 niveles
+    # (parents[3]) para llegar a backend/.
+    backend_root = Path(__file__).resolve().parents[3]
     script_path = backend_root / "scripts" / "compare_notebook_vs_app.py"
     if not script_path.is_file():
         raise FileNotFoundError(

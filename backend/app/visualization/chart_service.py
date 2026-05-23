@@ -13,6 +13,7 @@ Funciones públicas:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from typing import Any
@@ -21,7 +22,7 @@ import pandas as pd
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import OsemosysOutputParamValue, SimulationJob
+from app.models import OsemosysOutputParamValue, OsemosysParamValue, SimulationJob, Technology, Timeslice
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -71,16 +72,25 @@ from app.visualization.colors import (
     asignar_grupo,
     generar_colores_tecnologias,
     _color_electricidad,
+    _color_electrolisis,
     _color_por_grupo_fijo,
     _color_por_sector,
     _color_por_emision,
+    _color_por_region,
+    _color_transporte_grupo,
+    _color_por_modo,
 )
 from app.visualization.labels import get_label
+from app.visualization.regional import REGION_LABELS, transform_regional_df
 from app.visualization.configs import (
     CONFIGS,
+    CONFIGS_CON_ALIAS_PWR,
+    PWR_TECH_ALIASES,
     TITULOS_VARIABLES_CAPACIDAD,
     NOMBRES_COMBUSTIBLES,
+    _map_electrolisis_verde,
     _map_h2_verde_azul_gris,
+    _map_h2_consumo_grupo,
 )
 from app.visualization.configs_comparacion import CONFIGS_COMPARACION
 from app.visualization.catalog_reader import (
@@ -94,6 +104,41 @@ logger = logging.getLogger(__name__)
 
 # Variables principales (columnas tipadas en la BD)
 _MAIN_TYPED_VARIABLES = {"Dispatch", "NewCapacity", "UnmetDemand", "AnnualEmissions"}
+
+
+def _is_regional_job(db: Session, job_id: int) -> bool:
+    """``True`` si el simulation_job se ejecutó en modo REGIONAL.
+
+    Se lee directamente de ``simulation_job.simulation_type`` (heredado del
+    escenario al hacer submit). Una sola query escalar.
+    """
+    sim_type = (
+        db.query(SimulationJob.simulation_type)
+        .filter(SimulationJob.id == job_id)
+        .scalar()
+    )
+    return sim_type == "REGIONAL"
+
+
+def _apply_regional_transform(
+    db: Session,
+    job_id: int,
+    df: pd.DataFrame,
+    *,
+    region_filter: str | None = None,
+    agrupar_por: str | None = None,
+) -> pd.DataFrame:
+    """No-op en NACIONAL; aplica ``transform_regional_df`` en REGIONAL.
+
+    Debe llamarse INMEDIATAMENTE después de ``_load_variable_data`` y ANTES
+    de cualquier filtro/alias/groupby que dependa de TECHNOLOGY o FUEL —
+    los filtros de ``CONFIGS`` asumen códigos sin prefijo regional.
+    """
+    if df is None or df.empty or not _is_regional_job(db, job_id):
+        return df
+    return transform_regional_df(
+        df, region_filter=region_filter, agrupar_por=agrupar_por
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -130,8 +175,14 @@ def _load_variable_data(
     """
 
     # ── Consulta BD ──────────────────────────────────────────────────────
+    # Hacemos LEFT JOIN con `timeslice` para recuperar el código de TS cuando
+    # el output tiene `id_timeslice` poblado (Dispatch tipado; intermedias
+    # como ProductionByTechnology / UseByTechnology / RateOfActivity). Las
+    # filas sin TS quedan con cadena vacía y el filtro de `timeslice` en
+    # `build_chart_data` simplemente no las restringe.
     rows = (
-        db.query(OsemosysOutputParamValue)
+        db.query(OsemosysOutputParamValue, Timeslice.code.label("ts_code"))
+        .outerjoin(Timeslice, OsemosysOutputParamValue.id_timeslice == Timeslice.id)
         .filter(
             OsemosysOutputParamValue.id_simulation_job == job_id,
             OsemosysOutputParamValue.variable_name == variable_name,
@@ -140,16 +191,17 @@ def _load_variable_data(
     )
 
     if not rows:
-        return pd.DataFrame(columns=["TECHNOLOGY", "FUEL", "YEAR", "VALUE"])
+        return pd.DataFrame(columns=["TECHNOLOGY", "FUEL", "TIMESLICE", "YEAR", "VALUE"])
 
     # ── Construir DataFrame ──────────────────────────────────────────────
     if variable_name in _MAIN_TYPED_VARIABLES:
         records = []
-        for r in rows:
+        for r, ts_code in rows:
             records.append(
                 {
                     "TECHNOLOGY": r.technology_name or "",
                     "FUEL": r.fuel_name or "",
+                    "TIMESLICE": ts_code or "",
                     "YEAR": r.year,
                     "VALUE": float(r.value),
                 }
@@ -159,7 +211,7 @@ def _load_variable_data(
     else:
         # Variable intermedia → extraer de index_json
         records = []
-        for r in rows:
+        for r, ts_code in rows:
             idx_raw = r.index_json if r.index_json else []
             idx = idx_raw if isinstance(idx_raw, (list, tuple)) else []
             # Convenciones del pipeline:
@@ -187,6 +239,7 @@ def _load_variable_data(
                 {
                     "TECHNOLOGY": technology,
                     "FUEL": fuel,
+                    "TIMESLICE": ts_code or "",
                     "YEAR": year,
                     "VALUE": float(r.value),
                 }
@@ -200,6 +253,54 @@ def _load_variable_data(
     return df
 
 
+def _load_resource_cap_input(
+    db: Session, job_id: int, tech_prefix: str
+) -> dict[str, float]:
+    """Carga TotalTechnologyModelPeriodActivityUpperLimit desde input params.
+
+    Para tecnologías cuyo nombre empieza con ``tech_prefix`` (ej. MINOIL).
+    Retorna ``{technology_name: cap_value}`` solo para valores no-default
+    (< 9,999,990). Si no hay valores configurados o no existe escenario,
+    retorna dict vacío.
+    """
+    job = db.query(SimulationJob).filter(SimulationJob.id == job_id).first()
+    if not job or not job.scenario_id:
+        return {}
+
+    results = (
+        db.query(Technology.name, OsemosysParamValue.value)
+        .join(Technology, Technology.id == OsemosysParamValue.id_technology)
+        .filter(
+            OsemosysParamValue.id_scenario == job.scenario_id,
+            OsemosysParamValue.param_name
+            == "TotalTechnologyModelPeriodActivityUpperLimit",
+            Technology.name.startswith(tech_prefix),
+        )
+        .all()
+    )
+
+    caps: dict[str, float] = {}
+    for name, value in results:
+        v = float(value)
+        # Default OSeMOSYS = 9999999 (sin restricción real)
+        if v < 9_999_990:
+            caps[name] = v
+    return caps
+
+
+def _unit_conversion_factor(un: str) -> float:
+    """Factor de conversión desde PJ a la unidad solicitada."""
+    if un == "GW":
+        return 1.0 / 31.536
+    elif un == "MW":
+        return 1.0 / 0.031536
+    elif un == "TWh":
+        return 1.0 / 3.6
+    elif un == "Gpc":
+        return 1.0 / 1.0095581216
+    return 1.0  # PJ
+
+
 def _safe_int(val: Any) -> int | None:
     """Intenta convertir un valor a int, retorna None si falla."""
     if val is None:
@@ -211,16 +312,13 @@ def _safe_int(val: Any) -> int | None:
 
 
 def format_axis_3sig(v: Any) -> str:
-    """Formatea un valor numérico con **mínimo 3 cifras significativas**.
+    """Formatea un valor numérico como **entero** con separador de miles.
 
     Uso típico: ``ax.yaxis.set_major_formatter(FuncFormatter(format_axis_3sig))``.
 
     Reglas:
-      * ``|v| >= 100``  → entero con separador de miles ("1,234")
-      * ``10 <= |v| < 100`` → 1 decimal ("12.3")
-      * ``1 <= |v| < 10``  → 2 decimales ("1.23")
-      * ``|v| < 1`` → tantos decimales como sean necesarios para 3 cifras
-        significativas ("0.123", "0.0123", "0.00123", …)
+      * ``|v| >= 1`` → entero con separador de miles ("1,234")
+      * ``|v| < 1`` y ≠ 0 → "0" (se trunca la parte decimal)
       * cero → "0"
     """
     import math
@@ -235,17 +333,7 @@ def format_axis_3sig(v: Any) -> str:
         return str(v)
     if v == 0:
         return "0"
-    abs_v = abs(v)
-    if abs_v >= 100:
-        decimals = 0
-    elif abs_v >= 10:
-        decimals = 1
-    elif abs_v >= 1:
-        decimals = 2
-    else:
-        order = math.floor(math.log10(abs_v))  # negativo
-        decimals = min(8, -order + 2)
-    return f"{v:,.{decimals}f}"
+    return f"{v:,.0f}"
 
 
 def _year_keep_indices(
@@ -272,6 +360,25 @@ def _year_keep_indices(
             continue
         keep.append(i)
     return keep
+
+
+def _aplicar_alias_pwr(df: pd.DataFrame) -> pd.DataFrame:
+    """Reescribe ``TECHNOLOGY`` según ``PWR_TECH_ALIASES``.
+
+    Aplica los aliases definidos en ``configs.PWR_TECH_ALIASES`` sobre la
+    columna ``TECHNOLOGY``. Las filas cuya tecnología no esté en el mapa
+    quedan intactas. Llamar DESPUÉS del filtro y ANTES del ``groupby``: así
+    las variantes (p. ej. ``PWRSOLRTP_ZNI``) se suman bajo la tecnología
+    padre (``PWRSOLRTP``) y la leyenda muestra una sola entrada con el label
+    del padre.
+    """
+    if df is None or df.empty or "TECHNOLOGY" not in df.columns:
+        return df
+    if not PWR_TECH_ALIASES:
+        return df
+    df = df.copy()
+    df["TECHNOLOGY"] = df["TECHNOLOGY"].replace(PWR_TECH_ALIASES)
+    return df
 
 
 def reorder_chart_series(chart: Any, order: list[str] | None) -> None:
@@ -301,6 +408,46 @@ def reorder_chart_series(chart: Any, order: list[str] | None) -> None:
         if s.name not in used:
             new_series.append(s)
     chart.series = new_series
+
+
+def filter_chart_series(chart: Any, names: list[str] | None) -> None:
+    """Restringe ``chart.series`` a las que están en ``names`` (in-place).
+
+    Match exacto por ``series.name``. ``None`` o lista vacía → no-op.
+    Mantiene el orden actual del chart, no el de ``names``.
+    """
+    if not names:
+        return
+    series = getattr(chart, "series", None)
+    if not series:
+        return
+    allowed = set(names)
+    chart.series = [s for s in series if s.name in allowed]
+
+
+def filter_chart_categories(chart: Any, keep_categories: list[str] | None) -> None:
+    """Restringe ``chart.categories`` a las que están en ``keep_categories``.
+
+    El filtrado se aplica también a cada ``series.data`` por índice posicional
+    para mantener la alineación. Match por ``str(category)`` (los años suelen
+    venir como ``int``). ``None`` o lista vacía → no-op.
+    """
+    if not keep_categories:
+        return
+    cats = getattr(chart, "categories", None)
+    series = getattr(chart, "series", None)
+    if not cats or series is None:
+        return
+    allowed = {str(k) for k in keep_categories}
+    keep_idx = [i for i, c in enumerate(cats) if str(c) in allowed]
+    if not keep_idx or len(keep_idx) == len(cats):
+        return
+    chart.categories = [cats[i] for i in keep_idx]
+    for s in series:
+        data = getattr(s, "data", None)
+        if data is None:
+            continue
+        s.data = [data[i] for i in keep_idx if i < len(data)]
 
 
 def apply_period_years(chart: Any, period: int | None) -> None:
@@ -466,7 +613,10 @@ def _filtrar_df(
 
     df = df[df["TECHNOLOGY"].str.startswith(prefijo)].copy()
 
-    if sub_filtro:
+    if sub_filtro == "CARRETERA":
+        from app.visualization.configs import _ROAD_TRANSPORT_PATTERN
+        df = df[df["TECHNOLOGY"].str.contains(_ROAD_TRANSPORT_PATTERN, regex=True)]
+    elif sub_filtro:
         df = df[df["TECHNOLOGY"].str.contains(sub_filtro)]
 
     if loc == "URB":
@@ -480,6 +630,102 @@ def _filtrar_df(
         df = df[df["TECHNOLOGY"].str.contains("ZNI")]
 
     return df
+
+
+# Mapeo de código de uso de transporte a nombre de grupo
+_TRANSPORTE_USO_A_GRUPO: dict[str, str] = {
+    "MOT": "Motos",
+    "LDV": "Livianos",
+    "TAX": "Livianos",
+    "FWD": "Livianos",
+    "BUS": "Buses",
+    "MIC": "Microbuses",
+    "TCK": "Carga",
+    "STT": "Carga",
+    "BOT": "Barcos",
+    "SHP": "Barcos",
+    "MET": "Metro",
+    "AVI": "Aviación",
+    "AIR": "Aviación",
+}
+
+
+def _map_transporte_grupo(tech_code: str) -> str:
+    """Clasifica un código DEMTRA en grupo de transporte."""
+    if not isinstance(tech_code, str) or not tech_code.startswith("DEMTRA"):
+        return "Otros"
+    rest = tech_code[len("DEMTRA"):]
+
+    # Eliminar sufijos de eficiencia y área
+    from app.visualization.labels import _EFIC, _AREA  # lazy: evita circular
+    for suffix in _EFIC:
+        if rest.endswith(suffix):
+            rest = rest[:-len(suffix)]
+            break
+    for suffix in _AREA:
+        if rest.endswith(suffix):
+            rest = rest[:-len(suffix)]
+            break
+
+    # Buscar código de uso al final del restante
+    for uso_code in _TRANSPORTE_USO_A_GRUPO:
+        if rest.endswith(uso_code):
+            return _TRANSPORTE_USO_A_GRUPO[uso_code]
+
+    # Fallback: buscar cualquier código conocido en cualquier posición
+    for uso_code in _TRANSPORTE_USO_A_GRUPO:
+        if uso_code in rest:
+            return _TRANSPORTE_USO_A_GRUPO[uso_code]
+
+    return "Otros"
+
+
+# Mapeo de código de uso de transporte a modo (agrupación MODO)
+_MODOS_TRANSPORTE_MAP: dict[str, str] = {
+    "MOT": "CARRETERA",
+    "LDV": "CARRETERA",
+    "TAX": "CARRETERA",
+    "FWD": "CARRETERA",
+    "BUS": "CARRETERA",
+    "MIC": "CARRETERA",
+    "TCK": "CARRETERA",
+    "STT": "CARRETERA",
+    "AVI": "AVI",
+    "AIR": "AVI",
+    "BOT": "BOT",
+    "SHP": "BOT",
+    "MET": "MET",
+}
+
+
+def _map_transporte_modo(tech_code: str) -> str:
+    """Clasifica un código DEMTRA en modo de transporte (CARRETERA, AVI, BOT, MET)."""
+    if not isinstance(tech_code, str) or not tech_code.startswith("DEMTRA"):
+        return "Otros"
+    rest = tech_code[len("DEMTRA"):]
+
+    # Eliminar sufijos de eficiencia y área
+    from app.visualization.labels import _EFIC, _AREA  # lazy: evita circular
+    for suffix in _EFIC:
+        if rest.endswith(suffix):
+            rest = rest[:-len(suffix)]
+            break
+    for suffix in _AREA:
+        if rest.endswith(suffix):
+            rest = rest[:-len(suffix)]
+            break
+
+    # Buscar código de modo al final del restante
+    for modo_code in _MODOS_TRANSPORTE_MAP:
+        if rest.endswith(modo_code):
+            return _MODOS_TRANSPORTE_MAP[modo_code]
+
+    # Fallback: buscar cualquier código conocido en cualquier posición
+    for modo_code in _MODOS_TRANSPORTE_MAP:
+        if modo_code in rest:
+            return _MODOS_TRANSPORTE_MAP[modo_code]
+
+    return "Otros"
 
 
 def _sector_labels(tech_series: pd.Series) -> pd.Series:
@@ -507,7 +753,7 @@ def _asignar_categoria(
     if agrupacion == "TECNOLOGIA":
         df["CATEGORIA"] = df["TECHNOLOGY"]
 
-    elif agrupacion == "COMBUSTIBLE":
+    elif agrupacion in ("COMBUSTIBLE", "FUEL"):
         if "FUEL" in df.columns:
             df["_TECH_FUEL"] = (
                 df["TECHNOLOGY"].astype(str) + "_" + df["FUEL"].astype(str)
@@ -524,6 +770,18 @@ def _asignar_categoria(
     elif agrupacion == "EMISION":
         # Para AnnualTechnologyEmission, FUEL contiene el tipo de emisión
         df["CATEGORIA"] = df["FUEL"] if "FUEL" in df.columns else "?"
+
+    elif agrupacion == "TRANSPORTE_GRUPO":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_grupo)
+
+    elif agrupacion == "MODO":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_modo)
+
+    elif agrupacion == "ELECTROLISIS":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_electrolisis_verde)
+
+    elif agrupacion == "H2_CONSUMO":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_h2_consumo_grupo)
 
     return df
 
@@ -572,7 +830,7 @@ def _color_map_comparison(
 
     Port de ``graficas_comparacion._color_map``.
     """
-    if agrupacion == "COMBUSTIBLE":
+    if agrupacion in ("COMBUSTIBLE", "FUEL"):
         palette = get_colores_grupos()
         return {c: palette.get(c, "#999999") for c in categorias_unicas}
 
@@ -593,6 +851,7 @@ def _color_map_comparison(
 def _build_factor_planta_data(
     db: Session,
     job_id: int,
+    chart_tipo: str,
     cfg: dict,
     title: str,
     sub_filtro: str | None,
@@ -608,6 +867,10 @@ def _build_factor_planta_data(
 
     df_cap = _load_variable_data(db, job_id, "TotalCapacityAnnual")
     df_prd = _load_variable_data(db, job_id, "ProductionByTechnology")
+
+    # Strip prefijos regionales antes del filtro (jobs REGIONAL).
+    df_cap = _apply_regional_transform(db, job_id, df_cap)
+    df_prd = _apply_regional_transform(db, job_id, df_prd)
 
     if filtro_fn is not None:
         df_cap = filtro_fn(df_cap, sub_filtro=sub_filtro, loc=loc)
@@ -641,22 +904,506 @@ def _build_factor_planta_data(
     años = sorted(df["YEAR"].unique())
     categories = [str(a) for a in años]
 
+    from app.services.chart_series_config_service import (
+        apply_global_series_config,
+        normalize_agrupar_por,
+    )
+
+    ap = normalize_agrupar_por(cfg.get("agrupar_por"), cfg.get("agrupar_por"))
+    stack_items = apply_global_series_config(
+        db,
+        tipo=chart_tipo,
+        agrupar_por=ap,
+        orden_color=orden_color,
+        color_dict=color_dict,
+        default_name=lambda code: get_label(str(code)),
+    )
+
     series: list[ChartSeries] = []
-    for tech in orden_color:
+    for tech, series_color, series_name in stack_items:
         df_tech = df[df["COLOR"] == tech]
         valor_por_año = {int(row["YEAR"]): row["CF"] for _, row in df_tech.iterrows()}
         data = [round(valor_por_año.get(a, 0.0), 4) for a in años]
         series.append(
             ChartSeries(
-                name=get_label(str(tech)),
+                name=series_name,
                 data=data,
-                color=color_dict.get(tech, "#999999"),
+                color=series_color,
                 stack="default",
             )
         )
 
     return ChartDataResponse(
         categories=categories, series=series, title=title, yAxisLabel="%"
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 2b. build_recursos_vs_demanda_data — RECURSOS Y RESERVAS
+# ═══════════════════════════════════════════════════════════════════════════
+
+_TECH_DISPLAY: dict[str, str] = {
+    "MINOIL_1LIV": "Crudo liviano",
+    "MINOIL_2MID": "Crudo intermedio",
+    "MINOIL_3PES": "Crudo pesado",
+    "MINOIL": "Crudo genérico",
+}
+
+_PRODUCTION_COLORS: dict[str, str] = {
+    "MINOIL_1LIV": "#3b82f6",
+    "MINOIL_2MID": "#f59e0b",
+    "MINOIL_3PES": "#6b7280",
+    "MINOIL": "#a855f7",
+}
+
+_REMAINING_COLORS: dict[str, str] = {
+    "MINOIL_1LIV": "#1e3a5f",
+    "MINOIL_2MID": "#92400e",
+    "MINOIL_3PES": "#374151",
+    "MINOIL": "#581c87",
+}
+
+_GAS_TECH_DISPLAY: dict[str, str] = {
+    "MINNGS": "Gas natural nacional",
+}
+
+_GAS_PRODUCTION_COLORS: dict[str, str] = {
+    "MINNGS": "#10b981",
+}
+
+_GAS_REMAINING_COLORS: dict[str, str] = {
+    "MINNGS": "#065f46",
+}
+
+_COAL_DOMESTIC_COLOR = "#dc2626"
+_COAL_EXPORT_COLOR = "#2563eb"
+_COAL_LIMIT_COLOR = "#000000"
+
+
+def _get_recursos_title(tipo: str) -> str:
+    """Retorna el título base para una gráfica de recursos."""
+    M = {
+        "recursos_vs_demanda": "Recursos y reservas vs Demanda (Crudo)",
+        "recursos_vs_demanda_gas": "Recursos y reservas vs Demanda (Gas Natural)",
+        "recursos_vs_demanda_carbon": "Recursos y reservas vs Demanda (Carbón)",
+    }
+    return M.get(tipo, "Recursos y reservas")
+
+
+def _load_annual_activity_limit_input(
+    db: Session, job_id: int, tech_prefix: str,
+) -> dict[int, float]:
+    """Carga TotalTechnologyAnnualActivityUpperLimit desde input params.
+
+    Retorna ``{year: total_limit}`` sumando todas las tecnologías que
+    empiezan con ``tech_prefix`` (ej. MINCOA). Filtra valores default
+    (>= 9,999,990).
+    """
+    job = db.query(SimulationJob).filter(SimulationJob.id == job_id).first()
+    if not job or not job.scenario_id:
+        return {}
+
+    results = (
+        db.query(Technology.name, OsemosysParamValue.year, OsemosysParamValue.value)
+        .join(Technology, Technology.id == OsemosysParamValue.id_technology)
+        .filter(
+            OsemosysParamValue.id_scenario == job.scenario_id,
+            OsemosysParamValue.param_name
+            == "TotalTechnologyAnnualActivityUpperLimit",
+            Technology.name.startswith(tech_prefix),
+        )
+        .all()
+    )
+
+    limits: dict[int, float] = {}
+    for name, year, value in results:
+        v = float(value)
+        if v < 9_999_990 and year is not None:
+            limits[year] = limits.get(year, 0.0) + v
+    return limits
+
+
+def _build_recursos_production_total(
+    db: Session, job_id: int, tipo: str, un: str = "PJ",
+) -> dict[int, float] | None:
+    """Retorna ``{year: total_production}`` en unidades ``un``.
+
+    - ``recursos_vs_demanda_gas``: ProductionByTechnology(MINNGS)
+    - ``recursos_vs_demanda_carbon``: UseByTechnology(FUEL=COA, no EXPCOA)
+                                      + ProductionByTechnology(EXPCOA)
+    """
+    if tipo == "recursos_vs_demanda_gas":
+        df_gas = _build_recursos_vs_demanda_gas_df(db, job_id, un=un)
+        if df_gas is None or df_gas.empty:
+            return None
+        prod = df_gas.groupby("YEAR")["PRODUCTION"].sum().to_dict()
+        return prod if prod else None
+
+    if tipo == "recursos_vs_demanda_carbon":
+        df_use = _load_variable_data(db, job_id, "UseByTechnology")
+        if df_use.empty:
+            return None
+        df_use = _apply_regional_transform(db, job_id, df_use)
+        df_coa = df_use[df_use["FUEL"] == "COA"].copy()
+        df_domestic = df_coa[~df_coa["TECHNOLOGY"].str.startswith("EXPCOA")]
+        domestic = df_domestic.groupby("YEAR")["VALUE"].sum().to_dict()
+
+        df_prod = _load_variable_data(db, job_id, "ProductionByTechnology")
+        if not df_prod.empty:
+            df_prod = _apply_regional_transform(db, job_id, df_prod)
+            df_export = df_prod[
+                df_prod["TECHNOLOGY"].str.startswith("EXPCOA")
+            ].copy()
+            export = df_export.groupby("YEAR")["VALUE"].sum().to_dict()
+        else:
+            export = {}
+
+        factor = _unit_conversion_factor(un)
+        all_years = sorted(set(domestic.keys()) | set(export.keys()))
+        result = {}
+        for y in all_years:
+            total = (domestic.get(y, 0.0) + export.get(y, 0.0)) * factor
+            result[y] = round(total, 6)
+        return result if result else None
+
+    return None
+
+
+def _build_recursos_vs_demanda_gas_df(
+    db: Session, job_id: int, un: str = "PJ",
+) -> pd.DataFrame | None:
+    """Helper que retorna un DataFrame con columnas:
+    YEAR, TECHNOLOGY, PRODUCTION, REMAINING, HAS_RESOURCE
+
+    Retorna None si no hay datos.
+    """
+    resource_caps = _load_resource_cap_input(db, job_id, "MINNGS")
+
+    df = _load_variable_data(db, job_id, "ProductionByTechnology")
+    if df.empty:
+        return None
+
+    df = _apply_regional_transform(db, job_id, df)
+    df_gas = df[df["TECHNOLOGY"].str.startswith("MINNGS")].copy()
+    if df_gas.empty:
+        return None
+
+    df_agg = df_gas.groupby(["TECHNOLOGY", "YEAR"], as_index=False)["VALUE"].sum()
+    all_techs = sorted(df_agg["TECHNOLOGY"].unique())
+
+    prod_totals = df_agg.groupby("TECHNOLOGY")["VALUE"].sum().to_dict()
+
+    initial: dict[str, float] = {}
+    for tech in all_techs:
+        if tech in resource_caps:
+            initial[tech] = resource_caps[tech]
+        else:
+            initial[tech] = prod_totals.get(tech, 0.0)
+
+    factor = _unit_conversion_factor(un)
+    años = sorted(df_agg["YEAR"].unique())
+
+    rows: list[dict] = []
+    for tech in all_techs:
+        tech_rows = df_agg[df_agg["TECHNOLOGY"] == tech]
+        prod_by_year = dict(zip(tech_rows["YEAR"], tech_rows["VALUE"]))
+        cap = initial.get(tech, 0.0)
+        cum = 0.0
+        for a in años:
+            prod = prod_by_year.get(a, 0.0)
+            cum += prod
+            rem = max(0.0, cap - cum)
+            rows.append({
+                "YEAR": a,
+                "TECHNOLOGY": tech,
+                "PRODUCTION": round(prod * factor, 6),
+                "REMAINING": round(rem * factor, 6) if cap > 0 else 0.0,
+                "HAS_RESOURCE": 1.0 if cap > 0 else 0.0,
+            })
+
+    return pd.DataFrame(rows)
+
+
+def build_recursos_vs_demanda_gas_data(
+    db: Session,
+    job_id: int,
+    un: str = "PJ",
+) -> ChartDataResponse:
+    """Construye datos para Recursos y reservas vs Demanda (Gas Natural).
+
+    Para la tecnología MINNGS:
+      1. Carga el recurso inicial desde
+         TotalTechnologyModelPeriodActivityUpperLimit (input param).
+      2. Carga la producción anual desde ProductionByTechnology (output).
+      3. Calcula ``remaining[t] = initial - cumulative_production[t]``.
+
+    Retorna 2 series:
+      - 1 barra apilada (stack="produccion"): producción anual.
+      - 1 línea (chart_type="line", sin stack): recurso remanente.
+    """
+    title = f"Recursos y reservas vs Demanda (Gas Natural) ({un})"
+
+    df_gas = _build_recursos_vs_demanda_gas_df(db, job_id, un=un)
+    if df_gas is None or df_gas.empty:
+        return ChartDataResponse(
+            categories=[], series=[], title=title, yAxisLabel=un
+        )
+
+    años = sorted(df_gas["YEAR"].unique())
+    categories = [str(a) for a in años]
+    all_techs = sorted(df_gas["TECHNOLOGY"].unique())
+
+    series: list[ChartSeries] = []
+
+    for tech in all_techs:
+        tech_display = _GAS_TECH_DISPLAY.get(tech, tech).lower()
+        tech_rows = df_gas[df_gas["TECHNOLOGY"] == tech]
+
+        prod_by_year = dict(zip(tech_rows["YEAR"], tech_rows["PRODUCTION"]))
+        rem_by_year = dict(zip(tech_rows["YEAR"], tech_rows["REMAINING"]))
+        has_res = tech_rows["HAS_RESOURCE"].iloc[0] > 0
+
+        # Serie de producción
+        prod_data = [prod_by_year.get(a, 0.0) for a in años]
+        series.append(
+            ChartSeries(
+                name=f"Producción {tech_display}",
+                data=prod_data,
+                color=_GAS_PRODUCTION_COLORS.get(tech, "#10b981"),
+                stack="produccion",
+            )
+        )
+
+        # Serie de recurso remanente
+        if has_res:
+            rem_data = [rem_by_year.get(a, 0.0) for a in años]
+            series.append(
+                ChartSeries(
+                    name=f"Recurso remanente {tech_display}",
+                    data=rem_data,
+                    color=_GAS_REMAINING_COLORS.get(tech, "#065f46"),
+                    stack=None,
+                    chart_type="line",
+                )
+            )
+
+    return ChartDataResponse(
+        categories=categories,
+        series=series,
+        title=title,
+        yAxisLabel=un,
+    )
+
+
+def build_recursos_vs_demanda_carbon_data(
+    db: Session,
+    job_id: int,
+    un: str = "PJ",
+) -> ChartDataResponse:
+    """Construye datos para Recursos y reservas vs Demanda (Carbón).
+
+    Barras apiladas (stack="carbon"):
+      - Demanda interna: UseByTechnology(FUEL=COA, excluyendo EXPCOA)
+      - Exportaciones:   ProductionByTechnology(EXPCOA)
+    Línea:
+      - Límite anual:    TotalTechnologyAnnualActivityUpperLimit(MINCOA)
+    """
+    title = f"Recursos y reservas vs Demanda (Carbón) ({un})"
+    factor = _unit_conversion_factor(un)
+
+    # 1. Demanda interna: UseByTechnology(FUEL=COA, excluir EXPCOA)
+    df_use = _load_variable_data(db, job_id, "UseByTechnology")
+    if df_use.empty:
+        return ChartDataResponse(
+            categories=[], series=[], title=title, yAxisLabel=un
+        )
+    df_use = _apply_regional_transform(db, job_id, df_use)
+    df_coa = df_use[df_use["FUEL"] == "COA"].copy()
+    df_domestic = df_coa[~df_coa["TECHNOLOGY"].str.startswith("EXPCOA")]
+    domestic_by_year = (
+        df_domestic.groupby("YEAR")["VALUE"].sum().to_dict()
+    )
+
+    # 2. Exportaciones: ProductionByTechnology(EXPCOA)
+    df_prod = _load_variable_data(db, job_id, "ProductionByTechnology")
+    if not df_prod.empty:
+        df_prod = _apply_regional_transform(db, job_id, df_prod)
+        df_export = df_prod[
+            df_prod["TECHNOLOGY"].str.startswith("EXPCOA")
+        ].copy()
+        export_by_year = df_export.groupby("YEAR")["VALUE"].sum().to_dict()
+    else:
+        export_by_year = {}
+
+    # 3. Límite anual: TotalTechnologyAnnualActivityUpperLimit(MINCOA)
+    annual_limits = _load_annual_activity_limit_input(db, job_id, "MINCOA")
+
+    all_years = sorted(
+        set(domestic_by_year.keys())
+        | set(export_by_year.keys())
+        | set(annual_limits.keys())
+    )
+    if not all_years:
+        return ChartDataResponse(
+            categories=[], series=[], title=title, yAxisLabel=un
+        )
+
+    categories = [str(a) for a in all_years]
+
+    series: list[ChartSeries] = []
+
+    # Barra: Demanda interna
+    dom_data = [round(domestic_by_year.get(a, 0.0) * factor, 6) for a in all_years]
+    series.append(
+        ChartSeries(
+            name="Demanda interna de carbón",
+            data=dom_data,
+            color=_COAL_DOMESTIC_COLOR,
+            stack="carbon",
+        )
+    )
+
+    # Barra: Exportaciones
+    exp_data = [round(export_by_year.get(a, 0.0) * factor, 6) for a in all_years]
+    series.append(
+        ChartSeries(
+            name="Exportaciones de carbón",
+            data=exp_data,
+            color=_COAL_EXPORT_COLOR,
+            stack="carbon",
+        )
+    )
+
+    # Línea: Límite anual de producción
+    lim_data = [round(annual_limits.get(a, 0.0) * factor, 6) for a in all_years]
+    if any(v > 0 for v in lim_data):
+        series.append(
+            ChartSeries(
+                name="Capacidad máxima de producción anual",
+                data=lim_data,
+                color=_COAL_LIMIT_COLOR,
+                stack=None,
+                chart_type="line",
+            )
+        )
+
+    return ChartDataResponse(
+        categories=categories,
+        series=series,
+        title=title,
+        yAxisLabel=un,
+    )
+
+
+def build_recursos_vs_demanda_data(
+    db: Session,
+    job_id: int,
+    un: str = "PJ",
+) -> ChartDataResponse:
+    """Construye datos para Recursos y reservas vs Demanda (Crudo).
+
+    Para cada categoría MINOIL (1LIV, 2MID, 3PES):
+      1. Carga el recurso inicial desde
+         TotalTechnologyModelPeriodActivityUpperLimit (input param).
+      2. Carga la producción anual desde ProductionByTechnology (output).
+      3. Calcula ``remaining[t] = initial - cumulative_production[t]``.
+
+    Retorna 6 series por categoría de crudo:
+      - 3 áreas/barras apiladas (stack="produccion"): producción anual por tipo.
+      - 3 líneas (chart_type="line", sin stack): recurso remanente por tipo.
+    """
+    title = f"Recursos y reservas vs Demanda (Crudo) ({un})"
+
+    # 1. Cargar recursos iniciales desde input params (si existen)
+    resource_caps = _load_resource_cap_input(db, job_id, "MINOIL")
+
+    # 2. Cargar producción anual desde output
+    df = _load_variable_data(db, job_id, "ProductionByTechnology")
+    if df.empty:
+        return ChartDataResponse(
+            categories=[], series=[], title=title, yAxisLabel=un
+        )
+
+    # Strip prefijos regionales antes del filtro (jobs REGIONAL).
+    df = _apply_regional_transform(db, job_id, df)
+
+    # Filtrar solo tecnologías MINOIL
+    df_minoil = df[df["TECHNOLOGY"].str.startswith("MINOIL")].copy()
+    if df_minoil.empty:
+        return ChartDataResponse(
+            categories=[], series=[], title=title, yAxisLabel=un
+        )
+
+    df_agg = df_minoil.groupby(
+        ["TECHNOLOGY", "YEAR"], as_index=False
+    )["VALUE"].sum()
+
+    all_techs = sorted(df_agg["TECHNOLOGY"].unique())
+
+    # 3. Determinar recurso inicial por tecnología.
+    # Si no hay cap configurado (< 9.999.990), usar producción total acumulada
+    # como recurso (la gráfica muestra "este fue el total extraído").
+    prod_totals = df_agg.groupby("TECHNOLOGY")["VALUE"].sum().to_dict()
+
+    initial: dict[str, float] = {}
+    for tech in all_techs:
+        if tech in resource_caps:
+            initial[tech] = resource_caps[tech]
+        else:
+            initial[tech] = prod_totals.get(tech, 0.0)
+
+    años = sorted(df_agg["YEAR"].unique())
+    categories = [str(a) for a in años]
+
+    series: list[ChartSeries] = []
+    factor = _unit_conversion_factor(un)
+
+    # 4. Construir series: producción (área) + recurso remanente (línea) por tipo
+    for tech in all_techs:
+        tech_display = _TECH_DISPLAY.get(tech, tech).lower()
+        tech_rows = df_agg[df_agg["TECHNOLOGY"] == tech]
+        prod_by_year = dict(
+            zip(tech_rows["YEAR"], tech_rows["VALUE"])
+        )
+
+        # 4a. Serie de producción como área/barra
+        prod_data = [
+            round(prod_by_year.get(a, 0.0) * factor, 6) for a in años
+        ]
+        series.append(
+            ChartSeries(
+                name=f"Producción {tech_display}",
+                data=prod_data,
+                color=_PRODUCTION_COLORS.get(tech, "#999999"),
+                stack="produccion",
+            )
+        )
+
+        # 4b. Serie de recurso remanente como línea
+        cap = initial.get(tech, 0.0)
+        if cap > 0:
+            cum = 0.0
+            remaining = []
+            for a in años:
+                cum += prod_by_year.get(a, 0.0)
+                rem = max(0.0, cap - cum)
+                remaining.append(round(rem * factor, 6))
+
+            series.append(
+                ChartSeries(
+                    name=f"Recurso remanente {tech_display}",
+                    data=remaining,
+                    color=_REMAINING_COLORS.get(tech, "#666666"),
+                    stack=None,
+                    chart_type="line",
+                )
+            )
+
+    return ChartDataResponse(
+        categories=categories,
+        series=series,
+        title=title,
+        yAxisLabel=un,
     )
 
 
@@ -675,6 +1422,8 @@ def build_chart_data(
     variable: str | None = None,
     agrupar_por: str | None = None,
     es_porcentaje_override: bool = False,
+    region: str | None = None,
+    timeslice: str | None = None,
 ) -> ChartDataResponse:
     """Construye la respuesta de gráfica para un solo escenario.
 
@@ -692,7 +1441,18 @@ def build_chart_data(
         Localización (URB, RUR, ZNI).
     variable : str | None
         Override de variable para configs de capacidad.
+    region : str | None
+        Solo aplica si el job es REGIONAL. Filtra a una región específica
+        (``'AN'..'SO'``). Ignorado cuando ``agrupar_por == 'REGION'``.
     """
+    # ── Ruta especial: recursos vs demanda ────────────────────────────────
+    if tipo == "recursos_vs_demanda":
+        return build_recursos_vs_demanda_data(db, job_id, un=un)
+    if tipo == "recursos_vs_demanda_gas":
+        return build_recursos_vs_demanda_gas_data(db, job_id, un=un)
+    if tipo == "recursos_vs_demanda_carbon":
+        return build_recursos_vs_demanda_carbon_data(db, job_id, un=un)
+
     if tipo not in CONFIGS:
         raise ValueError(f"tipo='{tipo}' no existe en CONFIGS.")
 
@@ -718,6 +1478,8 @@ def build_chart_data(
         title += f" — {sub_label}"
     if loc:
         title += f" ({loc})"
+    if timeslice:
+        title += f" [TS={timeslice}]"
 
     es_emision = cfg.get("es_emision", False)
     es_emision_kt = cfg.get("es_emision_kt", False)
@@ -731,7 +1493,7 @@ def build_chart_data(
 
     # ── Factor de Planta: pipeline propio ────────────────────────────────
     if es_factor_planta:
-        return _build_factor_planta_data(db, job_id, cfg, title, sub_filtro, loc)
+        return _build_factor_planta_data(db, job_id, tipo, cfg, title, sub_filtro, loc)
 
     # ── Cargar datos ─────────────────────────────────────────────────────
     df = _load_variable_data(db, job_id, variable_name)
@@ -744,10 +1506,25 @@ def build_chart_data(
             yAxisLabel=un,
         )
 
+    # ── Transformación regional (jobs REGIONAL) ──────────────────────────
+    # DEBE ir antes del filtro: los outputs REGIONAL llegan con prefijo
+    # geográfico de 2 letras (p. ej. ``SE_PWRSOLUGE``) y los filtros de
+    # ``CONFIGS`` asumen códigos sin prefijo (``startswith('PWR')``).
+    df = _apply_regional_transform(
+        db, job_id, df, region_filter=region, agrupar_por=agrupar_por
+    )
+
     # ── Filtrar ──────────────────────────────────────────────────────────
     filtro_fn = cfg.get("filtro")
     if filtro_fn is not None:
         df = filtro_fn(df, sub_filtro=sub_filtro, loc=loc)
+
+    # Filtro por timeslice (opcional): si el DataFrame tiene la columna
+    # TIMESLICE y el caller pasa un código, restringimos antes del groupby.
+    # Si no se pasa, se agrega por año (suma de todos los TS), que es el
+    # comportamiento histórico.
+    if timeslice and "TIMESLICE" in df.columns:
+        df = df[df["TIMESLICE"].astype(str) == str(timeslice)]
 
     if df.empty:
         return ChartDataResponse(
@@ -756,6 +1533,13 @@ def build_chart_data(
             title=title,
             yAxisLabel=un,
         )
+
+    # ── Alias de tecnologías (sector eléctrico) ──────────────────────────
+    # Para los charts principales del sector eléctrico, consolidamos algunas
+    # variantes bajo su tecnología "padre" — la leyenda queda más limpia y
+    # la lectura del stack es directa (ver PWR_TECH_ALIASES en configs.py).
+    if tipo in CONFIGS_CON_ALIAS_PWR:
+        df = _aplicar_alias_pwr(df)
 
     # ── Agrupación ───────────────────────────────────────────────────────
     agrupar_col = agrupar_por if agrupar_por is not None else cfg["agrupar_por"]
@@ -789,8 +1573,19 @@ def build_chart_data(
         df["COLOR"] = _sector_labels(df["TECHNOLOGY"])
     elif agrupar_col == "EMISION":
         df["COLOR"] = df["FUEL"] if "FUEL" in df.columns else "?"
+    elif agrupar_col == "ELECTROLISIS":
+        df["COLOR"] = df["TECHNOLOGY"].apply(_map_electrolisis_verde)
+    elif agrupar_col == "H2_CONSUMO":
+        df["COLOR"] = df["TECHNOLOGY"].apply(_map_h2_consumo_grupo)
     elif agrupar_col == "H2_PRODUCCION":
         df["COLOR"] = df["TECHNOLOGY"].apply(_map_h2_verde_azul_gris)
+    elif agrupar_col == "TRANSPORTE_GRUPO":
+        df["COLOR"] = df["TECHNOLOGY"].apply(_map_transporte_grupo)
+    elif agrupar_col == "MODO":
+        df["COLOR"] = df["TECHNOLOGY"].apply(_map_transporte_modo)
+    elif agrupar_col == "REGION":
+        # transform_regional_df ya añadió la columna REGION con prefijos AN..SO.
+        df["COLOR"] = df["REGION"] if "REGION" in df.columns else df["TECHNOLOGY"]
     elif agrupar_col == "YEAR":
         # emisiones_total: solo agrupa por año
         df["COLOR"] = "Total"
@@ -833,6 +1628,16 @@ def build_chart_data(
             color_fn = _color_por_sector
         elif agrupar_col == "EMISION":
             color_fn = _color_por_emision
+        elif agrupar_col == "TRANSPORTE_GRUPO":
+            color_fn = _color_transporte_grupo
+        elif agrupar_col == "MODO":
+            color_fn = _color_por_modo
+        elif agrupar_col == "REGION":
+            color_fn = _color_por_region
+        elif agrupar_col == "ELECTROLISIS":
+            color_fn = _color_electrolisis
+        elif agrupar_col == "H2_CONSUMO":
+            color_fn = _color_h2_consumo
         else:
             color_fn = (
                 cfg.get("color_fn")
@@ -856,13 +1661,29 @@ def build_chart_data(
 
     def _composite_label(code: str) -> str:
         # COLOR de la forma "UPSREF_XXX::FUEL" → "Refinería ... — Combustible"
+        if agrupar_col == "REGION":
+            return REGION_LABELS.get(code, code)
         if "::" in code:
             left, right = code.split("::", 1)
             return f"{get_label(left)} — {get_label(right)}"
         return get_label(code)
 
+    from app.services.chart_series_config_service import (
+        apply_global_series_config,
+        normalize_agrupar_por,
+    )
+
+    stack_items = apply_global_series_config(
+        db,
+        tipo=tipo,
+        agrupar_por=normalize_agrupar_por(agrupar_col, agrupar_col),
+        orden_color=orden_color,
+        color_dict=color_dict,
+        default_name=_composite_label,
+    )
+
     series: list[ChartSeries] = []
-    for tech in orden_color:
+    for tech, series_color, series_name in stack_items:
         df_tech = df_agg[df_agg["COLOR"] == tech]
         valor_por_año = {
             int(row["YEAR"]): row["VALUE"] for _, row in df_tech.iterrows()
@@ -870,9 +1691,9 @@ def build_chart_data(
         data = [round(valor_por_año.get(a, 0.0), 6) for a in años]
         series.append(
             ChartSeries(
-                name=_composite_label(str(tech)),
+                name=series_name,
                 data=data,
-                color=color_dict.get(tech, "#999999"),
+                color=series_color,
                 stack="default",
             )
         )
@@ -884,6 +1705,80 @@ def build_chart_data(
         yAxisLabel="%"
         if es_porcentaje
         else (_emision_unit_label(un, es_emision_kt) if es_emision else un),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Helper: comparación recursos por año (by-year)
+# ═══════════════════════════════════════════════════════════════════════════
+
+_RECURSOS_TIPOS_COMPARACION = frozenset({
+    "recursos_vs_demanda_gas",
+    "recursos_vs_demanda_carbon",
+})
+
+
+def _build_comparison_recursos_by_year(
+    db: Session,
+    job_ids: list[int],
+    tipo: str,
+    years_to_plot: list[int] | None,
+    scenario_names: dict[int, str],
+    un: str = "PJ",
+) -> CompareChartResponse:
+    """Construye comparación by-year para gráficas de recursos (gas, carbón).
+
+    Subplot por año clave, cada barra = producción total de un escenario.
+    """
+    if years_to_plot is None:
+        years_to_plot = [2024, 2030, 2050]
+
+    title = f"{_get_recursos_title(tipo)} — Comparación ({un})"
+
+    prod_by_job_year: dict[int, dict[int, float]] = {}
+    has_data = False
+    for jid in job_ids:
+        totals = _build_recursos_production_total(db, jid, tipo, un=un)
+        if totals is None:
+            prod_by_job_year[jid] = {}
+            continue
+        has_data = True
+        prod_by_job_year[jid] = totals
+
+    if not has_data:
+        return CompareChartResponse(title=title, subplots=[], yAxisLabel=un)
+
+    subplots: list[SubplotData] = []
+    color = "#10b981" if tipo == "recursos_vs_demanda_gas" else "#dc2626"
+    prod_label = {
+        "recursos_vs_demanda_gas": "Producción gas natural nacional",
+        "recursos_vs_demanda_carbon": "Demanda total de carbón",
+    }.get(tipo, "Producción")
+
+    for año in years_to_plot:
+        data = [
+            round(prod_by_job_year.get(jid, {}).get(año, 0.0), 6)
+            for jid in job_ids
+        ]
+        categories = [scenario_names.get(jid, f"Job {jid}") for jid in job_ids]
+
+        subplots.append(
+            SubplotData(
+                year=año,
+                categories=categories,
+                series=[
+                    ChartSeries(
+                        name=prod_label,
+                        data=data,
+                        color=color,
+                        stack="default",
+                    )
+                ],
+            )
+        )
+
+    return CompareChartResponse(
+        title=title, subplots=subplots, yAxisLabel=un
     )
 
 
@@ -966,13 +1861,20 @@ def build_comparison_data(
         label_agrupacion = {
             "TECNOLOGIA": "Tecnologías",
             "COMBUSTIBLE": "Combustibles",
+            "FUEL": "Combustibles",
             "SECTOR": "Sectores",
+            "MODO": "Modo",
         }.get(agrupacion_usar, agrupacion_usar)
         title_base = f"{cfg['titulo_base']} por {label_agrupacion}"
     else:
         usa_historico = False
         año_historico = years_to_plot[0] if years_to_plot else 2024
-        agrupacion_usar = "TECNOLOGIA"  # Fallback a agrupar por tecnología para cualquier otra gráfica
+        # agrupacion_usar = "TECNOLOGIA"  # Fallback a agrupar por tecnología para cualquier otra gráfica
+        agrupacion_usar = (
+            agrupacion
+            if agrupacion is not None
+            else cfg.get("agrupar_por", "TECNOLOGIA")
+        )
         title_base = cfg.get("titulo", cfg.get("titulo_base", tipo)) + " (Comparación)"
 
     title = title_base
@@ -1007,13 +1909,21 @@ def build_comparison_data(
 
     variable_name = cfg["variable_default"]
 
+    # ── Ruta especial: recursos vs demanda ────────────────────────────────
+    if tipo in _RECURSOS_TIPOS_COMPARACION:
+        return _build_comparison_recursos_by_year(
+            db, job_ids, tipo, years_to_plot, scenario_names, un,
+        )
+
     # ── Procesar datos ───────────────────────────────────────────────────
     all_data: list[pd.DataFrame] = []
 
-    # Paso 1: Año histórico (solo del primer escenario)
+    # Paso 1: Año histórico (solo del escenario primario — el primero en la lista)
     if usa_historico and año_historico in years_to_plot and job_ids:
         first_job_id = job_ids[0]
         df_var = _load_variable_data(db, first_job_id, variable_name)
+        # Strip prefijos regionales si el job es REGIONAL (acumulado nacional).
+        df_var = _apply_regional_transform(db, first_job_id, df_var)
 
         if not df_var.empty:
             df_hist = _procesar_bloque_comparacion(
@@ -1026,7 +1936,9 @@ def build_comparison_data(
                 un,
             )
             if df_hist is not None and not df_hist.empty:
-                df_hist["SCENARIO"] = str(año_historico)
+                df_hist["SCENARIO"] = scenario_names.get(
+                    first_job_id, str(año_historico)
+                )
                 all_data.append(df_hist)
 
     # Paso 2: Años proyectados (todos los escenarios)
@@ -1038,6 +1950,8 @@ def build_comparison_data(
 
     for jid in job_ids:
         df_var = _load_variable_data(db, jid, variable_name)
+        # Strip prefijos regionales si el job es REGIONAL (acumulado nacional).
+        df_var = _apply_regional_transform(db, jid, df_var)
         if df_var.empty:
             continue
 
@@ -1053,7 +1967,14 @@ def build_comparison_data(
             )
         else:
             df = _procesar_bloque_single(
-                df_var, cfg, sub_filtro, loc, años_a_procesar, un
+                df_var,
+                cfg,
+                sub_filtro,
+                loc,
+                años_a_procesar,
+                un,
+                agrupacion_override=agrupacion_usar,
+                tipo=tipo,
             )
 
         if df is None or df.empty:
@@ -1074,15 +1995,29 @@ def build_comparison_data(
         ].transform("sum")
         df_final["VALUE"] = df_final["VALUE"] / total_por_año_escenario * 100.0
 
-    # ── Colores ──────────────────────────────────────────────────────────
+    # ── Colores ──────────────────────────────────────────────────
     categorias_unicas = sorted(df_final["CATEGORIA"].dropna().unique())
     if not es_generico:
         mapa_colores = _color_map_comparison(agrupacion_usar, categorias_unicas)
     else:
-        # Reutilizar el sistema de colores original de la gráfica base
-        color_fn = cfg.get("color_fn")
+        # Para gráficas genéricas: usar color_fn según la agrupación REAL
+        if agrupacion_usar != cfg.get("agrupar_por"):
+            # Hubo override → usar función de color según agrupacion_usar
+            if agrupacion_usar == "FUEL":
+                color_fn = _color_por_grupo_fijo
+            elif agrupacion_usar == "SECTOR":
+                color_fn = _color_por_sector
+            elif agrupacion_usar == "EMISION":
+                color_fn = _color_por_emision
+            elif agrupacion_usar == "ELECTROLISIS":
+                color_fn = _color_electrolisis
+            else:
+                color_fn = cfg.get("color_fn") or generar_colores_tecnologias
+        else:
+            # Sin override → usar color_fn original del config
+            color_fn = cfg.get("color_fn")
+
         if color_fn is not None:
-            # Fake dataframe for generic coloring
             df_tmp = pd.DataFrame({"COLOR": list(categorias_unicas)})
             colores_lista, orden_lista = color_fn(df_tmp, "COLOR")
             mapa_colores = dict(zip(orden_lista, colores_lista))
@@ -1090,18 +2025,66 @@ def build_comparison_data(
             _palette = get_colores_grupos()
             mapa_colores = {c: _palette.get(c, "#999999") for c in categorias_unicas}
 
+    from app.services.chart_series_config_service import (
+        apply_global_series_config,
+        normalize_agrupar_por,
+    )
+
+    agrup_key = normalize_agrupar_por(agrupacion_usar, agrupacion_usar)
+    ordered_stack = apply_global_series_config(
+        db,
+        tipo=tipo,
+        agrupar_por=agrup_key,
+        orden_color=list(categorias_unicas),
+        color_dict=mapa_colores,
+        default_name=lambda c: get_label(str(c)),
+    )
+
     # ── Construir subplots por año ───────────────────────────────────────
     años_ordenados = sorted(df_final["YEAR"].unique())
     subplots: list[SubplotData] = []
 
     for año in años_ordenados:
         df_año = df_final[df_final["YEAR"] == año]
-        escenarios_en_año = sorted(df_año["SCENARIO"].unique())
+
+        if año == years_to_plot[0]:
+            # Año histórico: mostrar una sola barra (etiquetada con el nombre
+            # del primer escenario para que los alias/display_name funcionen).
+            if not usa_historico:
+                historical_job_id = job_ids[0]
+                historical_name = scenario_names.get(
+                    historical_job_id, f"Job {historical_job_id}"
+                )
+                df_año = df_año[
+                    df_año["SCENARIO"] == historical_name
+                ].copy()
+                df_año["SCENARIO"] = scenario_names.get(
+                    job_ids[0], str(año)
+                )
+            escenarios_en_año = [
+                scenario_names.get(job_ids[0], str(año))
+            ]
+        else:
+            # Preservar el orden de selección del usuario (job_ids)
+            escenarios_en_año = [
+                scenario_names[jid]
+                for jid in job_ids
+                if jid in scenario_names
+                and scenario_names[jid] in df_año["SCENARIO"].values
+            ]
 
         series: list[ChartSeries] = []
-        for categoria in categorias_unicas:
+        for categoria, col_cat, name_cat in ordered_stack:
             df_cat = df_año[df_año["CATEGORIA"] == categoria]
             if df_cat.empty:
+                series.append(
+                    ChartSeries(
+                        name=name_cat,
+                        data=[0.0] * len(escenarios_en_año),
+                        color=col_cat,
+                        stack="default",
+                    )
+                )
                 continue
 
             valor_por_escenario = {
@@ -1116,9 +2099,9 @@ def build_comparison_data(
 
             series.append(
                 ChartSeries(
-                    name=get_label(str(categoria)),
+                    name=name_cat,
                     data=data,
-                    color=mapa_colores.get(categoria, "#999999"),
+                    color=col_cat,
                     stack="default",
                 )
             )
@@ -1152,6 +2135,7 @@ def build_comparison_facet_data(
     agrupar_por: str | None = None,
     job_display_overrides: dict[int, str] | None = None,
     es_porcentaje_override: bool = False,
+    region: str | None = None,
 ) -> CompareChartFacetResponse:
     """Construye datos para comparación por escenarios completos (facets).
 
@@ -1230,6 +2214,7 @@ def build_comparison_facet_data(
             variable=variable,
             agrupar_por=agrupar_por,
             es_porcentaje_override=es_porcentaje_override,
+            region=region,
         )
 
         if not facets:
@@ -1253,6 +2238,88 @@ def build_comparison_facet_data(
         title=title,
         facets=facets,
         yAxisLabel=y_label,
+    )
+
+
+def _inject_exogenous_data_into_facets(
+    facet_response: CompareChartFacetResponse,
+    exogenous_data_json: str,
+) -> CompareChartFacetResponse:
+    """Inyecta datos exógenos (ej: Refinerías) como nueva serie en cada facet.
+
+    Espeja la lógica de ``injectExogenousDataFacet`` en el frontend.
+    Recibe el JSON tal cual lo envía el frontend (``ExogenousDataConfig``).
+    """
+    try:
+        exo = json.loads(exogenous_data_json)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return facet_response
+
+    if not isinstance(exo, dict):
+        return facet_response
+    if not exo.get("active"):
+        return facet_response
+    scenarios = exo.get("scenarios", [])
+    if not scenarios:
+        return facet_response
+
+    category_label = exo.get("categoryLabel", "Refinerías")
+    color = exo.get("color", "#808080")
+
+    exo_by_job: dict[int, dict[int, float]] = {}
+    for s in scenarios:
+        jid = s.get("jobId")
+        if jid is None:
+            continue
+        data_pairs = s.get("data", [])
+        exo_by_job[int(jid)] = {int(k): float(v) for k, v in data_pairs if k is not None}
+
+    new_facets: list[FacetData] = []
+    for facet in facet_response.facets:
+        exo_map = exo_by_job.get(facet.job_id)
+        if not exo_map:
+            new_facets.append(facet)
+            continue
+        ref_data: list[float | None] = []
+        has_any = False
+        for cat in facet.categories:
+            try:
+                year = int(cat)
+            except (ValueError, TypeError):
+                ref_data.append(None)
+                continue
+            val = exo_map.get(year)
+            if val is not None:
+                ref_data.append(val)
+                has_any = True
+            else:
+                ref_data.append(None)
+        if not has_any:
+            new_facets.append(facet)
+            continue
+        new_facets.append(
+            FacetData(
+                scenario_name=facet.scenario_name,
+                job_id=facet.job_id,
+                display_name=facet.display_name,
+                scenario_tag_name=facet.scenario_tag_name,
+                categories=facet.categories,
+                series=[
+                    *facet.series,
+                    ChartSeries(
+                        name=category_label,
+                        data=ref_data,
+                        color=color,
+                        stack="default",
+                    ),
+                ],
+            )
+        )
+
+    return CompareChartFacetResponse(
+        title=facet_response.title,
+        facets=new_facets,
+        yAxisLabel=facet_response.yAxisLabel,
     )
 
 
@@ -1376,6 +2443,8 @@ def _procesar_bloque_single(
     loc: str | None,
     años: list[int],
     un: str,
+    agrupacion_override: str | None = None,
+    tipo: str | None = None,
 ) -> pd.DataFrame | None:
     """Procesador genérico que emula la agrupación de build_chart_data para comparación."""
     if df_var is None or df_var.empty:
@@ -1397,7 +2466,11 @@ def _procesar_bloque_single(
     if df.empty:
         return None
 
-    agrupar_col = cfg["agrupar_por"]
+    # Alias de tecnologías del sector eléctrico (mismas reglas que build_chart_data).
+    if tipo and tipo in CONFIGS_CON_ALIAS_PWR:
+        df = _aplicar_alias_pwr(df)
+
+    agrupar_col = agrupacion_override if agrupacion_override is not None else cfg["agrupar_por"]
 
     if agrupar_col == "TECNOLOGIA":
         df["CATEGORIA"] = df["TECHNOLOGY"]
@@ -1415,6 +2488,16 @@ def _procesar_bloque_single(
         df["CATEGORIA"] = _sector_labels(df["TECHNOLOGY"])
     elif agrupar_col == "EMISION":
         df["CATEGORIA"] = df["FUEL"] if "FUEL" in df.columns else "?"
+    elif agrupar_col == "TRANSPORTE_GRUPO":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_grupo)
+    elif agrupar_col == "MODO":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_transporte_modo)
+    elif agrupar_col == "ELECTROLISIS":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_electrolisis_verde)
+    elif agrupar_col == "H2_CONSUMO":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_h2_consumo_grupo)
+    elif agrupar_col == "H2_PRODUCCION":
+        df["CATEGORIA"] = df["TECHNOLOGY"].apply(_map_h2_verde_azul_gris)
     elif agrupar_col == "YEAR":
         df["CATEGORIA"] = "Total"
     else:
@@ -1526,12 +2609,11 @@ def build_comparison_line_data(
     title += f" — Total ({un})"
 
     # Cargar nombres de escenarios
+    from app.models import Scenario
     scenario_names: dict[int, str] = {}
     for jid in job_ids:
         job = db.query(SimulationJob).filter(SimulationJob.id == jid).first()
         if job:
-            from app.models import Scenario
-
             scenario = (
                 db.query(Scenario).filter(Scenario.id == job.scenario_id).first()
                 if job.scenario_id
@@ -1552,6 +2634,8 @@ def build_comparison_line_data(
 
     for jid in job_ids:
         df = _load_variable_data(db, jid, variable_name)
+        # Strip prefijos regionales si el job es REGIONAL (acumulado nacional).
+        df = _apply_regional_transform(db, jid, df)
         if df.empty:
             totals_per_job[jid] = {}
             continue
@@ -1655,6 +2739,9 @@ def build_pareto_data(
             title=title,
             yAxisLabel=_emi_label if es_emision else un,
         )
+
+    # Strip prefijos regionales antes del filtro (jobs REGIONAL).
+    df = _apply_regional_transform(db, job_id, df)
 
     if filtro_fn is not None:
         df = filtro_fn(df, sub_filtro=sub_filtro, loc=loc)
@@ -1782,6 +2869,7 @@ def get_result_summary(
         solver_status=solver_status,
         objective_value=job.objective_value or 0.0,
         coverage_ratio=job.coverage_ratio or 0.0,
+        reserve_margin_dual=job.reserve_margin_dual,
         total_demand=job.total_demand or 0.0,
         total_dispatch=job.total_dispatch or 0.0,
         total_unmet=job.total_unmet or 0.0,
@@ -1886,6 +2974,7 @@ def _config_sub_filtros(cfg: dict) -> list[str] | None:
         return ["BOI", "FUR", "MPW", "AIR", "REF", "ILU", "OTH"]
     if filtro_name == "_filtro_transporte":
         return [
+            "CARRETERA",
             "AVI",
             "BOT",
             "SHP",
@@ -1915,11 +3004,19 @@ def export_all_charts_zip(
     job_id: int,
     un: str = "PJ",
     fmt: str = "svg",
+    *,
+    view_mode: str = "column",
+    clean: bool = False,
 ) -> "io.BytesIO":
     """Genera un ZIP con todas las gráficas renderizadas como SVG o PNG.
 
     Para configs de capacidad genera 3 figuras (Total, Nueva, Acumulada).
     Retorna un BytesIO listo para streaming.
+
+    ``view_mode``: ``"column"`` (default), ``"line"`` o ``"area"``.
+
+    Si ``clean=True`` las gráficas se renderizan sin título ni etiquetas
+    numéricas sobre las barras.
     """
     import io
     import zipfile
@@ -1965,12 +3062,24 @@ def export_all_charts_zip(
                     charts_to_render.append((label, chart))
 
             for chart_label, chart_data in charts_to_render:
-                img_buf = _render_stacked_bar(
-                    chart_data,
-                    chart_label,
-                    fmt=ext,
-                )
+                if view_mode == "line":
+                    img_buf = _render_line_chart(
+                        chart_data, chart_label,
+                        fmt=ext, clean=clean,
+                    )
+                elif view_mode == "area":
+                    img_buf = _render_stacked_area(
+                        chart_data, chart_label,
+                        fmt=ext, clean=clean,
+                    )
+                else:
+                    img_buf = _render_stacked_bar(
+                        chart_data, chart_label,
+                        fmt=ext, clean=clean,
+                    )
                 safe_name = _safe_filename(chart_label)
+                if clean:
+                    safe_name += "_clean"
                 zf.writestr(f"{safe_name}.{ext}", img_buf.getvalue())
                 file_count += 1
 
@@ -2001,6 +3110,21 @@ def _legend_ncols_for_labels(labels: list[str], hard_cap: int = 5) -> int:
     return max(1, min(cap, hard_cap, n))
 
 
+def _is_line_series(s: Any) -> bool:
+    """True si la serie tiene ``chart_type == 'line'``."""
+    return bool(getattr(s, "chart_type", None) == "line")
+
+
+def _filter_hidden_series(
+    series_list: list[Any],
+    hidden_names: set[str] | None,
+) -> list[Any]:
+    """Filtra series cuyo nombre está en ``hidden_names``."""
+    if not hidden_names:
+        return series_list
+    return [s for s in series_list if s.name not in hidden_names]
+
+
 def _render_stacked_bar(
     chart: ChartDataResponse,
     title: str,
@@ -2008,14 +3132,21 @@ def _render_stacked_bar(
     *,
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
+    clean: bool = False,
+    hidden_series: set[str] | None = None,
 ) -> "io.BytesIO":
-    """Renderiza un ChartDataResponse como gráfica de barras apiladas con matplotlib."""
+    """Renderiza un ChartDataResponse como gráfica de barras apiladas con matplotlib.
+
+    Soporta **series mixtas**: las series con ``chart_type='line'`` se dibujan
+    como líneas sobre las barras en lugar de apilarse.
+    """
     import io
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import numpy as np
+    from matplotlib.lines import Line2D as _Line2D
 
     categories = chart.categories
     n_cats = len(categories)
@@ -2023,64 +3154,78 @@ def _render_stacked_bar(
 
     fig, ax = plt.subplots(figsize=(max(12, n_cats * 0.5), 7))
 
-    bottom = np.zeros(n_cats)
+    # Separar series en barras y líneas (respetando chart_type)
+    all_series = _filter_hidden_series(list(chart.series), hidden_series)
+    bar_series = [s for s in all_series if not _is_line_series(s)]
+    line_series = [s for s in all_series if _is_line_series(s)]
 
-    # Convención visual igual a Highcharts: la PRIMERA serie de
-    # ``chart.series`` queda en la parte de ARRIBA del stack. Iteramos en
-    # orden inverso para acumular.
-    # NaN/None → 0 antes de acumular para no contaminar ``bottom`` (los
-    # ``None`` pueden venir de synthetic series con huecos o de filtros).
-    for s in reversed(chart.series):
+    # ── Barras apiladas ────────────────────────────────────────────────
+    bottom = np.zeros(n_cats)
+    for s in reversed(bar_series):
         raw = np.array(s.data, dtype=float)
         values = np.nan_to_num(raw, nan=0.0, posinf=0.0, neginf=0.0)
         ax.bar(x, values, bottom=bottom, color=s.color, width=0.7)
         bottom += values
-    # Markers circulares estilo Highcharts para la leyenda (orden top→bottom).
-    from matplotlib.lines import Line2D as _Line2D
 
-    bar_handles = [
-        _Line2D(
-            [0],
-            [0],
-            marker="o",
-            color=s.color,
-            linestyle="None",
-            markersize=10,
-            markerfacecolor=s.color,
-            markeredgecolor=s.color,
+    # ── Líneas sobre las barras ────────────────────────────────────────
+    for s in line_series:
+        raw = np.array(s.data, dtype=float)
+        values = np.nan_to_num(raw, nan=float("nan"), posinf=float("nan"), neginf=float("nan"))
+        ax.plot(x, values, color=s.color, linewidth=2.5, marker="o", markersize=4)
+
+    # ── Handles de leyenda mixtos ──────────────────────────────────────
+    legend_handles: list[_Line2D] = []
+    legend_labels: list[str] = []
+
+    # Barras: círculos (orden invertido = primero arriba del stack)
+    for s in reversed(bar_series):
+        legend_handles.append(
+            _Line2D(
+                [0], [0],
+                marker="o", color=s.color, linestyle="None",
+                markersize=10, markerfacecolor=s.color, markeredgecolor=s.color,
+            )
         )
-        for s in chart.series
-    ]
-    bar_labels = [s.name for s in chart.series]
+        legend_labels.append(s.name)
+    # Líneas: segmento de línea con marcador
+    for s in line_series:
+        legend_handles.append(
+            _Line2D(
+                [0], [0],
+                color=s.color, linewidth=2.5, marker="o", markersize=5,
+                markeredgecolor=s.color, markerfacecolor=s.color,
+            )
+        )
+        legend_labels.append(s.name)
 
     # Stack totals on top — 1 decimal máx, cada 2 categorías (0, 2, 4, …).
-    for i, total in enumerate(bottom):
-        if i % 2 != 0:
-            continue
-        if total > 0:
-            ax.text(
-                i,
-                total,
-                f"{total:,.1f}",
-                ha="center",
-                va="bottom",
-                fontsize=11,
-                color="#333",
-            )
+    if not clean:
+        for i, total in enumerate(bottom):
+            if i % 2 != 0:
+                continue
+            if total > 0:
+                ax.text(
+                    i,
+                    total,
+                    f"{total:,.1f}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=18,
+                    color="#333",
+                )
 
     ax.set_xticks(x)
-    ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=12)
-    ax.set_ylabel(chart.yAxisLabel, fontsize=14, fontweight="bold")
-    ax.set_title(title, fontsize=17, fontweight="bold", pad=12)
-    # Leyenda invertida respecto al stack: la primera serie (top del stack)
-    # aparece al final de la leyenda → lectura abajo→arriba como las barras.
+    ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
+    ax.set_ylabel(chart.yAxisLabel, fontsize=24)
+    if not clean:
+        ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
     ax.legend(
-        list(reversed(bar_handles)),
-        list(reversed(bar_labels)),
+        legend_handles,
+        legend_labels,
         loc="upper center",
         bbox_to_anchor=(0.5, -0.15),
-        ncol=_legend_ncols_for_labels(bar_labels),
-        fontsize=14,
+        ncol=_legend_ncols_for_labels(legend_labels),
+        fontsize=20,
         frameon=False,
         handlelength=1.0,
         handletextpad=0.6,
@@ -2088,73 +3233,76 @@ def _render_stacked_bar(
         labelspacing=0.55,
     )
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-    ax.tick_params(axis="y", labelsize=10)
+    ax.tick_params(axis="y", labelsize=18)
     from matplotlib.ticker import FuncFormatter as _FuncFormatter
 
     ax.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+
+    # Ajustar límite Y superior para que las líneas no queden cortadas
+    if not line_series:
+        y_top = bottom.max() if len(bottom) > 0 else 1.0
+    else:
+        line_max = max(
+            np.nanmax(np.array(s.data, dtype=float)) for s in line_series
+        ) if line_series else 0.0
+        y_top = max(bottom.max(), line_max) if len(bottom) > 0 else line_max
+    y_top = max(y_top, 1.0) * 1.08  # 8% headroom
+
     if y_axis_min is not None or y_axis_max is not None:
-        cur_lo, cur_hi = ax.get_ylim()
-        ax.set_ylim(
-            float(y_axis_min) if y_axis_min is not None else cur_lo,
-            float(y_axis_max) if y_axis_max is not None else cur_hi,
-        )
+        cur_lo = float(y_axis_min) if y_axis_min is not None else 0.0
+        cur_hi = float(y_axis_max) if y_axis_max is not None else y_top
+        ax.set_ylim(cur_lo, cur_hi)
+    else:
+        ax.set_ylim(0.0, y_top)
 
     fig.tight_layout()
 
     buf = io.BytesIO()
-    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight")
+    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight", pad_inches=0.3)
     plt.close(fig)
     buf.seek(0)
     return buf
 
 
-_SYNTH_LINESTYLE_MAP: dict[str, Any] = {
-    "Solid": "-",
-    "Dash": "--",
-    "Dot": ":",
-    "DashDot": "-.",
-    "ShortDash": (0, (3, 3)),
-}
+def _series_style_for_render(s: ChartSeries) -> dict:
+    """Produce kwargs de estilo para ax.plot() a partir de atributos opcionales de la serie.
 
-_SYNTH_MARKER_MAP: dict[str, str] = {
-    "circle": "o",
-    "diamond": "D",
-    "square": "s",
-    "triangle": "^",
-    "triangle-down": "v",
-    "none": "",
-}
-
-
-def _series_style_for_render(s: Any) -> dict[str, Any]:
-    """Resuelve los kwargs de ``ax.plot`` para una serie (sintética o no).
-
-    Para series no-sintéticas: defaults del renderer (`o`, ms=4, lw=2, sólida).
-    Para sintéticas: usa los campos opcionales de la serie con fallback.
+    Soporta:
+    - ``lineStyle``: estilo de línea (``"solid"``, ``"dashed"``, ``"dotted"``, etc.)
+    - ``markerSymbol``: símbolo del marcador (``"circle"``, ``"diamond"``, ``"square"``, etc.)
+    - ``markerRadius``: tamaño del marcador
+    - ``lineWidth``: ancho de línea
     """
-    is_synth = bool(getattr(s, "is_synthetic", False))
-    if not is_synth:
-        return {"marker": "o", "markersize": 4, "linewidth": 2, "linestyle": "-"}
-
-    raw_marker = getattr(s, "markerSymbol", None) or "diamond"
-    marker = _SYNTH_MARKER_MAP.get(raw_marker, "D")
-    raw_ls = getattr(s, "lineStyle", None) or "ShortDash"
-    linestyle = _SYNTH_LINESTYLE_MAP.get(raw_ls, (0, (3, 3)))
-    radius = getattr(s, "markerRadius", None)
-    markersize = float(radius) if radius is not None else 5.0
-    width = getattr(s, "lineWidth", None)
-    linewidth = float(width) if width is not None else 2.0
-    style: dict[str, Any] = {
-        "marker": marker,
-        "markersize": markersize,
-        "linewidth": linewidth,
-        "linestyle": linestyle,
-    }
-    if marker == "":
-        style.pop("marker")
-        style["markersize"] = 0
+    style: dict = {}
+    ls = getattr(s, "lineStyle", None)
+    if ls and isinstance(ls, str):
+        dash_map = {
+            "solid": "-", "dashed": "--", "dotted": ":", "dashdot": "-.",
+            "ShortDash": "--", "ShortDot": ":", "ShortDashDot": "-.",
+            "LongDash": "--",
+        }
+        style["linestyle"] = dash_map.get(ls, ls)
+    ms = getattr(s, "markerSymbol", None)
+    if ms and isinstance(ms, str) and ms != "none":
+        marker_map = {
+            "circle": "o", "diamond": "D", "square": "s", "triangle": "^",
+            "triangle-down": "v", "cross": "x", "plus": "+",
+        }
+        style["marker"] = marker_map.get(ms, ms)
+    mr = getattr(s, "markerRadius", None)
+    if mr is not None:
+        try:
+            style["markersize"] = float(mr)
+        except (ValueError, TypeError):
+            pass
+    lw = getattr(s, "lineWidth", None)
+    if lw is not None:
+        try:
+            style["linewidth"] = float(lw)
+        except (ValueError, TypeError):
+            pass
     return style
 
 
@@ -2165,6 +3313,8 @@ def _render_line_chart(
     *,
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
+    clean: bool = False,
+    hidden_series: set[str] | None = None,
 ) -> "io.BytesIO":
     """Renderiza un ChartDataResponse como gráfica de líneas con matplotlib."""
     import io
@@ -2181,7 +3331,7 @@ def _render_line_chart(
 
     fig, ax = plt.subplots(figsize=(max(12, n_cats * 0.5), 7))
 
-    for s in chart.series:
+    for s in _filter_hidden_series(list(chart.series), hidden_series):
         values = np.array(s.data, dtype=float)
         style = _series_style_for_render(s)
         ax.plot(
@@ -2193,9 +3343,10 @@ def _render_line_chart(
         )
 
     ax.set_xticks(x)
-    ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=12)
-    ax.set_ylabel(chart.yAxisLabel, fontsize=14, fontweight="bold")
-    ax.set_title(title, fontsize=17, fontweight="bold", pad=12)
+    ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
+    ax.set_ylabel(chart.yAxisLabel, fontsize=24)
+    if not clean:
+        ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
     # Orden de leyenda:
     #   1) Series naturales en orden invertido (lectura abajo→arriba como
     #      en las columnas apiladas — convención del proyecto).
@@ -2215,7 +3366,7 @@ def _render_line_chart(
         loc="upper center",
         bbox_to_anchor=(0.5, -0.15),
         ncol=_legend_ncols_for_labels([s.name for s in chart.series]),
-        fontsize=14,
+        fontsize=20,
         frameon=False,
         handlelength=1.0,
         handletextpad=0.6,
@@ -2223,7 +3374,7 @@ def _render_line_chart(
         labelspacing=0.55,
     )
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
-    ax.tick_params(axis="y", labelsize=10)
+    ax.tick_params(axis="y", labelsize=18)
     from matplotlib.ticker import FuncFormatter as _FuncFormatter
 
     ax.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
@@ -2239,250 +3390,10 @@ def _render_line_chart(
     fig.tight_layout()
 
     buf = io.BytesIO()
-    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight")
+    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight", pad_inches=0.3)
     plt.close(fig)
     buf.seek(0)
     return buf
-
-
-def render_chart_visualization_bytes(
-    chart: ChartDataResponse,
-    fmt: str,
-    view_mode: str = "column",
-    *,
-    y_axis_min: float | None = None,
-    y_axis_max: float | None = None,
-) -> bytes:
-    """Genera PNG o SVG con Matplotlib.
-
-    ``view_mode``: ``column`` | ``line`` | ``area`` | ``table``.
-    ``y_axis_min`` / ``y_axis_max``: override del rango del eje Y. ``None`` = auto.
-    """
-    if fmt not in ("png", "svg"):
-        raise ValueError("fmt debe ser 'png' o 'svg'")
-    title = chart.title
-    if view_mode == "line":
-        buf = _render_line_chart(
-            chart, title, fmt=fmt, y_axis_min=y_axis_min, y_axis_max=y_axis_max,
-        )
-    elif view_mode == "area":
-        buf = _render_stacked_area(
-            chart, title, fmt=fmt, y_axis_min=y_axis_min, y_axis_max=y_axis_max,
-        )
-    elif view_mode == "table":
-        buf = _render_table_image(chart, title, fmt=fmt)
-    else:
-        buf = _render_stacked_bar(
-            chart, title, fmt=fmt, y_axis_min=y_axis_min, y_axis_max=y_axis_max,
-        )
-    return buf.getvalue()
-
-
-def _render_table_image(
-    chart: ChartDataResponse,
-    title: str,
-    fmt: str = "png",
-) -> "io.BytesIO":
-    """Renderiza un ChartDataResponse como **tabla** (matplotlib ``ax.table``).
-
-    Layout:
-      * Header: categorías (años o periodos) en columnas.
-      * Primera columna: nombre de serie.
-      * Cuerpo: valores formateados con ``format_axis_3sig`` (≥ 3 cifras sig).
-      * Última fila: "Total" con suma vertical por columna.
-
-    El swatch de color por serie se aplica como ``cellColours`` en la
-    primera columna (celda con el color de la serie + texto blanco).
-    """
-    import io
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    categories = list(chart.categories)
-    series = list(chart.series)
-    n_cols = 1 + len(categories)  # 1 columna para "Tecnología/Categoría"
-    n_rows_body = len(series)
-
-    # Cuerpo de la tabla
-    cell_text: list[list[str]] = []
-    for s in series:
-        row = [s.name]
-        for i in range(len(categories)):
-            v = s.data[i] if i < len(s.data) else None
-            row.append(format_axis_3sig(v))
-        cell_text.append(row)
-
-    # Fila Total (suma vertical por columna)
-    totals: list[float] = []
-    for i in range(len(categories)):
-        col_total = 0.0
-        for s in series:
-            try:
-                f = float(s.data[i]) if i < len(s.data) else 0.0
-                if f != f:  # NaN
-                    f = 0.0
-            except (TypeError, ValueError):
-                f = 0.0
-            col_total += f
-        totals.append(col_total)
-    if n_rows_body > 0:
-        cell_text.append(["Total"] + [format_axis_3sig(t) for t in totals])
-
-    # Cabecera
-    col_labels = ["Tecnología"] + [str(c) for c in categories]
-
-    # Colores de celdas
-    header_color = "#1e293b"  # fondo cabecera (slate)
-    header_text_color = "#ffffff"
-    alt_row = "#f8fafc"
-    base_row = "#ffffff"
-    total_row = "#e2e8f0"
-
-    # Cell colours: misma forma que cell_text (filas × columnas).
-    n_total_rows = len(cell_text)
-    cell_colours: list[list[str]] = []
-    for r_idx in range(n_total_rows):
-        is_total = r_idx == n_total_rows - 1 and n_rows_body > 0
-        if is_total:
-            row_colors = [total_row] * n_cols
-        else:
-            base = alt_row if r_idx % 2 == 1 else base_row
-            row_colors = [base] * n_cols
-            # Primera columna con color de la serie.
-            if r_idx < n_rows_body:
-                row_colors[0] = series[r_idx].color or "#94a3b8"
-        cell_colours.append(row_colors)
-
-    # Tamaño dinámico de figura.
-    fig_w = max(8.0, min(24.0, 1.6 + 1.4 * n_cols))
-    fig_h = max(2.0, min(20.0, 1.6 + 0.55 * (n_total_rows + 1)))
-
-    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
-    ax.axis("off")
-    ax.set_title(title, fontsize=17, fontweight="bold", pad=14)
-
-    table = ax.table(
-        cellText=cell_text if cell_text else [[""]],
-        colLabels=col_labels,
-        cellColours=cell_colours if cell_colours else None,
-        colColours=[header_color] * n_cols,
-        cellLoc="center",
-        loc="center",
-    )
-    table.auto_set_font_size(False)
-    table.set_fontsize(12)
-    # Ancho mínimo razonable: matplotlib ajusta auto pero forzamos pad.
-    table.scale(1.0, 1.4)
-
-    # Estilo: cabecera bold, texto blanco; primera columna con texto blanco
-    # contra el color de la serie. Si el color es muy claro, matplotlib
-    # mostrará el texto en negro — pero los colores de serie tienden a ser
-    # saturados así que blanco suele leerse bien.
-    for (row, col), cell in table.get_celld().items():
-        # row=0 → cabecera (porque colLabels existe).
-        if row == 0:
-            cell.set_text_props(color=header_text_color, fontweight="bold")
-            cell.set_edgecolor("#0f172a")
-        else:
-            cell.set_edgecolor("#cbd5e1")
-        # Primera columna del cuerpo (no la cabecera): texto blanco bold sobre
-        # el color de la serie.
-        if col == 0 and 0 < row <= n_rows_body:
-            cell.set_text_props(color="#ffffff", fontweight="bold")
-        # Fila Total: texto bold.
-        if n_rows_body > 0 and row == n_total_rows:
-            cell.set_text_props(fontweight="bold")
-
-    fig.tight_layout()
-    buf = io.BytesIO()
-    fig.savefig(buf, format=fmt, dpi=200, bbox_inches="tight", facecolor="#ffffff")
-    plt.close(fig)
-    buf.seek(0)
-    return buf
-
-
-def chart_data_to_xlsx_bytes(chart: ChartDataResponse) -> bytes:
-    """Serializa ``ChartDataResponse`` a un workbook XLSX (wide format).
-
-    Hoja única "Datos" con:
-      * cabecera = ``["Categoría"] + [serie.name]``
-      * filas    = una por categoría, valores numéricos.
-      * fila final "Total" con suma vertical.
-    """
-    import io
-    from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font, PatternFill
-    from openpyxl.utils import get_column_letter
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Datos"
-
-    headers = ["Categoría"] + [s.name for s in chart.series]
-    ws.append(headers)
-    header_fill = PatternFill("solid", fgColor="1e293b")
-    header_font = Font(bold=True, color="ffffff")
-    for col_idx, _ in enumerate(headers, start=1):
-        cell = ws.cell(row=1, column=col_idx)
-        cell.fill = header_fill
-        cell.font = header_font
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-
-    # Filas
-    for i, cat in enumerate(chart.categories):
-        row = [cat]
-        for s in chart.series:
-            v = s.data[i] if i < len(s.data) else None
-            row.append(v)
-        ws.append(row)
-
-    # Fila Total
-    if chart.categories and chart.series:
-        totals_row: list = ["Total"]
-        for s in chart.series:
-            total = 0.0
-            for v in s.data:
-                try:
-                    f = float(v)
-                    if f != f:
-                        f = 0.0
-                except (TypeError, ValueError):
-                    f = 0.0
-                total += f
-            totals_row.append(total)
-        ws.append(totals_row)
-        last_row_idx = ws.max_row
-        bold = Font(bold=True)
-        total_fill = PatternFill("solid", fgColor="e2e8f0")
-        for col_idx in range(1, len(totals_row) + 1):
-            c = ws.cell(row=last_row_idx, column=col_idx)
-            c.font = bold
-            c.fill = total_fill
-
-    # Auto-ajuste de ancho de columnas
-    for col_idx, header in enumerate(headers, start=1):
-        max_len = len(str(header))
-        for row in ws.iter_rows(
-            min_row=2, max_row=ws.max_row, min_col=col_idx, max_col=col_idx
-        ):
-            for cell in row:
-                v = cell.value
-                if v is None:
-                    continue
-                if isinstance(v, float):
-                    s = f"{v:,.2f}"
-                else:
-                    s = str(v)
-                if len(s) > max_len:
-                    max_len = len(s)
-        ws.column_dimensions[get_column_letter(col_idx)].width = min(40, max_len + 2)
-
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return buf.getvalue()
 
 
 def _render_stacked_area(
@@ -2492,15 +3403,21 @@ def _render_stacked_area(
     *,
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
+    clean: bool = False,
+    hidden_series: set[str] | None = None,
 ) -> "io.BytesIO":
-    """Renderiza un ChartDataResponse como áreas apiladas."""
-    import io
+    """Renderiza un ChartDataResponse como áreas apiladas con matplotlib.
 
+    Soporta **series mixtas**: las series con ``chart_type='line'`` se dibujan
+    como líneas sobre las áreas en lugar de apilarse.
+    """
+    import io
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import numpy as np
+    from matplotlib.lines import Line2D as _Line2D
 
     categories = chart.categories
     n_cats = len(categories)
@@ -2508,15 +3425,23 @@ def _render_stacked_area(
 
     fig, ax = plt.subplots(figsize=(max(12, n_cats * 0.5), 7))
 
-    if chart.series:
+    # Separar series en áreas y líneas (respetando chart_type)
+    all_series = _filter_hidden_series(list(chart.series), hidden_series)
+    area_series = [s for s in all_series if not _is_line_series(s)]
+    line_series = [s for s in all_series if _is_line_series(s)]
+
+    # ── Áreas apiladas ────────────────────────────────────────────────
+    if area_series:
         # stackplot dibuja la primera serie al fondo. Para que la convención
         # coincida con Highcharts (primera serie del array → arriba),
         # invertimos el orden antes de pasarlo a stackplot.
-        # ``nan_to_num`` evita que NaN propague y rompa el stackplot.
-        rev_series = list(reversed(chart.series))
+        rev_series = list(reversed(area_series))
         ys = [
             np.nan_to_num(
-                np.array(s.data, dtype=float), nan=0.0, posinf=0.0, neginf=0.0,
+                np.array(s.data, dtype=float),
+                nan=0.0,
+                posinf=0.0,
+                neginf=0.0,
             )
             for s in rev_series
         ]
@@ -2532,33 +3457,48 @@ def _render_stacked_area(
             edgecolor="white",
         )
 
+    # ── Líneas sobre las áreas ────────────────────────────────────────
+    for s in line_series:
+        raw = np.array(s.data, dtype=float)
+        values = np.nan_to_num(raw, nan=float("nan"), posinf=float("nan"), neginf=float("nan"))
+        ax.plot(x, values, color=s.color, linewidth=2.5, marker="o", markersize=4)
+
+    # ── Handles de leyenda mixtos ─────────────────────────────────────
+    legend_handles: list[_Line2D] = []
+    legend_labels: list[str] = []
+
+    # Áreas: círculos (orden invertido = primero arriba del stack)
+    for s in reversed(area_series):
+        legend_handles.append(
+            _Line2D(
+                [0], [0],
+                marker="o", color=s.color, linestyle="None",
+                markersize=10, markerfacecolor=s.color, markeredgecolor=s.color,
+            )
+        )
+        legend_labels.append(s.name)
+    # Líneas: segmento de línea con marcador
+    for s in line_series:
+        legend_handles.append(
+            _Line2D(
+                [0], [0],
+                color=s.color, linewidth=2.5, marker="o", markersize=5,
+                markeredgecolor=s.color, markerfacecolor=s.color,
+            )
+        )
+        legend_labels.append(s.name)
+
     ax.set_xticks(x)
-    ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=12)
-    ax.tick_params(axis="y", labelsize=10)
+    ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
+    ax.tick_params(axis="y", labelsize=18)
     from matplotlib.ticker import FuncFormatter as _FuncFormatter
 
     ax.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
-    ax.set_ylabel(chart.yAxisLabel, fontsize=14, fontweight="bold")
-    ax.set_title(title, fontsize=17, fontweight="bold", pad=12)
-    # Markers circulares en la leyenda (estilo Highcharts), orden top→bottom.
-    from matplotlib.lines import Line2D as _Line2D
+    ax.set_ylabel(chart.yAxisLabel, fontsize=24)
+    if not clean:
+        ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
 
-    legend_handles = [
-        _Line2D(
-            [0],
-            [0],
-            marker="o",
-            color=s.color or "#999999",
-            linestyle="None",
-            markersize=10,
-            markerfacecolor=s.color or "#999999",
-            markeredgecolor=s.color or "#999999",
-        )
-        for s in chart.series
-    ]
-    legend_labels = [s.name for s in chart.series]
-    # Orden de leyenda: naturales en orden invertido (lectura abajo→arriba)
-    # y series manuales (sintéticas) SIEMPRE al final.
+    # Orden de leyenda: naturales invertidos + sintéticas al final.
     _synth_flags = [bool(getattr(s, "is_synthetic", False)) for s in chart.series]
     _natural = [
         (h, l)
@@ -2575,7 +3515,7 @@ def _render_stacked_area(
         loc="upper center",
         bbox_to_anchor=(0.5, -0.15),
         ncol=_legend_ncols_for_labels(legend_labels),
-        fontsize=14,
+        fontsize=20,
         frameon=False,
         handlelength=1.0,
         handletextpad=0.6,
@@ -2586,17 +3526,31 @@ def _render_stacked_area(
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.set_xlim(x.min() if n_cats > 0 else 0, x.max() if n_cats > 0 else 0)
+
+    # Ajustar límite Y para que las líneas no queden cortadas
+    if not area_series:
+        area_top = 0.0
+    else:
+        area_top = np.sum(ys, axis=0).max() if len(ys) > 1 else ys[0].max()
+    if not line_series:
+        line_max = 0.0
+    else:
+        line_max = max(
+            np.nanmax(np.array(s.data, dtype=float)) for s in line_series
+        ) if line_series else 0.0
+    y_top = max(area_top, line_max, 1.0) * 1.08
+
     if y_axis_min is not None or y_axis_max is not None:
-        cur_lo, cur_hi = ax.get_ylim()
-        ax.set_ylim(
-            float(y_axis_min) if y_axis_min is not None else cur_lo,
-            float(y_axis_max) if y_axis_max is not None else cur_hi,
-        )
+        cur_lo = float(y_axis_min) if y_axis_min is not None else 0.0
+        cur_hi = float(y_axis_max) if y_axis_max is not None else y_top
+        ax.set_ylim(cur_lo, cur_hi)
+    else:
+        ax.set_ylim(0.0, y_top)
 
     fig.tight_layout()
 
     buf = io.BytesIO()
-    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight")
+    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight", pad_inches=0.3)
     plt.close(fig)
     buf.seek(0)
     return buf
@@ -2606,12 +3560,20 @@ def render_comparison_by_year_bytes(
     data: CompareChartResponse,
     fmt: str = "svg",
     *,
+    view_mode: str = "column",
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
+    clean: bool = False,
+    hidden_series: set[str] | None = None,
 ) -> bytes:
     """Renderiza una comparación por año (subplots, un panel por año).
 
-    Cada subplot muestra barras agrupadas (una barra por escenario).
+    ``view_mode``:
+    - ``"column"`` (default): barras agrupadas (una barra por escenario).
+    - ``"area"``: áreas apiladas (aporta por escenario dentro de cada categoría).
+    - ``"line"``: líneas (un trazado por escenario).
+
+    Si ``clean=True``, omite el título general.
     """
     if fmt not in ("png", "svg"):
         raise ValueError("fmt debe ser 'png' o 'svg'")
@@ -2629,10 +3591,11 @@ def render_comparison_by_year_bytes(
         ax.text(0.5, 0.5, "Sin datos", ha="center", va="center")
         ax.set_axis_off()
         buf = io.BytesIO()
-        fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight")
+        fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight", pad_inches=0.3)
         plt.close(fig)
         buf.seek(0)
         return buf.getvalue()
+
 
     n = len(subplots)
     cols = min(3, n)
@@ -2644,14 +3607,40 @@ def render_comparison_by_year_bytes(
     # Paleta consistente por nombre de serie a través de subplots.
     all_names: list[str] = []
     for sp in subplots:
-        for s in sp.series:
+        for s in _filter_hidden_series(list(sp.series), hidden_series):
             if s.name not in all_names:
                 all_names.append(s.name)
     name_to_color: dict[str, str] = {}
     for sp in subplots:
-        for s in sp.series:
+        for s in _filter_hidden_series(list(sp.series), hidden_series):
             if s.name not in name_to_color and getattr(s, "color", None):
                 name_to_color[s.name] = s.color  # type: ignore[assignment]
+
+    # ── Calcular el máximo global Y para compartir escala entre subplots ──
+    global_max = 0.0
+    for sp in subplots:
+        visible_series = _filter_hidden_series(list(sp.series), hidden_series)
+        nc = len(sp.categories)
+        if nc == 0:
+            continue
+        if view_mode == "area":
+            stack = np.zeros(nc)
+            for s in visible_series:
+                values = np.nan_to_num(np.array(s.data, dtype=float), nan=0.0)
+                if values.size < nc:
+                    values = np.pad(values, (0, nc - values.size))
+                stack += values[:nc]
+            if stack.size:
+                global_max = max(global_max, float(stack.max()))
+        else:
+            for s in visible_series:
+                values = np.array(s.data, dtype=float)
+                finite = values[np.isfinite(values)]
+                if finite.size:
+                    global_max = max(global_max, float(finite.max()))
+    if global_max <= 0:
+        global_max = 1.0
+    y_top = global_max * 1.12
 
     for idx, sp in enumerate(subplots):
         ax = axes[idx // cols][idx % cols]
@@ -2661,22 +3650,38 @@ def render_comparison_by_year_bytes(
         if nc == 0 or ns == 0:
             ax.set_axis_off()
             continue
+        visible_series = _filter_hidden_series(list(sp.series), hidden_series)
+        nvs = len(visible_series)
         x = np.arange(nc)
-        width = 0.8 / ns
-        for si, s in enumerate(sp.series):
-            offset = (si - (ns - 1) / 2) * width
-            ax.bar(
-                x + offset,
-                s.data,
-                width=width,
-                label=s.name,
-                color=name_to_color.get(s.name) or getattr(s, "color", None),
-            )
-        ax.set_title(f"Año {sp.year}", fontsize=15, fontweight="bold")
+        if view_mode == "area":
+            ys = [
+                np.nan_to_num(np.array(s.data, dtype=float), nan=0.0)
+                for s in reversed(visible_series)
+            ]
+            labels = [s.name for s in reversed(visible_series)]
+            colors = [name_to_color.get(s.name) or getattr(s, "color", None) for s in reversed(visible_series)]
+            ax.stackplot(x, ys, labels=labels, colors=colors, alpha=0.9, linewidth=0.5, edgecolor="white")
+        elif view_mode == "line":
+            for s in visible_series:
+                values = np.array(s.data, dtype=float)
+                ax.plot(x, values, label=s.name, color=name_to_color.get(s.name) or getattr(s, "color", None),
+                        linewidth=2.0, marker="o", markersize=4)
+        else:
+            width = 0.8 / (nvs or 1)
+            for si, s in enumerate(visible_series):
+                offset = (si - (max(nvs, 1) - 1) / 2) * width
+                ax.bar(
+                    x + offset,
+                    s.data,
+                    width=width,
+                    label=s.name,
+                    color=name_to_color.get(s.name) or getattr(s, "color", None),
+                )
+        ax.set_title(f"Año {sp.year}", fontsize=22)
         ax.set_xticks(x)
-        ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=12)
-        ax.set_ylabel(data.yAxisLabel, fontsize=14, fontweight="bold")
-        ax.tick_params(axis="y", labelsize=10)
+        ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
+        ax.set_ylabel(data.yAxisLabel, fontsize=24)
+        ax.tick_params(axis="y", labelsize=18)
         from matplotlib.ticker import FuncFormatter as _FuncFormatter
 
         ax.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
@@ -2688,7 +3693,7 @@ def render_comparison_by_year_bytes(
                 loc="upper center",
                 bbox_to_anchor=(0.5, -0.2),
                 ncol=_legend_ncols_for_labels([s.name for s in sp.series], hard_cap=4),
-                fontsize=14,
+            fontsize=20,
                 frameon=False,
                 handlelength=1.0,
                 handletextpad=0.6,
@@ -2696,25 +3701,23 @@ def render_comparison_by_year_bytes(
                 labelspacing=0.55,
             )
 
-    # Override del rango Y (aplica a todos los subplots por consistencia).
-    if y_axis_min is not None or y_axis_max is not None:
-        for j in range(n):
-            ax = axes[j // cols][j % cols]
-            cur_lo, cur_hi = ax.get_ylim()
-            ax.set_ylim(
-                float(y_axis_min) if y_axis_min is not None else cur_lo,
-                float(y_axis_max) if y_axis_max is not None else cur_hi,
-            )
+    # Forzar la misma escala Y en todos los subplots.
+    effective_y_lo = float(y_axis_min) if y_axis_min is not None else 0.0
+    effective_y_hi = float(y_axis_max) if y_axis_max is not None else y_top
+    for j in range(n):
+        ax = axes[j // cols][j % cols]
+        ax.set_ylim(effective_y_lo, effective_y_hi)
 
     # Ocultar axes sobrantes
     for j in range(n, rows * cols):
         axes[j // cols][j % cols].set_axis_off()
 
-    fig.suptitle(data.title, fontsize=17, fontweight="bold")
+    if not clean:
+        fig.suptitle(data.title, fontsize=28, fontweight="bold")
     fig.tight_layout(rect=[0, 0.02, 1, 0.96])
 
     buf = io.BytesIO()
-    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight")
+    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight", pad_inches=0.3)
     plt.close(fig)
     buf.seek(0)
     return buf.getvalue()
@@ -2723,8 +3726,13 @@ def render_comparison_by_year_bytes(
 def render_pareto_chart_bytes(
     pareto: ParetoChartResponse,
     fmt: str = "svg",
+    *,
+    clean: bool = False,
 ) -> bytes:
-    """Renderiza un ParetoChartResponse (barras descendentes + % acumulado)."""
+    """Renderiza un ParetoChartResponse (barras descendentes + % acumulado).
+
+    Si ``clean=True`` se omite el título.
+    """
     if fmt not in ("png", "svg"):
         raise ValueError("fmt debe ser 'png' o 'svg'")
     import io
@@ -2744,7 +3752,7 @@ def render_pareto_chart_bytes(
         ax.text(0.5, 0.5, "Sin datos", ha="center", va="center")
         ax.set_axis_off()
         buf = io.BytesIO()
-        fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight")
+        fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight", pad_inches=0.3)
         plt.close(fig)
         buf.seek(0)
         return buf.getvalue()
@@ -2752,7 +3760,7 @@ def render_pareto_chart_bytes(
     x = np.arange(n)
     fig, ax1 = plt.subplots(figsize=(max(12, n * 0.5), 7))
     ax1.bar(x, values, color="#60a5fa", edgecolor="#1e3a8a", linewidth=0.5)
-    ax1.set_ylabel(pareto.yAxisLabel, fontsize=14, fontweight="bold", color="#1e3a8a")
+    ax1.set_ylabel(pareto.yAxisLabel, fontsize=24, color="#1e3a8a")
     ax1.set_xticks(x)
     # Eje X a 45° (más legible que vertical para etiquetas largas tipo
     # tecnología/sector). ``ha="right"`` ancla el final de la etiqueta al tick
@@ -2762,9 +3770,9 @@ def render_pareto_chart_bytes(
         rotation=45,
         ha="right",
         rotation_mode="anchor",
-        fontsize=12,
+        fontsize=20,
     )
-    ax1.tick_params(axis="y", labelsize=10)
+    ax1.tick_params(axis="y", labelsize=18)
     from matplotlib.ticker import FuncFormatter as _FuncFormatter
 
     ax1.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
@@ -2773,17 +3781,18 @@ def render_pareto_chart_bytes(
 
     ax2 = ax1.twinx()
     ax2.plot(x, cum_pct, color="#dc2626", marker="o", linewidth=2)
-    ax2.set_ylabel("% acumulado", fontsize=14, fontweight="bold", color="#dc2626")
-    ax2.tick_params(axis="y", labelsize=10)
+    ax2.set_ylabel("% acumulado", fontsize=24, color="#dc2626")
+    ax2.tick_params(axis="y", labelsize=18)
     ax2.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
     ax2.set_ylim(0, 110)
     ax2.spines["top"].set_visible(False)
 
-    ax1.set_title(pareto.title, fontsize=17, fontweight="bold", pad=12)
+    if not clean:
+        ax1.set_title(pareto.title, fontsize=28, fontweight="bold", pad=12)
     fig.tight_layout()
 
     buf = io.BytesIO()
-    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight")
+    fig.savefig(buf, format=fmt, dpi=150, bbox_inches="tight", pad_inches=0.3)
     plt.close(fig)
     buf.seek(0)
     return buf.getvalue()
@@ -2835,11 +3844,24 @@ def render_comparison_facet_figure_bytes(
     data: CompareChartFacetResponse,
     fmt: str = "png",
     *,
+    layout: str = "horizontal",
+    view_mode: str = "column",
     legend_title: str | None = None,
     y_axis_min: float | None = None,
     y_axis_max: float | None = None,
+    series_order: list[str] | None = None,
+    clean: bool = False,
+    hidden_series: set[str] | None = None,
 ) -> bytes:
-    """Una sola figura: facetas en fila, título global, leyenda inferior (Matplotlib).
+    """Una sola figura: facetas en fila/columna, título global, leyenda inferior (Matplotlib).
+
+    ``layout`` puede ser ``"horizontal"`` (1 fila × N columnas) o
+    ``"vertical"`` (N filas × 1 columna).
+
+    ``view_mode``:
+    - ``"column"`` (default): barras apiladas.
+    - ``"area"``: áreas apiladas.
+    - ``"line"``: líneas (un trazado por serie).
 
     Prioriza **legibilidad**: misma escala Y entre escenarios, tipografía clara, leyenda
     con marco y números formateados en ejes y totales de barra cuando aportan.
@@ -2847,6 +3869,8 @@ def render_comparison_facet_figure_bytes(
     import io
 
     import matplotlib
+
+    assert layout in ("horizontal", "vertical"), f"layout inválido: {layout}"
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -2866,19 +3890,38 @@ def render_comparison_facet_figure_bytes(
     legend_order: list[tuple[str, str]] = []
     seen_names: set[str] = set()
     for facet in facets:
-        for s in facet.series:
+        for s in _filter_hidden_series(list(facet.series), hidden_series):
             if s.name not in seen_names:
                 seen_names.add(s.name)
                 legend_order.append((s.name, s.color))
+
+    # Ordenamiento de la leyenda compartida.
+    rank_natural: dict[str, int] = {}
+    for facet in facets:
+        for i, s in enumerate(facet.series):
+            current = rank_natural.get(s.name)
+            if current is None or i < current:
+                rank_natural[s.name] = i
+    if series_order:
+        custom_rank: dict[str, int] = {n: i for i, n in enumerate(series_order)}
+        custom_fallback = len(series_order)
+
+        def _legend_key(item: tuple[str, str]) -> tuple[int, int]:
+            name = item[0]
+            if name in custom_rank:
+                return (0, custom_rank[name])
+            return (1, rank_natural.get(name, 10**9))
+
+        legend_order.sort(key=_legend_key)
+    else:
+        legend_order.sort(key=lambda x: rank_natural.get(x[0], 10**9))
 
     n_leg_items = len(legend_order)
     legend_labels_full = [name for name, _c in legend_order]
     max_leg_label_len = max((len(lab) for lab in legend_labels_full), default=0)
 
     # Leyenda: **siempre** texto completo; menos columnas si los nombres son largos.
-    # Cap duro de **5 columnas** para evitar que figuras con muchas series
-    # corten demasiado ancho horizontal con leyendas extremadamente anchas.
-    LEG_NCOL_MAX = 5
+    LEG_NCOL_MAX = 8
     if max_leg_label_len > 48:
         leg_ncol = max(1, min(2, n_leg_items))
     elif max_leg_label_len > 34:
@@ -2889,108 +3932,136 @@ def render_comparison_facet_figure_bytes(
         leg_ncol = max(1, min(LEG_NCOL_MAX, n_leg_items))
     n_leg_rows = max(1, (n_leg_items + leg_ncol - 1) // leg_ncol)
 
-    # Ancho por panel: aprovechamos un "presupuesto" total horizontal de ~26″
-    # repartido entre los `n` paneles, con un mínimo de 5.0″ y un máximo de
-    # 9.0″ por panel. Así con pocos escenarios cada panel es bien ancho, y
-    # con muchos escenarios mantenemos legibilidad sin estirar la figura
-    # más de lo necesario.
+    # Ancho por panel: presupuesto horizontal de ~26″ repartido entre `n` paneles.
     inter_panel = 0.55
     fig_w_target = 26.0
     w_per_facet = max(
         5.0,
         min(9.0, (fig_w_target - inter_panel * max(0, n - 1)) / n),
     )
-    fig_w = w_per_facet * n + inter_panel * max(0, n - 1)
-    fig_w = max(9.0, fig_w)
-    # Leyenda más ancha en figuras anchas — pero respetando el cap de 5 cols.
-    if max_leg_label_len <= 40:
-        leg_ncol = min(
-            n_leg_items,
-            max(leg_ncol, min(LEG_NCOL_MAX, 3 + max(0, int(fig_w // 2.6)))),
-        )
-        n_leg_rows = max(1, (n_leg_items + leg_ncol - 1) // leg_ncol)
 
-    # `leg_font` se usa abajo para el cálculo de altura; lo derivamos aquí.
-    # Bump perceptual: la figura del facet es ~3× más ancha que un single,
-    # así que la leyenda visualmente se siente pequeña aunque su tamaño en pt
-    # sea mayor. Subimos +4pt sobre el cálculo previo para que en perspectiva
-    # se vea similar a la leyenda de los single-chart.
     leg_font_estimate = (
-        21.0
+        16.0
         if max_leg_label_len > 52 or n_leg_items > 14
-        else (21.6 if max_leg_label_len > 36 or n_leg_items > 10 else 22.8)
+        else (17.0 if max_leg_label_len > 36 or n_leg_items > 10 else 18.0)
     )
-    leg_font_estimate = float(min(leg_font_estimate, 23.5))
+    leg_font_estimate = float(min(leg_font_estimate, 19.0))
 
-    # Geometría en PULGADAS — las fracciones de figura se derivan de aquí
-    # para que paneles, x-labels y leyenda no se superpongan nunca.
-    title_band_inch = 1.05  # suptitle (24pt) + aire respecto a títulos de panel (20pt)
-    x_label_inch = 0.88  # años rotados 90° (≈17pt) + padding
-    gap_inch = 0.24  # separación x-labels ↔ leyenda
-    legend_pad_inch = 0.12  # padding leyenda ↔ borde inferior figura
+    title_band_inch = 1.25
+    x_label_inch = 1.10
+    gap_inch = 0.24
+    legend_pad_inch = 0.12
     line_h_inch = leg_font_estimate * 1.35 / 72.0
     legend_h_inch = line_h_inch * n_leg_rows + 0.12
-
     bottom_margin_inch = legend_pad_inch + legend_h_inch + gap_inch + x_label_inch
 
-    # Altura objetivo del panel (axes): ~55% del ancho del panel ⇒ ratio
-    # ancho:alto ≈ 1.8:1 (claramente más ancho que alto). Floor de 4.0″ para
-    # mantener legibilidad cuando hay muchos escenarios.
-    panel_h_inch = max(4.0, w_per_facet * 0.55)
-
-    fig_h = panel_h_inch + title_band_inch + bottom_margin_inch
-    fig_h = float(min(max(fig_h, 6.0), 14.0))
-
-    fig, axes = plt.subplots(1, n, figsize=(fig_w, fig_h), squeeze=False)
-    row_axes = axes[0]
+    if layout == "vertical":
+        panel_h_inch = max(4.0, w_per_facet * 0.45)
+        fig_w = max(14.0, min(w_per_facet + 4.0, 18.0))
+        fig_h = panel_h_inch * n + inter_panel * max(0, n - 1) + title_band_inch + bottom_margin_inch
+        fig_h = float(min(max(fig_h, 6.0), 26.0))
+        fig, axes = plt.subplots(n, 1, figsize=(fig_w, fig_h), squeeze=False)
+        facet_axes = axes[:, 0]
+    else:
+        panel_h_inch = max(4.0, w_per_facet * 0.55)
+        fig_w = w_per_facet * n + inter_panel * max(0, n - 1)
+        fig_w = max(9.0, fig_w)
+        fig_h = panel_h_inch + title_band_inch + bottom_margin_inch
+        fig_h = float(min(max(fig_h, 6.0), 14.0))
+        fig, axes = plt.subplots(1, n, figsize=(fig_w, fig_h), squeeze=False)
+        facet_axes = axes[0]
 
     y_label = data.yAxisLabel or "Valor"
     stack_tops: list[np.ndarray] = []
+    line_maxes: list[float] = []
 
-    for ax, facet in zip(row_axes, facets):
+    for idx, (ax, facet) in enumerate(zip(facet_axes, facets)):
         categories = list(facet.categories)
         n_cats = len(categories)
         x = np.arange(n_cats, dtype=float)
-        bottom = np.zeros(n_cats, dtype=float)
 
-        # Iteramos en reverso: primer elemento de ``facet.series`` queda
-        # arriba del stack (igual a Highcharts).
-        #
-        # NOTA: ``s.data`` puede contener ``None`` (NaN al convertir a float)
-        # cuando ``_align_facet_x_axis`` rellenó años faltantes en facets de
-        # rango distinto. Si propagamos NaN al ``bottom`` cumulado, ``np.max``
-        # del stack devuelve NaN, ``global_max`` queda NaN, ``y_top = NaN`` y
-        # ``set_ylim(0, NaN)`` deja que matplotlib auto-ajuste a una altura
-        # menor — cortando visualmente los datos. Convertimos NaN→0 ANTES
-        # del stack (zero-height bar = invisible, equivalente a "sin dato").
-        for s in reversed(facet.series):
-            raw = np.array(s.data, dtype=float)
-            if raw.size < n_cats:
-                raw = np.pad(raw, (0, n_cats - int(raw.size)))
-            elif raw.size > n_cats:
-                raw = raw[:n_cats]
-            values = np.nan_to_num(raw, nan=0.0, posinf=0.0, neginf=0.0)
-            ax.bar(
-                x,
-                values,
-                bottom=bottom,
-                color=s.color,
-                width=0.74,
-                edgecolor="#ffffff",
-                linewidth=0.45,
-            )
-            bottom = bottom + values
+        facet_series = _filter_hidden_series(list(facet.series), hidden_series)
+        bar_series = [s for s in facet_series if not _is_line_series(s)]
+        line_series = [s for s in facet_series if _is_line_series(s)]
 
-        stack_tops.append(bottom.copy())
+        # Render según view_mode
+        facet_bar_max = 0.0
+        if view_mode == "area":
+            # Áreas apiladas: todas las series (bar + line) como áreas
+            area_series = list(reversed(facet_series))
+            ys = []
+            for s in area_series:
+                raw = np.array(s.data, dtype=float)
+                if raw.size < n_cats:
+                    raw = np.pad(raw, (0, n_cats - int(raw.size)))
+                elif raw.size > n_cats:
+                    raw = raw[:n_cats]
+                ys.append(np.nan_to_num(raw, nan=0.0, posinf=0.0, neginf=0.0))
+            labels = [s.name for s in area_series]
+            colors = [s.color for s in area_series]
+            ax.stackplot(x, ys, labels=labels, colors=colors, alpha=0.9, linewidth=0.5, edgecolor="white")
+            for v in ys:
+                facet_bar_max = max(facet_bar_max, float(np.max(v)))
+            stack_tops.append(np.sum(ys, axis=0))
+            line_maxes.append(0.0)
+        elif view_mode == "line":
+            # Líneas: todas las series como líneas
+            for s in facet_series:
+                raw = np.array(s.data, dtype=float)
+                if raw.size < n_cats:
+                    raw = np.pad(raw, (0, n_cats - int(raw.size)))
+                elif raw.size > n_cats:
+                    raw = raw[:n_cats]
+                values = np.nan_to_num(raw, nan=float("nan"), posinf=float("nan"), neginf=float("nan"))
+                ax.plot(x, values, color=s.color, linewidth=2.0, marker="o", markersize=4)
+            stack_tops.append(np.zeros(n_cats))
+            line_maxes.append(0.0)
+        else:
+            # Barras apiladas (comportamiento original)
+            bottom = np.zeros(n_cats, dtype=float)
+            for s in reversed(bar_series):
+                raw = np.array(s.data, dtype=float)
+                if raw.size < n_cats:
+                    raw = np.pad(raw, (0, n_cats - int(raw.size)))
+                elif raw.size > n_cats:
+                    raw = raw[:n_cats]
+                values = np.nan_to_num(raw, nan=0.0, posinf=0.0, neginf=0.0)
+                facet_bar_max = max(facet_bar_max, float(np.max(values)))
+                ax.bar(
+                    x,
+                    values,
+                    bottom=bottom,
+                    color=s.color,
+                    width=0.74,
+                    edgecolor="#ffffff",
+                    linewidth=0.45,
+                )
+                bottom = bottom + values
+            stack_tops.append(bottom.copy())
+
+            # Líneas sobre las barras
+            facet_line_max = 0.0
+            for s in line_series:
+                raw = np.array(s.data, dtype=float)
+                if raw.size < n_cats:
+                    raw = np.pad(raw, (0, n_cats - int(raw.size)))
+                elif raw.size > n_cats:
+                    raw = raw[:n_cats]
+                values = np.nan_to_num(raw, nan=float("nan"), posinf=float("nan"), neginf=float("nan"))
+                ax.plot(x, values, color=s.color, linewidth=2.5, marker="o", markersize=4)
+                finite_values = values[np.isfinite(values)]
+                if finite_values.size:
+                    facet_line_max = max(facet_line_max, float(finite_values.max()))
+            line_maxes.append(facet_line_max)
 
         ax.set_xticks(x)
         x_step = _facet_x_axis_label_step(categories)
         x_labels = _facet_x_ticklabels_thinned(categories, x_step)
         n_labeled = sum(1 for lb in x_labels if lb)
         x_fs = (
-            15
+            20
             if n_labeled > 14 or n_cats > 36
-            else (16 if n_cats > 22 or n_labeled > 11 else 17)
+            else (20 if n_cats > 22 or n_labeled > 11 else 22)
         )
         ax.set_xticklabels(
             x_labels,
@@ -3001,9 +4072,8 @@ def render_comparison_facet_figure_bytes(
         )
         ax.set_ylabel(
             y_label,
-            fontsize=19,
+            fontsize=22,
             color="#0f172a",
-            fontweight="bold",
             labelpad=8,
         )
         sim_lbl = (
@@ -3011,13 +4081,21 @@ def render_comparison_facet_figure_bytes(
         ).strip()
         tag_lbl = (facet.scenario_tag_name or "").strip()
         facet_title = f"{sim_lbl} — {tag_lbl}" if tag_lbl else sim_lbl
-        ax.set_title(
-            facet_title,
-            fontsize=20,
-            fontweight="bold",
-            color="#0f172a",
-            pad=10,
-        )
+        if layout == "vertical":
+            ax.text(
+                -0.20, 0.5, facet_title,
+                transform=ax.transAxes,
+                fontsize=22, fontweight="bold",
+                va="center", ha="right",
+                color="#0f172a",
+            )
+        else:
+            ax.set_title(
+                facet_title,
+                fontsize=28,
+                color="#0f172a",
+                pad=10,
+            )
         ax.set_axisbelow(True)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
@@ -3027,7 +4105,7 @@ def render_comparison_facet_figure_bytes(
             ax.spines[_side].set_linewidth(1.35)
         ax.tick_params(
             axis="y",
-            labelsize=18,
+            labelsize=20,
             colors="#0f172a",
             width=1.15,
             length=6,
@@ -3043,69 +4121,40 @@ def render_comparison_facet_figure_bytes(
         ax.set_facecolor("#ffffff")
 
     global_max = 0.0
-    # Línea ~2809
-    global_max = 0.0
     for b in stack_tops:
         if b.size:
-            b_clean = b[np.isfinite(b)]  # ← ignorar nan/inf
+            b_clean = b[np.isfinite(b)]
             if b_clean.size:
                 global_max = max(global_max, float(b_clean.max()))
+    for lm in line_maxes:
+        global_max = max(global_max, lm)
     if global_max <= 0:
         global_max = 1.0
     y_top = global_max * 1.12
 
-    show_stack_totals = all(len(b) <= 18 for b in stack_tops)
+    show_stack_totals = view_mode != "line" and all(len(b) <= 18 for b in stack_tops)
 
-    # Override del rango Y por usuario (aplica a TODOS los facets para que
-    # mantengan misma escala — la idea del facet es comparar visualmente).
     effective_y_lo = float(y_axis_min) if y_axis_min is not None else 0.0
     effective_y_hi = float(y_axis_max) if y_axis_max is not None else y_top
 
-    for ax, bottom in zip(row_axes, stack_tops):
+    for ax, bottom in zip(facet_axes, stack_tops):
         ax.set_ylim(effective_y_lo, effective_y_hi)
-        ax.yaxis.set_major_formatter(
-            FuncFormatter(lambda v, _p: format_axis_3sig(v))
-        )
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _p: format_axis_3sig(v)))
         ax.yaxis.set_major_locator(
             MaxNLocator(nbins=7, min_n_ticks=5, steps=[1, 2, 2.5, 5, 10]),
         )
-        # Líneas horizontales intermedias entre marcas principales
         ax.yaxis.set_minor_locator(AutoMinorLocator(2))
 
-        # Rejilla: lectura de valores (horizontales mayor + menor; verticales por categoría)
-        ax.grid(
-            which="major",
-            axis="y",
-            linestyle="-",
-            linewidth=0.95,
-            color="#64748b",
-            alpha=0.55,
-            zorder=0,
-        )
-        ax.grid(
-            which="minor",
-            axis="y",
-            linestyle=":",
-            linewidth=0.7,
-            color="#94a3b8",
-            alpha=0.5,
-            zorder=0,
-        )
-        ax.grid(
-            which="major",
-            axis="x",
-            linestyle="-",
-            linewidth=0.75,
-            color="#94a3b8",
-            alpha=0.42,
-            zorder=0,
-        )
+        ax.grid(which="major", axis="y", linestyle="-", linewidth=0.95, color="#64748b", alpha=0.55, zorder=0)
+        ax.grid(which="minor", axis="y", linestyle=":", linewidth=0.7, color="#94a3b8", alpha=0.5, zorder=0)
+        ax.grid(which="major", axis="x", linestyle="-", linewidth=0.75, color="#94a3b8", alpha=0.42, zorder=0)
 
         if not show_stack_totals:
             continue
+        if clean:
+            continue
         n_cats = len(bottom)
         for i in range(n_cats):
-            # Mostrar el total solo cada 2 categorías (0, 2, 4, …).
             if i % 2 != 0:
                 continue
             total = float(bottom[i])
@@ -3117,77 +4166,105 @@ def render_comparison_facet_figure_bytes(
                 f"{total:,.1f}",
                 ha="center",
                 va="bottom",
-                fontsize=11.5,
+                fontsize=18,
                 color="#0f172a",
-                fontweight="600",
             )
             t.set_path_effects([pe.withStroke(linewidth=2.5, foreground="white")])
 
     fig.patch.set_facecolor("#ffffff")
-    # Suptitle: lo posicionamos ~0.30" desde el borde superior, lo que deja
-    # un aire claro respecto a los títulos por panel (que viven dentro de la
-    # banda reservada arriba).
-    suptitle_y = 1.0 - 0.28 / fig_h
-    fig.suptitle(
-        data.title,
-        fontsize=24,
-        fontweight="bold",
-        color="#020617",
-        y=suptitle_y,
-    )
+    if not clean:
+        suptitle_y = 1.0 - 0.28 / fig_h
+        fig.suptitle(
+            data.title,
+            fontsize=32,
+            fontweight="bold",
+            color="#020617",
+            y=suptitle_y,
+        )
 
-    # Markers circulares (estilo Highcharts) para coincidir con el chart
-    # individual y evitar la barra/cuadrado.
     from matplotlib.lines import Line2D as _Line2D
 
-    handles = [
-        _Line2D(
-            [0],
-            [0],
-            marker="o",
-            color=c,
-            linestyle="None",
-            markersize=10,
-            markerfacecolor=c,
-            markeredgecolor=c,
-        )
-        for _name, c in legend_order
-    ]
+    handles = []
+    is_line_mode = view_mode == "line"
+    for name, c in legend_order:
+        if is_line_mode:
+            handles.append(
+                _Line2D(
+                    [0], [0],
+                    color=c, linewidth=2.0, marker="o", markersize=5,
+                    markeredgecolor=c, markerfacecolor=c,
+                )
+            )
+        elif view_mode == "area":
+            handles.append(
+                _Line2D(
+                    [0], [0],
+                    marker="s", color=c, linestyle="None",
+                    markersize=10, markerfacecolor=c, markeredgecolor=c,
+                )
+            )
+        else:
+            line_names: set[str] = set()
+            for facet in facets:
+                for s in _filter_hidden_series(list(facet.series), hidden_series):
+                    if _is_line_series(s):
+                        line_names.add(s.name)
+            if name in line_names:
+                handles.append(
+                    _Line2D(
+                        [0], [0],
+                        color=c, linewidth=2.5, marker="o", markersize=5,
+                        markeredgecolor=c, markerfacecolor=c,
+                    )
+                )
+            else:
+                handles.append(
+                    _Line2D(
+                        [0], [0],
+                        marker="o", color=c, linestyle="None",
+                        markersize=10, markerfacecolor=c, markeredgecolor=c,
+                    )
+                )
     leg_font = leg_font_estimate
 
-    # Las fracciones de figura derivan directo de las pulgadas calculadas
-    # arriba — así el cálculo es coherente y no quedan superposiciones.
     bottom_margin = bottom_margin_inch / fig_h
     top_margin = 1.0 - title_band_inch / fig_h
     legend_anchor_y = legend_pad_inch / fig_h
 
-    # Leyenda al estilo de las gráficas individuales: sin marco, sin título.
-    # Leyenda invertida respecto al stack (lectura abajo→arriba como las barras).
     fig.legend(
-        handles=list(reversed(handles)),
-        labels=list(reversed(legend_labels_full)),
+        handles=handles,
+        labels=legend_labels_full,
         loc="lower center",
         bbox_to_anchor=(0.5, legend_anchor_y),
         ncol=leg_ncol,
         fontsize=leg_font,
         frameon=False,
         labelcolor="#0f172a",
-        handlelength=1.0,
-        handletextpad=0.6,
-        columnspacing=1.85,
-        labelspacing=0.45,
+        handlelength=0.8,
+        handletextpad=0.4,
+        columnspacing=1.2,
+        labelspacing=0.28,
     )
 
-    # `wspace` se reduce con menos paneles para que la separación entre
-    # paneles no domine la figura (el ojo percibe huecos enormes con n=2-3).
-    wspace = 0.20 if n >= 4 else 0.16
-    plt.subplots_adjust(
-        left=0.07,
-        right=0.995,
-        top=top_margin,
-        bottom=bottom_margin,
-        wspace=wspace,
-    )
+    if layout == "vertical":
+        left_margin = max(0.15, min(0.35, 3.0 / fig_w))
+        hspace = 0.28 if n >= 4 else 0.24
+        plt.subplots_adjust(
+            left=left_margin,
+            right=0.995,
+            top=top_margin,
+            bottom=bottom_margin,
+            hspace=hspace,
+        )
+    else:
+        wspace = 0.20 if n >= 4 else 0.16
+        plt.subplots_adjust(
+            left=0.07,
+            right=0.995,
+            top=top_margin,
+            bottom=bottom_margin,
+            wspace=wspace,
+        )
 
     buf = io.BytesIO()
     fig.savefig(
@@ -3197,9 +4274,36 @@ def render_comparison_facet_figure_bytes(
         facecolor="#ffffff",
         edgecolor="none",
         bbox_inches="tight",
-        pad_inches=0.18,
+        pad_inches=0.3,
     )
     plt.close(fig)
+    return buf.getvalue()
+
+
+def render_chart_visualization_bytes(
+    chart: ChartDataResponse,
+    fmt: str = "png",
+    view_mode: str = "column",
+    *,
+    y_axis_min: float | None = None,
+    y_axis_max: float | None = None,
+    clean: bool = False,
+    hidden_series: set[str] | None = None,
+) -> bytes:
+    """Genera PNG o SVG con Matplotlib (sin navegador).
+
+    ``view_mode``: ``"column"`` | ``"line"`` | ``"area"``.
+    Soporta filtro de series ocultas vía ``hidden_series``.
+    """
+    if fmt not in ("png", "svg"):
+        raise ValueError("fmt debe ser 'png' o 'svg'")
+    title = chart.title
+    if view_mode == "line":
+        buf = _render_line_chart(chart, title, fmt=fmt, y_axis_min=y_axis_min, y_axis_max=y_axis_max, clean=clean, hidden_series=hidden_series)
+    elif view_mode == "area":
+        buf = _render_stacked_area(chart, title, fmt=fmt, y_axis_min=y_axis_min, y_axis_max=y_axis_max, clean=clean, hidden_series=hidden_series)
+    else:
+        buf = _render_stacked_bar(chart, title, fmt=fmt, y_axis_min=y_axis_min, y_axis_max=y_axis_max, clean=clean, hidden_series=hidden_series)
     return buf.getvalue()
 
 
@@ -3478,3 +4582,352 @@ def export_results_csv_zip(
 
     buffer.seek(0)
     return buffer
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Helper: comparación recursos por escenario (by-year-alt)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _build_comparison_recursos_by_year_alt(
+    db: Session,
+    job_ids: list[int],
+    tipo: str,
+    years_to_plot: list[int] | None,
+    un: str = "PJ",
+) -> CompareChartResponse:
+    """Construye comparación by-year-alt para gráficas de recursos.
+
+    Subplot por escenario, categories = años, serie = producción total.
+    """
+    if years_to_plot is None:
+        years_to_plot = [2024, 2030, 2050]
+
+    title = (
+        f"{_get_recursos_title(tipo)} — "
+        f"Por Años (Alternativo) ({un})"
+    )
+
+    # Cargar nombres de escenarios
+    from app.models import Scenario
+    scenario_names: dict[int, str] = {}
+    for jid in job_ids:
+        job = db.query(SimulationJob).filter(SimulationJob.id == jid).first()
+        if job:
+            scenario = (
+                db.query(Scenario).filter(Scenario.id == job.scenario_id).first()
+                if job.scenario_id
+                else None
+            )
+            base = scenario.name if scenario else (job.input_name or f"Job {jid}")
+            disp = (getattr(job, "display_name", None) or "").strip()
+            scenario_names[jid] = disp if disp else base
+        else:
+            scenario_names[jid] = f"Job {jid}"
+
+    subplots: list[SubplotData] = []
+    color = "#10b981" if tipo == "recursos_vs_demanda_gas" else "#dc2626"
+    prod_label = {
+        "recursos_vs_demanda_gas": "Producción gas natural nacional",
+        "recursos_vs_demanda_carbon": "Demanda total de carbón",
+    }.get(tipo, "Producción")
+
+    for jid in job_ids:
+        totals = _build_recursos_production_total(db, jid, tipo, un=un)
+        if totals is None:
+            continue
+
+        data = [round(totals.get(a, 0.0), 6) for a in years_to_plot]
+        subplots.append(
+            SubplotData(
+                year=jid,
+                scenario_name=scenario_names.get(jid, f"Job {jid}"),
+                categories=[str(a) for a in years_to_plot],
+                series=[
+                    ChartSeries(
+                        name=prod_label,
+                        data=data,
+                        color=color,
+                        stack="default",
+                    )
+                ],
+            )
+        )
+
+    if not subplots:
+        return CompareChartResponse(title=title, subplots=[], yAxisLabel=un)
+
+    return CompareChartResponse(
+        title=title, subplots=subplots, yAxisLabel=un
+    )
+
+    # Cargar nombres de escenarios
+    scenario_names: dict[int, str] = {}
+    for jid in job_ids:
+        job = db.query(SimulationJob).filter(SimulationJob.id == jid).first()
+        if job:
+            from app.models import Scenario
+            scenario = (
+                db.query(Scenario).filter(Scenario.id == job.scenario_id).first()
+                if job.scenario_id
+                else None
+            )
+            base = scenario.name if scenario else (job.input_name or f"Job {jid}")
+            disp = (getattr(job, "display_name", None) or "").strip()
+            scenario_names[jid] = disp if disp else base
+        else:
+            scenario_names[jid] = f"Job {jid}"
+
+    subplots: list[SubplotData] = []
+    color = "#10b981"
+    name = "Producción gas natural nacional"
+
+    for jid in job_ids:
+        df_gas = _build_recursos_vs_demanda_gas_df(db, jid, un=un)
+        if df_gas is None or df_gas.empty:
+            continue
+
+        tech_rows = df_gas.groupby("YEAR", as_index=False)["PRODUCTION"].sum()
+        prod_by_year = dict(zip(tech_rows["YEAR"], tech_rows["PRODUCTION"]))
+
+        data = [round(prod_by_year.get(a, 0.0), 6) for a in years_to_plot]
+        subplots.append(
+            SubplotData(
+                year=jid,
+                scenario_name=scenario_names.get(jid, f"Job {jid}"),
+                categories=[str(a) for a in years_to_plot],
+                series=[
+                    ChartSeries(
+                        name=name,
+                        data=data,
+                        color=color,
+                        stack="default",
+                    )
+                ],
+            )
+        )
+
+    if not subplots:
+        return CompareChartResponse(title=title, subplots=[], yAxisLabel=un)
+
+    return CompareChartResponse(
+        title=title, subplots=subplots, yAxisLabel=un
+    )
+
+
+def build_comparison_data_by_year_alt(
+    db: Session,
+    job_ids: list[int],
+    tipo: str,
+    un: str = "PJ",
+    years_to_plot: list[int] | None = None,
+    agrupacion: str | None = None,
+    sub_filtro: str | None = None,
+    loc: str | None = None,
+    job_display_overrides: dict[int, str] | None = None,
+    es_porcentaje_override: bool = False,
+) -> CompareChartResponse:
+    """Construye respuesta agrupada por ESCENARIO (no por año).
+
+    Lógica:
+    - Cada subplot = un escenario
+    - categories = años seleccionados
+    - series = una por cada categoría/tecnología (según agrupación)
+    """
+    # Mapeo de tabla normal a comparación si aplica
+    MAPEO_COMPARACION = {
+        "tra_total": "tra_comparacion",
+        "ind_total": "ind_comparacion",
+        "res_total": "res_comparacion",
+        "ter_total": "ter_comparacion",
+    }
+
+    es_generico = False
+    if tipo in MAPEO_COMPARACION:
+        tipo = MAPEO_COMPARACION[tipo]
+
+    if tipo not in CONFIGS_COMPARACION and tipo not in CONFIGS:
+        raise ValueError(f"tipo='{tipo}' no encontrado")
+
+    if years_to_plot is None:
+        years_to_plot = [2024, 2030, 2050]
+
+    # ── Ruta especial: recursos vs demanda ────────────────────────────────
+    if tipo in _RECURSOS_TIPOS_COMPARACION:
+        return _build_comparison_recursos_by_year_alt(
+            db, job_ids, tipo, years_to_plot, un,
+        )
+
+    # Resolver configuración
+    if tipo in CONFIGS_COMPARACION:
+        cfg = CONFIGS_COMPARACION[tipo]
+        prefijo = cfg["prefijo"]
+        agrupacion_fija = cfg.get("agrupacion_fija")
+        if agrupacion_fija is not None:
+            agrupacion_usar = agrupacion_fija
+        elif agrupacion is not None:
+            agrupacion_usar = agrupacion
+        else:
+            agrupacion_usar = cfg["agrupacion_default"]
+        variable_name = cfg["variable_default"]
+    else:
+        es_generico = True
+        cfg = CONFIGS[tipo]
+        variable_name = cfg["variable_default"]
+        agrupacion_usar = (
+            agrupacion
+            if agrupacion is not None
+            else cfg.get("agrupar_por", "TECNOLOGIA")
+        )
+
+    # Cargar nombres de escenarios
+    scenario_names: dict[int, str] = {}
+    for jid in job_ids:
+        job = db.query(SimulationJob).filter(SimulationJob.id == jid).first()
+        if job:
+            from app.models import Scenario
+            scenario = (
+                db.query(Scenario).filter(Scenario.id == job.scenario_id).first()
+                if job.scenario_id
+                else None
+            )
+            base = scenario.name if scenario else (job.input_name or f"Job {jid}")
+            disp = (getattr(job, "display_name", None) or "").strip()
+            scenario_names[jid] = disp if disp else base
+        else:
+            scenario_names[jid] = f"Job {jid}"
+        ov = (job_display_overrides or {}).get(jid)
+        if isinstance(ov, str) and ov.strip():
+            scenario_names[jid] = ov.strip()
+
+    # Procesar datos para cada escenario
+    all_data: list[pd.DataFrame] = []
+    for jid in job_ids:
+        df_var = _load_variable_data(db, jid, variable_name)
+        # Strip prefijos regionales si el job es REGIONAL (acumulado nacional).
+        df_var = _apply_regional_transform(db, jid, df_var)
+        if df_var.empty:
+            continue
+
+        if not es_generico:
+            df = _procesar_bloque_comparacion(
+                df_var, prefijo, sub_filtro, loc,
+                agrupacion_usar, years_to_plot, un,
+            )
+        else:
+            df = _procesar_bloque_single(
+                df_var, cfg, sub_filtro, loc,
+                years_to_plot, un,
+                agrupacion_override=agrupacion_usar,
+                tipo=tipo,
+            )
+
+        if df is None or df.empty:
+            continue
+
+        df["ESCENARIO"] = scenario_names.get(jid, f"Job {jid}")
+        df["JOB_ID"] = jid
+        all_data.append(df)
+
+    if not all_data:
+        title_base = cfg.get("titulo_base", cfg.get("titulo", tipo))
+        return CompareChartResponse(
+            title=f"{title_base} (Comparación Alternativa)",
+            subplots=[],
+            yAxisLabel=un,
+        )
+
+    df_final = pd.concat(all_data, ignore_index=True)
+
+    # Aplicar porcentaje si corresponde
+    if es_porcentaje_override:
+        total_por_escenario_año = df_final.groupby(["JOB_ID", "YEAR"])["VALUE"].transform("sum")
+        df_final["VALUE"] = df_final["VALUE"] / total_por_escenario_año * 100.0
+
+    # ── Colores ──────────────────────────────────────────────────
+    categorias_unicas = sorted(df_final["CATEGORIA"].dropna().unique())
+    if not es_generico:
+        mapa_colores = _color_map_comparison(agrupacion_usar, categorias_unicas)
+    else:
+        # Para gráficas genéricas: usar color_fn según la agrupación REAL
+        if agrupacion_usar != cfg.get("agrupar_por"):
+            if agrupacion_usar == "FUEL":
+                color_fn = _color_por_grupo_fijo
+            elif agrupacion_usar == "SECTOR":
+                color_fn = _color_por_sector
+            elif agrupacion_usar == "EMISION":
+                color_fn = _color_por_emision
+            elif agrupacion_usar == "ELECTROLISIS":
+                color_fn = _color_electrolisis
+            else:
+                color_fn = cfg.get("color_fn") or generar_colores_tecnologias
+        else:
+            color_fn = cfg.get("color_fn")
+
+        if color_fn is not None:
+            df_tmp = pd.DataFrame({"COLOR": list(categorias_unicas)})
+            colores_lista, orden_lista = color_fn(df_tmp, "COLOR")
+            mapa_colores = dict(zip(orden_lista, colores_lista))
+        else:
+            _palette = get_colores_grupos()
+            mapa_colores = {c: _palette.get(c, "#999999") for c in categorias_unicas}
+
+    # Construir subplots por escenario
+    subplots: list[SubplotData] = []
+    for jid in job_ids:
+        df_escenario = df_final[df_final["JOB_ID"] == jid]
+        if df_escenario.empty:
+            continue
+
+        escenario_nombre = scenario_names.get(jid, f"Job {jid}")
+
+        series: list[ChartSeries] = []
+        for categoria in categorias_unicas:
+            df_cat = df_escenario[df_escenario["CATEGORIA"] == categoria]
+            if df_cat.empty:
+                series.append(
+                    ChartSeries(
+                        name=get_label(str(categoria)),
+                        data=[0.0] * len(years_to_plot),
+                        color=mapa_colores.get(categoria, "#999999"),
+                        stack="default",
+                    )
+                )
+                continue
+
+            valor_por_año = {
+                int(row["YEAR"]): row["VALUE"]
+                for _, row in df_cat.iterrows()
+            }
+            data = [round(valor_por_año.get(a, 0.0), 6) for a in years_to_plot]
+
+            series.append(
+                ChartSeries(
+                    name=get_label(str(categoria)),
+                    data=data,
+                    color=mapa_colores.get(categoria, "#999999"),
+                    stack="default",
+                )
+            )
+
+        subplots.append(
+            SubplotData(
+                year=jid,
+                scenario_name=escenario_nombre,
+                categories=[str(a) for a in years_to_plot],
+                series=series,
+            )
+        )
+
+    title_base = cfg.get("titulo_base", cfg.get("titulo", tipo))
+    title = f"{title_base} — Por Años (Alternativo)"
+    if sub_filtro:
+        title += f" — {NOMBRES_COMBUSTIBLES.get(sub_filtro, sub_filtro)}"
+    if loc:
+        title += f" ({loc})"
+    title += f" ({un})"
+
+    return CompareChartResponse(
+        title=title,
+        subplots=subplots,
+        yAxisLabel="%" if es_porcentaje_override else un,
+    )

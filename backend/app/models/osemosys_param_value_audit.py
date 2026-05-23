@@ -39,6 +39,8 @@ class OsemosysParamValueAudit(Base):
             "created_at",
         ),
         Index("ix_osemosys_param_audit_value_id", "id_osemosys_param_value"),
+        Index("ix_osemosys_param_audit_scenario_batch", "id_scenario", "batch_id"),
+        Index("ix_osemosys_param_audit_scenario_created", "id_scenario", "created_at"),
         {"schema": "osemosys"},
     )
 
@@ -60,6 +62,8 @@ class OsemosysParamValueAudit(Base):
     dimensions_json: Mapped[object | None] = mapped_column(JSON, nullable=True)
     source: Mapped[str] = mapped_column(String(32), nullable=False)
     changed_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    batch_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    batch_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[object] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

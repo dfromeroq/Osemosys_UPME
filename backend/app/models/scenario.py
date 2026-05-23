@@ -55,6 +55,11 @@ class Scenario(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     udc_config: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)
+    # Warnings de calidad de datos detectados por data_validation.
+    # Estructura: ver DataQualityReport.to_dict().
+    data_quality_warnings: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True, default=None
+    )
 
     tags: Mapped[list["ScenarioTag"]] = relationship(
         "ScenarioTag",

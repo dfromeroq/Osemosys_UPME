@@ -586,6 +586,7 @@ class SavedChartTemplateService:
                 legend_title=template.legend_title,
                 y_axis_min=y_min,
                 y_axis_max=y_max,
+                series_order=custom_order,
             )
             return img_bytes, fmt
 

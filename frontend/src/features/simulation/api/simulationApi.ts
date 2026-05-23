@@ -37,21 +37,25 @@ export const simulationApi = {
     solverName: SimulationSolver,
     options?: {
       runIisAnalysis?: boolean;
+      generateLp?: boolean;
       display_name?: string | null;
     },
   ) {
-    // Unifica en un solo `options` los dos flags opcionales:
-    //   - `runIisAnalysis`: correr análisis de infactibilidad inline (viene del feature).
-    //   - `display_name`: alias visible de la corrida (viene de develop).
+    // Unifica en un solo `options` los flags opcionales:
+    //   - `runIisAnalysis`: correr análisis de infactibilidad inline.
+    //   - `generateLp`: persistir el modelo a `.lp` antes de resolver.
+    //   - `display_name`: alias visible de la corrida.
     const body: {
       scenario_id: number;
       solver_name: SimulationSolver;
       run_iis_analysis: boolean;
+      generate_lp: boolean;
       display_name?: string;
     } = {
       scenario_id: scenarioId,
       solver_name: solverName,
       run_iis_analysis: Boolean(options?.runIisAnalysis),
+      generate_lp: Boolean(options?.generateLp),
     };
     const dn = options?.display_name?.trim();
     if (dn) body.display_name = dn.slice(0, 255);
@@ -73,12 +77,13 @@ export const simulationApi = {
       tag_id?: number | null;
       display_name?: string | null;
     },
-    options?: { display_name?: string | null },
+    options?: { display_name?: string | null; generateLp?: boolean },
   ) {
     const formData = new FormData();
     formData.append("csv_zip", file);
     formData.append("solver_name", solverName);
     formData.append("run_iis_analysis", String(runIisAnalysis));
+    formData.append("generate_lp", String(Boolean(options?.generateLp)));
     formData.append("simulation_type", input.simulation_type);
     formData.append("save_as_scenario", input.save_as_scenario ? "true" : "false");
     if (input.input_name?.trim()) formData.append("input_name", input.input_name.trim());
@@ -198,6 +203,40 @@ export const simulationApi = {
     return { blob, filename };
   },
 
+  /** Descarga el `.lp` del modelo Pyomo (solo si la corrida se lanzó con
+   * `generate_lp=true`). */
+  async downloadLpFile(jobId: number): Promise<{ blob: Blob; filename: string }> {
+    const { data, headers } = await httpClient.get(
+      `/simulations/${jobId}/lp-file`,
+      { responseType: "blob", timeout: 5 * 60 * 1000 },
+    );
+    const blob = data as Blob;
+    const disposition = headers["content-disposition"];
+    let filename = `sim_${jobId}.lp`;
+    if (typeof disposition === "string") {
+      const match = /filename="?([^";\n]+)"?/i.exec(disposition);
+      if (match?.[1]) filename = match[1].trim();
+    }
+    return { blob, filename };
+  },
+
+  /** Descarga el `.ilp` del IIS (solo si la corrida fue con Gurobi y el
+   * análisis ya finalizó). */
+  async downloadIisIlp(jobId: number): Promise<{ blob: Blob; filename: string }> {
+    const { data, headers } = await httpClient.get(
+      `/simulations/${jobId}/iis-ilp`,
+      { responseType: "blob", timeout: 2 * 60 * 1000 },
+    );
+    const blob = data as Blob;
+    const disposition = headers["content-disposition"];
+    let filename = `iis_job_${jobId}.ilp`;
+    if (typeof disposition === "string") {
+      const match = /filename="?([^";\n]+)"?/i.exec(disposition);
+      if (match?.[1]) filename = match[1].trim();
+    }
+    return { blob, filename };
+  },
+
   async getResultSummary(jobId: number) {
     const { data } = await httpClient.get<ResultSummaryResponse>(`/visualizations/${jobId}/result-summary`);
     return data;
@@ -212,9 +251,16 @@ export const simulationApi = {
       loc?: string;
       variable?: string;
       agrupar_por?: string;
+      region?: string;
+      timeslice?: string;
     },
   ) {
     const { data } = await httpClient.get<ChartDataResponse>(`/visualizations/${jobId}/chart-data`, { params });
+    return data;
+  },
+
+  async getJobTimeslices(jobId: number): Promise<string[]> {
+    const { data } = await httpClient.get<string[]>(`/visualizations/${jobId}/timeslices`);
     return data;
   },
 
@@ -225,6 +271,14 @@ export const simulationApi = {
     jobId: number,
     selection: ChartSelection,
     fmt: "png" | "svg" | "csv" | "xlsx",
+    options?: {
+      clean?: boolean;
+      tableExportFilters?: {
+        series?: string[];
+        years?: (string | number)[];
+      };
+      hiddenSeries?: string[];
+    },
   ): Promise<{ blob: Blob; filename: string }> {
     const params: Record<string, string> = {
       tipo: selection.tipo,
@@ -236,6 +290,7 @@ export const simulationApi = {
     if (selection.loc) params.loc = selection.loc;
     if (selection.variable) params.variable = selection.variable;
     if (selection.agrupar_por) params.agrupar_por = selection.agrupar_por;
+    if (options?.clean) params.clean = "true";
     // Solo aplican cuando view_mode === 'table'
     if (selection.viewMode === "table") {
       if (typeof selection.tablePeriodYears === "number" && selection.tablePeriodYears >= 1) {
@@ -243,6 +298,12 @@ export const simulationApi = {
       }
       if (selection.tableCumulative) {
         params.table_cumulative = "true";
+      }
+      if (options?.tableExportFilters?.series && options.tableExportFilters.series.length > 0) {
+        params.table_series = options.tableExportFilters.series.join(",");
+      }
+      if (options?.tableExportFilters?.years && options.tableExportFilters.years.length > 0) {
+        params.table_years = options.tableExportFilters.years.map(String).join(",");
       }
     }
     // Modificadores universales: orden custom de series + rango Y.
@@ -254,6 +315,9 @@ export const simulationApi = {
     }
     if (typeof selection.yAxisMax === "number") {
       params.y_axis_max = String(selection.yAxisMax);
+    }
+    if (options?.hiddenSeries && options.hiddenSeries.length > 0) {
+      params.hidden_series = options.hiddenSeries.join(",");
     }
 
     const response = await httpClient.get(`/visualizations/${jobId}/export-chart`, {
@@ -272,7 +336,7 @@ export const simulationApi = {
     return { blob, filename };
   },
 
-  async getCompareData(params: { job_ids: string, tipo: string, un?: string, years_to_plot?: string, agrupacion?: string, sub_filtro?: string, loc?: string }) {
+  async getCompareData(params: { job_ids: string, tipo: string, un?: string, years_to_plot?: string, agrupacion?: string, sub_filtro?: string, loc?: string, group_by?: string }) {
     const { data } = await httpClient.get<CompareChartResponse>(`/visualizations/chart-data/compare`, { params });
     return data;
   },
@@ -285,6 +349,7 @@ export const simulationApi = {
     loc?: string;
     variable?: string;
     agrupar_por?: string;
+    region?: string;
   }) {
     const { data } = await httpClient.get<CompareChartFacetResponse>(`/visualizations/chart-data/compare-facet`, { params });
     return data;
@@ -321,12 +386,21 @@ export const simulationApi = {
       job_ids: string;
       tipo: string;
       un?: string;
+      es_porcentaje?: string;
+      view_mode?: string;
       sub_filtro?: string;
       loc?: string;
       variable?: string;
       agrupar_por?: string;
+      clean?: boolean;
       legend_title?: string;
       filename_mode?: CompareFacetExportFilenameMode;
+      series_order?: string;
+      facet_placement?: string;
+      region?: string;
+      job_display_overrides?: string;
+      exogenous_data?: string;
+      hidden_series?: string;
     },
     fmt: "png" | "svg" = "png",
   ): Promise<{ blob: Blob; filename: string }> {
@@ -336,12 +410,21 @@ export const simulationApi = {
       un: params.un ?? "PJ",
       fmt,
     };
+    if (params.es_porcentaje) q.es_porcentaje = params.es_porcentaje;
+    if (params.view_mode) q.view_mode = params.view_mode;
+    if (params.clean) q.clean = "true";
     if (params.sub_filtro) q.sub_filtro = params.sub_filtro;
     if (params.loc) q.loc = params.loc;
     if (params.variable) q.variable = params.variable;
     if (params.agrupar_por) q.agrupar_por = params.agrupar_por;
     if (params.legend_title) q.legend_title = params.legend_title;
     if (params.filename_mode) q.filename_mode = params.filename_mode;
+    if (params.series_order) q.series_order = params.series_order;
+    if (params.facet_placement) q.facet_placement = params.facet_placement;
+    if (params.region) q.region = params.region;
+    if (params.job_display_overrides) q.job_display_overrides = params.job_display_overrides;
+    if (params.exogenous_data) q.exogenous_data = params.exogenous_data;
+    if (params.hidden_series) q.hidden_series = params.hidden_series;
 
     const response = await httpClient.get("/visualizations/export-compare-facet", {
       params: q,
@@ -352,6 +435,61 @@ export const simulationApi = {
     const disposition = response.headers["content-disposition"];
     const ext = fmt === "svg" ? "svg" : "png";
     let filename = `comparativa_facet.${ext}`;
+    if (typeof disposition === "string") {
+      const match = /filename="?([^";\n]+)"?/i.exec(disposition);
+      if (match?.[1]) filename = match[1].trim();
+    }
+    return { blob, filename };
+  },
+
+  async exportCompareByYear(
+    params: {
+      job_ids: string;
+      tipo: string;
+      un?: string;
+      years_to_plot?: string;
+      group_by?: string;
+      agrupacion?: string;
+      sub_filtro?: string;
+      loc?: string;
+      es_porcentaje?: string;
+      view_mode?: string;
+      clean?: boolean;
+      series_order?: string;
+      region?: string;
+      job_display_overrides?: string;
+      hidden_series?: string;
+    },
+    fmt: "png" | "svg" = "png",
+  ): Promise<{ blob: Blob; filename: string }> {
+    const q: Record<string, string> = {
+      job_ids: params.job_ids,
+      tipo: params.tipo,
+      un: params.un ?? "PJ",
+      fmt,
+    };
+    if (params.years_to_plot) q.years_to_plot = params.years_to_plot;
+    if (params.group_by) q.group_by = params.group_by;
+    if (params.agrupacion) q.agrupacion = params.agrupacion;
+    if (params.sub_filtro) q.sub_filtro = params.sub_filtro;
+    if (params.loc) q.loc = params.loc;
+    if (params.es_porcentaje) q.es_porcentaje = params.es_porcentaje;
+    if (params.view_mode) q.view_mode = params.view_mode;
+    if (params.clean) q.clean = "true";
+    if (params.series_order) q.series_order = params.series_order;
+    if (params.region) q.region = params.region;
+    if (params.job_display_overrides) q.job_display_overrides = params.job_display_overrides;
+    if (params.hidden_series) q.hidden_series = params.hidden_series;
+
+    const response = await httpClient.get("/visualizations/export-compare-by-year", {
+      params: q,
+      responseType: "blob",
+      timeout: 5 * 60 * 1000,
+    });
+    const blob = response.data as Blob;
+    const disposition = response.headers["content-disposition"];
+    const ext = fmt === "svg" ? "svg" : "png";
+    let filename = `comparativa_anual.${ext}`;
     if (typeof disposition === "string") {
       const match = /filename="?([^";\n]+)"?/i.exec(disposition);
       if (match?.[1]) filename = match[1].trim();

@@ -44,6 +44,7 @@ export function AppLayout() {
     { to: paths.changeRequests, label: "Solicitudes de cambio" },
     ...(user?.can_manage_catalogs ? [{ to: paths.catalogs, label: "Catálogos" }] : []),
     ...(user?.can_manage_users ? [{ to: paths.usersAdmin, label: "Usuarios y permisos" }] : []),
+    ...(user?.can_manage_system_settings ? [{ to: paths.systemSettingsAdmin, label: "Configuración" }] : []),
     { to: paths.simulation, label: "Simulación" },
     { to: paths.results, label: "Resultados" },
     { to: paths.reports, label: "Reportes" },

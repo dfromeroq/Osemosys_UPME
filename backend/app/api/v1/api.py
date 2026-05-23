@@ -10,6 +10,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     auth,
     change_requests,
+    chart_series_config,
     deletion_log,
     emissions,
     fuels,
@@ -18,6 +19,7 @@ from app.api.v1 import (
     parameter_values,
     parameters,
     regions,
+    result_table_templates,
     saved_chart_templates,
     scenario_tag_assignments,
     scenario_tag_categories,
@@ -25,6 +27,7 @@ from app.api.v1 import (
     scenarios,
     simulations,
     solvers,
+    system_settings,
     technologies,
     users,
     visualizations,
@@ -38,6 +41,8 @@ router.include_router(users.router, tags=["users"])
 
 router.include_router(parameters.router, tags=["parameters"])
 router.include_router(regions.router, tags=["regions"])
+router.include_router(result_table_templates.router, tags=["result_table_templates"])
+router.include_router(chart_series_config.router, tags=["chart_series_config"])
 router.include_router(technologies.router, tags=["technologies"])
 router.include_router(fuels.router, tags=["fuels"])
 router.include_router(emissions.router, tags=["emissions"])
@@ -55,6 +60,7 @@ router.include_router(saved_chart_templates.router, tags=["saved_chart_templates
 router.include_router(saved_chart_templates.reports_router, tags=["saved_reports"])
 router.include_router(simulations.router, tags=["simulations"])
 router.include_router(deletion_log.router, tags=["deletion_log"])
+router.include_router(system_settings.router, tags=["system_settings"])
 
 
 # ============================================================================

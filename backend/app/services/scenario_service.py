@@ -264,6 +264,11 @@ class ScenarioService:
         tags: list[ScenarioTag] | None = None,
     ) -> dict:
         tag_dicts = ScenarioService._tags_for_scenario(db, scenario, tags=tags)
+        # Solo devolvemos el `summary` del data_quality_warnings (no el detalle
+        # completo que puede ser pesado). El detalle se consulta aparte vía
+        # GET /scenarios/{id}/data-quality.
+        dqw = getattr(scenario, "data_quality_warnings", None) or {}
+        data_quality_summary = dqw.get("summary") if isinstance(dqw, dict) else None
         return {
             "id": int(scenario.id),
             "name": scenario.name,
@@ -281,6 +286,7 @@ class ScenarioService:
             "effective_access": ScenarioService._effective_access(
                 db, scenario=scenario, current_user=current_user
             ),
+            "data_quality_summary": data_quality_summary,
         }
 
     @staticmethod
@@ -1771,6 +1777,148 @@ class ScenarioService:
         return {"items": items, "total": total, "offset": safe_offset, "limit": safe_limit}
 
     @staticmethod
+    def _serialize_audit_entry(r) -> dict:
+        return {
+            "id": int(r.id),
+            "param_name": str(r.param_name),
+            "id_osemosys_param_value": int(r.id_osemosys_param_value)
+            if r.id_osemosys_param_value is not None
+            else None,
+            "action": str(r.action),
+            "old_value": float(r.old_value) if r.old_value is not None else None,
+            "new_value": float(r.new_value) if r.new_value is not None else None,
+            "dimensions_json": r.dimensions_json,
+            "source": str(r.source),
+            "changed_by": str(r.changed_by),
+            "batch_id": str(r.batch_id) if r.batch_id else None,
+            "batch_label": str(r.batch_label) if r.batch_label else None,
+            "created_at": r.created_at,
+        }
+
+    @staticmethod
+    def list_scenario_audit(
+        db: Session,
+        *,
+        scenario_id: int,
+        current_user: User,
+        offset: int = 0,
+        limit: int = 50,
+        group_by_batch: bool = True,
+        filters: dict | None = None,
+    ) -> dict:
+        """Listado scenario-wide de auditoría con filtros opcionales.
+
+        ``filters`` admite:
+          ``param_names``, ``actions``, ``sources``, ``changed_by``,
+          ``batch_ids``, ``from_date``, ``to_date``, ``year_from``, ``year_to``,
+          ``q``, ``value_id`` y ``dimension_filters``
+          (dict con keys region_name/technology_name/fuel_name/emission_name/udc_name).
+        """
+        ScenarioService._require_access(
+            db, scenario_id=scenario_id, current_user=current_user
+        )
+        flt = filters or {}
+        safe_offset = max(0, offset)
+        safe_limit = max(1, min(limit, 500))
+
+        if group_by_batch:
+            batches, total_batches, total_entries = (
+                OsemosysParamAuditService.list_grouped_batches(
+                    db,
+                    scenario_id=scenario_id,
+                    offset=safe_offset,
+                    limit=safe_limit,
+                    **flt,
+                )
+            )
+            items = [
+                {
+                    "batch_id": b["batch_id"],
+                    "batch_label": b["batch_label"],
+                    "changed_by": b["changed_by"],
+                    "source": b["source"],
+                    "started_at": b["started_at"],
+                    "ended_at": b["ended_at"],
+                    "stats": b["stats"],
+                    "params_touched": b["params_touched"],
+                    "entries_count": b["entries_count"],
+                    "preview": [
+                        ScenarioService._serialize_audit_entry(r) for r in b["preview"]
+                    ],
+                }
+                for b in batches
+            ]
+            return {
+                "items": items,
+                "total_batches": total_batches,
+                "total_entries": total_entries,
+                "offset": safe_offset,
+                "limit": safe_limit,
+                "grouped": True,
+            }
+
+        rows, total_entries = OsemosysParamAuditService.list_entries(
+            db,
+            scenario_id=scenario_id,
+            offset=safe_offset,
+            limit=safe_limit,
+            **flt,
+        )
+        items = [ScenarioService._serialize_audit_entry(r) for r in rows]
+        return {
+            "items": items,
+            "total_batches": 0,
+            "total_entries": total_entries,
+            "offset": safe_offset,
+            "limit": safe_limit,
+            "grouped": False,
+        }
+
+    @staticmethod
+    def list_scenario_audit_batch_entries(
+        db: Session,
+        *,
+        scenario_id: int,
+        batch_id: str,
+        current_user: User,
+        offset: int = 0,
+        limit: int = 100,
+        filters: dict | None = None,
+    ) -> dict:
+        """Entradas individuales de un batch_id concreto."""
+        ScenarioService._require_access(
+            db, scenario_id=scenario_id, current_user=current_user
+        )
+        flt = dict(filters or {})
+        flt["batch_ids"] = [batch_id]
+        rows, total = OsemosysParamAuditService.list_entries(
+            db,
+            scenario_id=scenario_id,
+            offset=max(0, offset),
+            limit=max(1, min(limit, 1000)),
+            **flt,
+        )
+        items = [ScenarioService._serialize_audit_entry(r) for r in rows]
+        return {
+            "items": items,
+            "total": total,
+            "offset": max(0, offset),
+            "limit": max(1, min(limit, 1000)),
+        }
+
+    @staticmethod
+    def list_scenario_audit_facets(
+        db: Session,
+        *,
+        scenario_id: int,
+        current_user: User,
+    ) -> dict:
+        ScenarioService._require_access(
+            db, scenario_id=scenario_id, current_user=current_user
+        )
+        return OsemosysParamAuditService.list_facets(db, scenario_id=scenario_id)
+
+    @staticmethod
     def ensure_default_reserve_margin_udc(db: Session, *, scenario_id: int) -> None:
         """Inserta valores UDC por defecto tipo 'RESERVEMARGIN' para un escenario.
 
@@ -2142,6 +2290,181 @@ class ScenarioService:
         )
         db.delete(obj)
         db.commit()
+
+    # -----------------------------------------------------------------------
+    # Periodo del modelo (derivado de YearSplit)
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    def get_scenario_period_info(
+        db: Session,
+        *,
+        scenario_id: int,
+        current_user: User,
+    ) -> dict:
+        """Periodo de modelado del escenario: MIN/MAX/conteo de filas YearSplit.
+
+        El set ``YEAR`` que entra al modelo Pyomo se construye a partir de los
+        años que tengan fila en ``YearSplit`` (ver ``data_processing.py``).
+        Por eso este endpoint cuenta exactamente esas filas, no el universo
+        completo de ``osemosys_param_value``.
+        """
+        ScenarioService._require_access(
+            db, scenario_id=scenario_id, current_user=current_user
+        )
+        table = OsemosysParamValue.__table__
+        row = db.execute(
+            select(
+                func.min(table.c.year),
+                func.max(table.c.year),
+                func.count(table.c.id),
+                func.count(func.distinct(table.c.year)),
+            ).where(
+                table.c.id_scenario == scenario_id,
+                table.c.param_name == "YearSplit",
+            )
+        ).one()
+        min_year, max_year, total_rows, year_count = row
+        return {
+            "min_year": int(min_year) if min_year is not None else None,
+            "max_year": int(max_year) if max_year is not None else None,
+            "year_split_rows": int(total_rows or 0),
+            "year_count": int(year_count or 0),
+        }
+
+    @staticmethod
+    def extend_scenario_period(
+        db: Session,
+        *,
+        scenario_id: int,
+        current_user: User,
+    ) -> dict:
+        """Amplía el periodo del escenario en **un año**, vía carry-forward.
+
+        Algoritmo:
+            1. ``max_year`` se determina de las filas ``YearSplit`` (mismo
+               criterio que ``get_scenario_period_info``).
+            2. ``new_year = max_year + 1``.
+            3. Se eliminan todas las filas existentes con ``year = new_year``
+               para el escenario (garantiza que el nuevo año sea una copia
+               exacta de ``max_year``, sin restos parciales).
+            4. Se insertan todas las filas con ``year = max_year`` clonadas
+               con ``year = new_year``.
+
+        Es destructivo sobre datos previos del ``new_year``: el contrato es
+        "el nuevo año será idéntico al último año actual del modelo".
+        """
+        scenario = ScenarioService._require_manage_values(
+            db, scenario_id=scenario_id, current_user=current_user
+        )
+        table = OsemosysParamValue.__table__
+
+        max_year = db.execute(
+            select(func.max(table.c.year)).where(
+                table.c.id_scenario == scenario_id,
+                table.c.param_name == "YearSplit",
+            )
+        ).scalar()
+
+        if max_year is None:
+            raise ConflictError(
+                "El escenario no tiene filas en YearSplit; no se puede "
+                "determinar el periodo del modelo."
+            )
+
+        max_year = int(max_year)
+        new_year = max_year + 1
+
+        # Conteo de filas fuente — algunos drivers (psycopg) devuelven -1 en
+        # rowcount de INSERT...FROM_SELECT, así que tomamos el conteo explícito
+        # de antemano para reportarlo al cliente.
+        source_count = db.execute(
+            select(func.count(table.c.id)).where(
+                table.c.id_scenario == scenario_id,
+                table.c.year == max_year,
+            )
+        ).scalar() or 0
+
+        # 1) Limpiar lo que haya en new_year (idempotencia + evita parciales).
+        db.execute(
+            table.delete().where(
+                table.c.id_scenario == scenario_id,
+                table.c.year == new_year,
+            )
+        )
+
+        # 2) Insert ... select de max_year con year=new_year.
+        clone_select = select(
+            literal(scenario_id),
+            table.c.param_name,
+            table.c.id_region,
+            table.c.id_technology,
+            table.c.id_fuel,
+            table.c.id_emission,
+            table.c.id_timeslice,
+            table.c.id_mode_of_operation,
+            table.c.id_season,
+            table.c.id_daytype,
+            table.c.id_dailytimebracket,
+            table.c.id_storage_set,
+            table.c.id_udc_set,
+            literal(new_year),
+            table.c.value,
+        ).where(
+            table.c.id_scenario == scenario_id,
+            table.c.year == max_year,
+        )
+        result = db.execute(
+            insert(table).from_select(
+                [
+                    table.c.id_scenario,
+                    table.c.param_name,
+                    table.c.id_region,
+                    table.c.id_technology,
+                    table.c.id_fuel,
+                    table.c.id_emission,
+                    table.c.id_timeslice,
+                    table.c.id_mode_of_operation,
+                    table.c.id_season,
+                    table.c.id_daytype,
+                    table.c.id_dailytimebracket,
+                    table.c.id_storage_set,
+                    table.c.id_udc_set,
+                    table.c.year,
+                    table.c.value,
+                ],
+                clone_select,
+            )
+        )
+        # Si el driver devolvió un rowcount válido (>=0) lo usamos; si no
+        # (psycopg con FROM_SELECT a veces devuelve -1), caemos al conteo de la
+        # fuente que es equivalente porque acabamos de borrar el destino.
+        reported = int(result.rowcount or 0)
+        rows_added = reported if reported >= 0 else int(source_count)
+
+        # Marca de parámetros tocados (todos los del año de origen).
+        param_names = [
+            row[0]
+            for row in db.execute(
+                select(func.distinct(table.c.param_name)).where(
+                    table.c.id_scenario == scenario_id,
+                    table.c.year == max_year,
+                )
+            ).all()
+        ]
+        if param_names:
+            ScenarioService._track_changed_params(scenario, param_names=param_names)
+
+        db.commit()
+        logger.info(
+            "Escenario %s: periodo ampliado %d → %d (%d filas insertadas)",
+            scenario_id, max_year, new_year, rows_added,
+        )
+        return {
+            "previous_max_year": max_year,
+            "new_year": new_year,
+            "rows_added": rows_added,
+        }
 
 
 # ============================================================================

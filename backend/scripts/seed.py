@@ -214,7 +214,7 @@ def main() -> None:
             user = User(
                 email="seed@example.com",
                 username="seed",
-                hashed_password=get_password_hash("seed123"),
+                hashed_password=get_password_hash("seed1234"),
                 document_number="1234567890",
                 document_type_id=dt_cc.id,
                 is_active=True,
@@ -222,12 +222,13 @@ def main() -> None:
                 can_import_official_data=True,
                 can_manage_users=True,
                 can_manage_scenarios=True,
+                is_admin_reports=True,
             )
             session.add(user)
             session.flush()
         else:
             # Mantiene credencial de prueba consistente tras cambios de algoritmo hash.
-            user.hashed_password = get_password_hash("seed123")
+            user.hashed_password = get_password_hash("seed1234")
             if user.document_type_id is None:
                 user.document_type_id = dt_cc.id
             if not user.document_number:
@@ -237,14 +238,21 @@ def main() -> None:
             user.can_import_official_data = True
             user.can_manage_users = True
             user.can_manage_scenarios = True
+            user.is_admin_reports = True
             session.flush()
 
         cleanup_demo_data(session)
+
+        from app.result_table_seeds import ensure_result_table_seeds
+
+        n_rt_tables = ensure_result_table_seeds(session)
 
         # A partir de este punto no se siembran datos de ejemplo del modelo.
         # Los datos iniciales deben ingresar únicamente por "Carga oficial".
         session.commit()
         print("Seed mínimo completado (usuario/permisos).")
+        if n_rt_tables:
+            print(f"  Plantillas de tabla de resultados: +{n_rt_tables} nueva(s).")
         return
 
         # Catálogos mínimos

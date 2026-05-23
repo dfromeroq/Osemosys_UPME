@@ -4,7 +4,10 @@ Responsabilidades:
   - Construir la instancia de FastAPI con título y OpenAPI.
   - Configurar logging y middlewares (CORS según CORS_ORIGINS).
   - Registrar routers versionados bajo API_V1_STR (/api/v1).
-  - En startup: verificar disponibilidad de solvers (HiGHS, GLPK).
+
+El api **no** resuelve modelos: la disponibilidad de solvers solo se loguea
+en el simulation-worker. Esto evita inicializar dependencias caras (e.g.
+gurobipy) en el proceso web y evita conflictos con licencias Single-Use.
 """
 
 from fastapi import FastAPI
@@ -15,8 +18,6 @@ import logging
 from app.api.v1.api import router as api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
-from app.simulation.core.solver import get_solver_availability
-
 logger = logging.getLogger(__name__)
 
 
@@ -46,19 +47,6 @@ def create_app() -> FastAPI:
     app.add_middleware(GZipMiddleware, minimum_size=1000)
 
     app.include_router(api_router, prefix=settings.api_v1_str)
-
-    @app.on_event("startup")
-    def log_solver_availability() -> None:
-        availability = get_solver_availability()
-        missing = [name for name, enabled in availability.items() if not enabled]
-        if missing:
-            logger.warning(
-                "Solvers faltantes en entorno: %s. Disponibilidad: %s",
-                ", ".join(missing),
-                availability,
-            )
-        else:
-            logger.info("Todos los solvers configurados están disponibles: %s", availability)
 
     @app.on_event("startup")
     def sync_visualization_catalog() -> None:

@@ -169,6 +169,14 @@ DATA_EXPLORER_FILTERS: dict[str, dict[str, Any]] = {
         "variable_names": ["ProductionByTechnology"],
         "technology_prefixes": ["UPSREG", "MINNGS"],
     },
+    "gas_capacidad": {
+        "variable_names": ["TotalCapacityAnnual"],
+        "technology_prefixes": ["UPSREG", "MINNGS"],
+    },
+    "gas_import_export": {
+        "variable_names": ["ProductionByTechnology"],
+        "technology_prefixes": ["IMPLNG", "EXPNGS"],
+    },
     "ref_total": {
         "variable_names": ["ProductionByTechnology"],
         "technology_prefixes": ["UPSREF"],
@@ -233,12 +241,28 @@ DATA_EXPLORER_FILTERS: dict[str, dict[str, Any]] = {
         "variable_names": ["ProductionByTechnology"],
         "technology_prefixes": ["MINCOA", "IMPCOA", "EXPCOA"],
     },
+    "exp_carbon": {
+        "variable_names": ["ProductionByTechnology"],
+        "technology_prefixes": ["EXPCOA"],
+    },
     "oferta_bioenergia": {
         "variable_names": ["ProductionByTechnology"],
         "technology_prefixes": ["MINWAS", "MINOPL", "MINSGC", "MINWOO", "MINBAG"],
     },
 
     # ── COMERCIO EXTERIOR ──────────────────────────────────────────────────
+    "imp_exp_crudo": {
+        "variable_names": ["ProductionByTechnology"],
+        "technology_prefixes": ["IMPOIL", "EXPOIL"],
+    },
+    "ref_produccion_importaciones": {
+        "variable_names": ["ProductionByTechnology"],
+        "technology_prefixes": ["UPSREF_CAR", "UPSREF_BAR", "IMPDSL", "IMPGSL", "IMPJET", "IMPLPG"],
+    },
+    "elec_consumo_liquidos": {
+        "variable_names": ["UseByTechnology"],
+        "technology_prefixes": ["PWRDSL", "PWRFOL", "PWRGSL", "PWRJET", "PWRLPG"],
+    },
     "exp_liquidos_gas": {
         "variable_names": ["ProductionByTechnology", "UseByTechnology"],
         "technology_prefixes": ["EXPDSL", "EXPGSL", "EXPJET", "EXPLPG", "EXPNGS"],

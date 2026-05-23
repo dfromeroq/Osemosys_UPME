@@ -75,7 +75,20 @@ function getSolverStatusVariant(status: string) {
 }
 
 function getSolverLabel(solverName: SimulationSolver) {
-  return solverName === "highs" ? "HiGHS" : "GLPK";
+  switch (solverName) {
+    case "highs":
+      return "HiGHS";
+    case "glpk":
+      return "GLPK";
+    case "gurobi":
+      return "Gurobi";
+  }
+}
+
+/** Indica si el solver soporta el análisis de infactibilidad enriquecido
+ * (IIS + mapeo a parámetros). HiGHS y Gurobi sí; GLPK no. */
+function solverSupportsIIS(solverName: SimulationSolver): boolean {
+  return solverName === "highs" || solverName === "gurobi";
 }
 
 function formatReadableDuration(totalSeconds: number) {
@@ -343,7 +356,9 @@ export function SimulationPage() {
   // análisis enriquecido de infactibilidad (IIS + mapeo a parámetros) inline
   // cuando el modelo es infactible. Por defecto NO (útil para pruebas locales).
   const [runIisAnalysis, setRunIisAnalysis] = useState<boolean>(false);
+  const [generateLp, setGenerateLp] = useState<boolean>(false);
   const [csvRunIisAnalysis, setCsvRunIisAnalysis] = useState<boolean>(false);
+  const [csvGenerateLp, setCsvGenerateLp] = useState<boolean>(false);
   const [csvRunDisplayName, setCsvRunDisplayName] = useState("");
   const [csvZipFile, setCsvZipFile] = useState<File | null>(null);
   const [csvInputName, setCsvInputName] = useState("");
@@ -575,6 +590,7 @@ export function SimulationPage() {
     try {
       await simulationApi.submit(scenarioId, solverName, {
         runIisAnalysis,
+        generateLp,
         display_name: newRunDisplayName.trim() || null,
       });
       push("Simulación encolada correctamente.", "success");
@@ -663,6 +679,26 @@ export function SimulationPage() {
     }
   }
 
+  /** Descarga el archivo `.lp` del modelo Pyomo (cuando la corrida fue
+   * lanzada con `generate_lp=true`). */
+  async function downloadLpForJob(jobId: number) {
+    try {
+      const { blob, filename } = await simulationApi.downloadLpFile(jobId);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      const detail =
+        error instanceof Error
+          ? error.message
+          : "No se pudo descargar el archivo .lp.";
+      push(detail, "error");
+    }
+  }
+
   /** Carga los logs de un job y abre el modal */
   async function loadLogs(jobId: number) {
     try {
@@ -707,6 +743,7 @@ export function SimulationPage() {
           edit_policy: csvScenarioEditPolicy,
           display_name: csvInputName.trim() || null,
         },
+        { generateLp: csvGenerateLp },
       );
       setCsvTrackedJobId(job.id);
       setRuns((prev) => [job, ...prev.filter((run) => run.id !== job.id)]);
@@ -1029,11 +1066,12 @@ export function SimulationPage() {
               onChange={(e) => {
                 const next = e.target.value as SimulationSolver;
                 setSolverName(next);
-                if (next !== "highs") setRunIisAnalysis(false);
+                if (!solverSupportsIIS(next)) setRunIisAnalysis(false);
               }}
             >
               <option value="highs">HiGHS</option>
               <option value="glpk">GLPK</option>
+              <option value="gurobi">Gurobi</option>
             </select>
           </label>
           <Button variant="primary" onClick={runSimulation} disabled={submitting || !selectedScenario}>
@@ -1055,20 +1093,43 @@ export function SimulationPage() {
             width: "fit-content",
           }}
           title={
-            solverName === "highs"
+            solverSupportsIIS(solverName)
               ? "Cuando el modelo sea infactible, el pipeline corre automáticamente el IIS y mapea las restricciones a los parámetros OSeMOSYS. Tarda más pero te ahorra lanzar el diagnóstico manualmente."
-              : "El diagnóstico automático requiere HiGHS. Cambia el solver para habilitar esta opción."
+              : "El diagnóstico automático requiere HiGHS o Gurobi. Cambia el solver para habilitar esta opción."
           }
         >
           <input
             type="checkbox"
             checked={runIisAnalysis}
-            disabled={solverName !== "highs"}
+            disabled={!solverSupportsIIS(solverName)}
             onChange={(e) => setRunIisAnalysis(e.target.checked)}
           />
           <span>
             Correr diagnóstico de infactibilidad automáticamente{" "}
-            <span style={{ opacity: 0.7 }}>(solo HiGHS)</span>
+            <span style={{ opacity: 0.7 }}>(HiGHS o Gurobi)</span>
+          </span>
+        </label>
+        <label
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 13,
+            opacity: 0.9,
+            cursor: "pointer",
+            userSelect: "none",
+            width: "fit-content",
+          }}
+          title="Escribe el modelo a tmp/lp-files/sim_<id>_<nombre>_<timestamp>.lp antes de resolver. Útil para inspeccionar el modelo o reproducirlo en otro solver."
+        >
+          <input
+            type="checkbox"
+            checked={generateLp}
+            onChange={(e) => setGenerateLp(e.target.checked)}
+          />
+          <span>
+            Guardar archivo .lp del modelo{" "}
+            <span style={{ opacity: 0.7 }}>(tmp/lp-files/)</span>
           </span>
         </label>
         <small style={{ opacity: 0.72, margin: 0 }}>
@@ -1149,11 +1210,12 @@ export function SimulationPage() {
               onChange={(e) => {
                 const next = e.target.value as SimulationSolver;
                 setCsvSolverName(next);
-                if (next !== "highs") setCsvRunIisAnalysis(false);
+                if (!solverSupportsIIS(next)) setCsvRunIisAnalysis(false);
               }}
             >
               <option value="highs">HiGHS</option>
               <option value="glpk">GLPK</option>
+              <option value="gurobi">Gurobi</option>
             </select>
           </label>
           <label className="field" style={{ margin: 0 }}>
@@ -1185,20 +1247,43 @@ export function SimulationPage() {
             width: "fit-content",
           }}
           title={
-            csvSolverName === "highs"
+            solverSupportsIIS(csvSolverName)
               ? "Cuando el modelo sea infactible, el pipeline corre automáticamente el IIS y mapea las restricciones a los parámetros OSeMOSYS."
-              : "El diagnóstico automático requiere HiGHS. Cambia el solver para habilitar esta opción."
+              : "El diagnóstico automático requiere HiGHS o Gurobi. Cambia el solver para habilitar esta opción."
           }
         >
           <input
             type="checkbox"
             checked={csvRunIisAnalysis}
-            disabled={csvSolverName !== "highs"}
+            disabled={!solverSupportsIIS(csvSolverName)}
             onChange={(e) => setCsvRunIisAnalysis(e.target.checked)}
           />
           <span>
             Correr diagnóstico de infactibilidad automáticamente{" "}
-            <span style={{ opacity: 0.7 }}>(solo HiGHS)</span>
+            <span style={{ opacity: 0.7 }}>(HiGHS o Gurobi)</span>
+          </span>
+        </label>
+        <label
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 13,
+            opacity: 0.9,
+            cursor: "pointer",
+            userSelect: "none",
+            width: "fit-content",
+          }}
+          title="Escribe el modelo a tmp/lp-files/sim_<id>_<nombre>_<timestamp>.lp antes de resolver."
+        >
+          <input
+            type="checkbox"
+            checked={csvGenerateLp}
+            onChange={(e) => setCsvGenerateLp(e.target.checked)}
+          />
+          <span>
+            Guardar archivo .lp del modelo{" "}
+            <span style={{ opacity: 0.7 }}>(tmp/lp-files/)</span>
           </span>
         </label>
         <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
@@ -1710,13 +1795,20 @@ export function SimulationPage() {
             {
               key: "solver",
               header: "Solver",
-              render: (r) => (r.solver_name === "highs" ? "HiGHS" : "GLPK"),
+              render: (r) => {
+                const label = getSolverLabel(r.solver_name);
+                const threads = r.solver_threads_used;
+                return threads != null && threads > 0
+                  ? `${label} (${threads}h)`
+                  : label;
+              },
               filter: {
                 type: "multiselect",
-                getValue: (r) => (r.solver_name === "highs" ? "HiGHS" : "GLPK"),
+                getValue: (r) => getSolverLabel(r.solver_name),
                 options: [
                   { value: "HiGHS", label: "HiGHS" },
                   { value: "GLPK", label: "GLPK" },
+                  { value: "Gurobi", label: "Gurobi" },
                 ],
               },
             },
@@ -1912,6 +2004,13 @@ export function SimulationPage() {
                       <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
                     </>,
                   ),
+                  download: svg(
+                    <>
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </>,
+                  ),
                 } as const;
 
                 const runningSeconds =
@@ -1959,6 +2058,22 @@ export function SimulationPage() {
                   </button>,
                 );
 
+                // Descargar .lp del modelo si el job lo persistió.
+                if (r.has_lp_file) {
+                  buttons.push(
+                    <button
+                      key="download-lp"
+                      type="button"
+                      onClick={() => void downloadLpForJob(r.id)}
+                      className={`${iconBtn} ${sch.neutral}`}
+                      title="Descargar archivo .lp del modelo Pyomo"
+                      aria-label="Descargar .lp"
+                    >
+                      {icons.download}
+                    </button>,
+                  );
+                }
+
                 // Error (si hay mensaje persistido)
                 if (r.error_message) {
                   buttons.push(
@@ -1974,8 +2089,11 @@ export function SimulationPage() {
                   );
                 }
 
-                // Infactible + HiGHS/GLPK: flujo del diagnóstico
-                if (isInfeasible && (solver === "highs" || solver === "glpk")) {
+                // Infactible + HiGHS / Gurobi / GLPK: flujo del diagnóstico
+                if (
+                  isInfeasible &&
+                  (solver === "highs" || solver === "gurobi" || solver === "glpk")
+                ) {
                   if (diagStatus === "SUCCEEDED") {
                     const secs =
                       typeof r.diagnostic_seconds === "number"
@@ -2082,6 +2200,25 @@ export function SimulationPage() {
                   }
                 }
 
+                // Infactible + solver no soportado (ni highs/gurobi/glpk)
+                if (
+                  isInfeasible &&
+                  solver !== "highs" &&
+                  solver !== "gurobi" &&
+                  solver !== "glpk"
+                ) {
+                  buttons.push(
+                    <span
+                      key="diag-unsupported"
+                      role="img"
+                      className={`${iconBtn} ${sch.mutedInfo}`}
+                      title="Este solver no expone IIS. Para diagnóstico detallado, vuelve a correr la simulación con HiGHS, Gurobi o GLPK."
+                      aria-label="Diagnóstico no disponible con este solver"
+                    >
+                      {icons.info}
+                    </span>,
+                  );
+                }
 
                 // Cancelar simulación activa (QUEUED/RUNNING)
                 if (ACTIVE_STATUSES.has(r.status)) {

@@ -889,17 +889,27 @@ export function InfeasibilityReportPage() {
   const diagnostics: InfeasibilityDiagnostics | null = result?.infeasibility_diagnostics ?? null;
   const solverName = (result?.solver_name ?? "").toString().toLowerCase();
   const isHighs = solverName === "highs";
-  const isGlpk = !isHighs && solverName === "glpk";
-  const isGlpkEnriched = isGlpk && diagnostics?.iis?.method === "glpk_nopresol" && diagnostics?.iis?.available;
-  const isGlpkTimeout = isGlpk && !diagnostics?.iis?.available && (diagnostics?.iis?.unavailable_reason ?? "").includes("timeout");
+  const isGurobi = solverName === "gurobi";
+  const supportsIIS = isHighs || isGurobi;
+  const isGlpk = !isHighs && !isGurobi && solverName === "glpk";
+  const isGlpkEnriched =
+    isGlpk &&
+    diagnostics?.iis?.method === "glpk_nopresol" &&
+    diagnostics?.iis?.available;
+  const isGlpkTimeout =
+    isGlpk &&
+    !diagnostics?.iis?.available &&
+    (diagnostics?.iis?.unavailable_reason ?? "").includes("timeout");
   const iisAvailable = Boolean(diagnostics?.iis?.available);
 
-  // Para HiGHS solo IIS; si no está disponible, no renderizamos la tabla.
+  // Para los solvers que soportan IIS (HiGHS / Gurobi) sólo mostramos las
+  // restricciones cuando el IIS está disponible. En otros solvers se muestran
+  // las violaciones heurísticas post-solve.
   const analyses = useMemo<ConstraintAnalysis[]>(() => {
     const all = diagnostics?.constraint_analyses ?? [];
-    if (isHighs) return iisAvailable ? all : [];
+    if (supportsIIS) return iisAvailable ? all : [];
     return all;
-  }, [diagnostics, isHighs, iisAvailable]);
+  }, [diagnostics, supportsIIS, iisAvailable]);
 
   const topSuspects = useMemo<ParamHit[]>(() => {
     return diagnostics?.top_suspects ?? [];
@@ -1015,6 +1025,22 @@ export function InfeasibilityReportPage() {
       setError(msg);
     } finally {
       setDownloading(false);
+    }
+  }, [jobId]);
+
+  const downloadIlp = useCallback(async () => {
+    if (!Number.isFinite(jobId)) return;
+    try {
+      const { blob, filename } = await simulationApi.downloadIisIlp(jobId);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "No se pudo descargar el .ilp.";
+      setError(msg);
     }
   }, [jobId]);
 
@@ -1138,7 +1164,9 @@ export function InfeasibilityReportPage() {
           </div>
           <div>
             <div style={{ opacity: 0.7, fontSize: 12 }}>
-              {isGlpk ? "Análisis GLPK" : "IIS (HiGHS)"}
+              {isGlpk
+                ? "Análisis GLPK"
+                : `IIS (${solverName === "gurobi" ? "Gurobi" : "HiGHS"})`}
             </div>
             {iis?.available ? (
               <Badge variant="warning">
@@ -1215,30 +1243,74 @@ export function InfeasibilityReportPage() {
           </p>
         ) : iis?.available ? (
           <p style={{ margin: 0, fontSize: 12, opacity: 0.8 }}>
-            <strong>Fuente:</strong> IIS de HiGHS (subsistema irreducible). Remover cualquiera
-            de estas restricciones vuelve el modelo factible.
+            <strong>Fuente:</strong> IIS de{" "}
+            {solverName === "gurobi" ? "Gurobi" : "HiGHS"} (subsistema
+            irreducible). Remover cualquiera de estas restricciones vuelve el
+            modelo factible.
           </p>
-        ) : isHighs ? (
+        ) : supportsIIS ? (
           <p style={{ margin: 0, fontSize: 12, color: "#fbbf24" }}>
-            <strong>Fuente:</strong> ninguna. Con HiGHS solo se muestra IIS y no se pudo computar.
+            <strong>Fuente:</strong> ninguna. El IIS no se pudo computar para
+            este modelo.
           </p>
         ) : (
           <p style={{ margin: 0, fontSize: 12, opacity: 0.8, color: "#fbbf24" }}>
             <strong>Fuente:</strong> violaciones post-solve (heurística, posibles falsos positivos).
           </p>
         )}
+
+        {/* Conflictos por cota (Gurobi-only) */}
+        {iis?.available && (iis.bound_conflicts ?? []).length > 0 ? (
+          <details style={{ marginTop: 8 }}>
+            <summary style={{ cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+              Conflictos por cota ({(iis.bound_conflicts ?? []).length})
+            </summary>
+            <div
+              style={{
+                marginTop: 6,
+                fontSize: 12,
+                opacity: 0.85,
+                maxHeight: 180,
+                overflowY: "auto",
+                fontFamily: "monospace",
+              }}
+            >
+              {(iis.bound_conflicts ?? []).map((bc, i) => (
+                <div key={`${bc.name}-${bc.side}-${i}`}>
+                  <Badge variant={bc.side === "LB" ? "warning" : "info"}>
+                    {bc.side}
+                  </Badge>{" "}
+                  {bc.name}
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : null}
+
+        {/* Descarga del .ilp (solo Gurobi) */}
+        {iis?.available && iis.ilp_path ? (
+          <div style={{ marginTop: 8 }}>
+            <Button
+              className="btn btn--ghost"
+              onClick={() => void downloadIlp()}
+              title="Descarga el subsistema irreducible como archivo .ilp (formato LP) reproducible en Gurobi standalone u otra herramienta."
+            >
+              Descargar IIS (.ilp)
+            </Button>
+          </div>
+        ) : null}
       </section>
 
       {/* Banner de estado del diagnóstico on-demand */}
-      {!isHighs && !isGlpk && diagStatus === "NONE" ? (
+      {!supportsIIS && !isGlpk && diagStatus === "NONE" ? (
         <section style={WARN_CARD_STYLE}>
           <strong style={{ fontSize: 14 }}>
-            El diagnóstico detallado solo está disponible con HiGHS o GLPK.
+            El diagnóstico detallado solo está disponible con HiGHS, Gurobi o GLPK.
           </strong>
           <p style={{ margin: "6px 0 0", fontSize: 13, opacity: 0.9 }}>
             Esta simulación corrió con {result?.solver_name?.toUpperCase() ?? "otro solver"}.
-            Vuelve a lanzarla con HiGHS (IIS preciso) o GLPK (análisis heurístico) para
-            habilitar el diagnóstico.
+            Vuelve a lanzarla con HiGHS o Gurobi (IIS preciso) o con GLPK (análisis
+            heurístico --nopresol) para habilitar el diagnóstico.
           </p>
           <p style={{ margin: "6px 0 0" }}>
             <Link to={paths.simulation}>Ir a Simulación</Link>
@@ -1352,7 +1424,7 @@ export function InfeasibilityReportPage() {
       ) : null}
 
       {/* Pestañas + detalle: solo cuando hay diagnóstico disponible */}
-      {diagStatus === "SUCCEEDED" || (!isHighs && analyses.length > 0) ? (
+      {diagStatus === "SUCCEEDED" || (!supportsIIS && analyses.length > 0) ? (
       <>
       <div role="tablist" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button
@@ -1382,11 +1454,16 @@ export function InfeasibilityReportPage() {
 
       {activeTab === "iis" || isGlpk ? (
         <section style={CARD_STYLE}>
-          {isHighs && !iisAvailable ? (
+          {supportsIIS && !iisAvailable ? (
             <div style={WARN_CARD_STYLE}>
-              <strong>HiGHS no produjo un IIS.</strong> No se muestran restricciones porque con
-              HiGHS la única fuente confiable es el Irreducible Inconsistent Subsystem; las
-              violaciones post-solve del diagnóstico heurístico no son aplicables.
+              <strong>
+                {solverName === "gurobi" ? "Gurobi" : "HiGHS"} no produjo un
+                IIS.
+              </strong>{" "}
+              No se muestran restricciones porque con este solver la única
+              fuente confiable es el Irreducible Inconsistent Subsystem; las
+              violaciones post-solve del diagnóstico heurístico no son
+              aplicables.
               {iis?.unavailable_reason ? (
                 <>
                   <br />

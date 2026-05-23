@@ -69,6 +69,7 @@ def create_user(
             can_manage_users=payload.can_manage_users,
             can_manage_scenarios=payload.can_manage_scenarios,
             is_admin_reports=payload.is_admin_reports,
+            can_manage_system_settings=payload.can_manage_system_settings,
         )
     except ConflictError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
@@ -141,6 +142,7 @@ def set_permissions(
             can_manage_users=payload.can_manage_users,
             can_manage_scenarios=payload.can_manage_scenarios,
             is_admin_reports=payload.is_admin_reports,
+            can_manage_system_settings=payload.can_manage_system_settings,
         )
     except NotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e

@@ -135,98 +135,170 @@ osemosys_output_param_value (PostgreSQL)
 
 | File | Role |
 |------|------|
-| `chart_service.py` | Core: `build_chart_data`, `build_comparison_data`, `build_comparison_facet_data`, `get_result_summary`; export helpers: `render_chart_visualization_bytes`, `render_comparison_facet_figure_bytes`, `chart_data_to_csv_bytes`, `export_raw_data_excel`, `export_all_charts_zip` |
-| `configs.py` | Single-scenario chart registry (`CONFIGS` dict, ~38 entries): `variable_default`, `filtro`, `agrupar_por`, `color_fn`, title, flags. Also exports `TITULOS_VARIABLES_CAPACIDAD` and `NOMBRES_COMBUSTIBLES` dicts |
-| `configs_comparacion.py` | Multi-scenario comparison registry (`CONFIGS_COMPARACION`, 6 entries): `prefijo`, `agrupacion_*`, `año_historico_unico`. Also exports `MAPA_SECTOR` (prefix → sector name) and `COLORES_SECTOR` (sector color palette) |
-| `colors.py` | Color logic: `COLORES_GRUPOS`, `FAMILIAS_TEC`, `generar_colores_tecnologias`, `_color_electricidad`, `_color_por_grupo_fijo`, `_color_por_sector` |
+| `chart_service.py` | Core: `build_chart_data`, `build_comparison_data` (`group_by="year"`), `build_comparison_data_by_year_alt` (`group_by="scenario"`), `build_comparison_facet_data`, `build_comparison_line_data` (líneas totales), `build_pareto_data`, `build_recursos_vs_demanda_data`, `get_result_summary`; export helpers: `render_chart_visualization_bytes`, `render_comparison_facet_figure_bytes`, `render_comparison_by_year_bytes`, `render_pareto_chart_bytes`, `_render_table_image`, `chart_data_to_csv_bytes`, `chart_data_to_xlsx_bytes`, `export_raw_data_excel`, `export_all_charts_zip`. Also helpers consumed by the table view: `apply_period_years`, `apply_cumulative_series`, `filter_chart_series`, `filter_chart_categories`, `filter_chart_by_year_range`, `reorder_chart_series` |
+| `configs.py` | Single-scenario chart registry (`CONFIGS` dict, ~60 entries): `variable_default`, `filtro`, `agrupar_por`, `color_fn`, title, flags. Also exports `TITULOS_VARIABLES_CAPACIDAD`, `NOMBRES_COMBUSTIBLES`, `PWR_TECH_ALIASES` (consolidation of PWR variants into a parent tech for the three main electric charts) and `CONFIGS_CON_ALIAS_PWR` |
+| `configs_comparacion.py` | Multi-scenario comparison registry (`CONFIGS_COMPARACION`): `prefijo`, `agrupacion_*`, `año_historico_unico`. Also exports `MAPA_SECTOR` (prefix → sector name) and `COLORES_SECTOR` (sector color palette) |
+| `colors.py` | Color logic: `COLORES_GRUPOS`, `COLORES_EMISIONES`, `FAMILIAS_TEC`, `COLOR_MAP_PWR`, `generar_colores_tecnologias`, `_color_electricidad`, `_color_por_grupo_fijo`, `_color_por_sector`, `_color_por_region`, `_color_transporte_grupo`, `_color_por_emision`, `asignar_grupo` |
 | `labels.py` | `get_label(code)` — single technology/fuel display name; `get_labels_batch(codes)` — batch variant. 740+ entries in `DISPLAY_NAMES`; `_dynamic_label()` generates labels from code segments as fallback |
+| `regional.py` | Adaptación al modo REGIONAL (7 regiones SIN: AN/CA/IN/NE/OR/SE/SO). `transform_regional_df` aplica 3 vistas (acumulado nacional, filtrar por región, agrupar por región); detecta transmisión interregional `TRN*_XX_YY` y la excluye; expone `REGION_LABELS`, `REGION_COLORS`, `REGIONAL_PREFIXES`, `extract_region`, `strip_region` |
 | `chart_menu.py` | `MENU` structure (modules → subsectors → chart items) used by catalog sync and frontend |
 | `catalog_sync.py` | Sync `MENU` / `CONFIGS` into the DB chart catalog table |
 | `catalog_reader.py` | Read chart catalog from DB for API responses |
 | `data_explorer_filters.py` | Filter-option queries for the Result Data Explorer wide-table endpoint |
 
+### Related services (outside `visualization/`)
+
+| File | Role |
+|------|------|
+| `app/services/chart_series_config_service.py` | CRUD + populate de `chart_series_config` (orden global, colores, alias, oculto). `apply_global_series_config()` se llama desde `build_chart_data` para inyectar la configuración admin en el render |
+| `app/services/result_table_template_service.py` | CRUD de plantillas globales de tablas que aparecen en `ResultDetailPage` |
+| `app/services/result_table_presentation_options.py` | Deriva candidatos de series/categorías a partir del catálogo OSeMOSYS (sin job concreto) para el editor admin de tablas |
+| `app/result_table_seeds.py` | Filas semilla con `seed_key` (upsert idempotente vía Alembic) |
+
 ### API endpoints (`backend/app/api/v1/visualizations.py`)
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /visualizations/chart-catalog` | Available chart types |
-| `GET /visualizations/{job_id}/chart-data?tipo=&un=` | Single-scenario chart |
-| `GET /visualizations/chart-data/compare?job_ids=&tipo=&years_to_plot=` | Multi-scenario by year |
-| `GET /visualizations/chart-data/compare-facet?job_ids=&tipo=` | Multi-scenario facets |
-| `GET /visualizations/{job_id}/result-summary` | KPI header |
-| `GET /visualizations/{job_id}/export-chart?tipo=&formato=` | Individual chart export (PNG/SVG/CSV) server-side |
-| `GET /visualizations/{job_id}/export-all` | ZIP of SVG/PNG (Matplotlib headless) |
-| `GET /visualizations/{job_id}/export-raw` | Excel dump of raw output rows |
-| `GET /visualizations/export-compare-facet?job_ids=&tipo=&formato=` | Export facet comparison as single image (PNG/SVG) |
+| `GET /visualizations/chart-catalog` | Available chart types (incluye `soporta_pareto` y `data_explorer_filters`) |
+| `GET /visualizations/{job_id}/chart-data?tipo=&un=&region=&timeslice=` | Single-scenario chart. `region` solo aplica a jobs REGIONAL; `timeslice` filtra a un TS específico (default = agregación anual) |
+| `GET /visualizations/{job_id}/timeslices` | Códigos de TS presentes en el job (alimenta el selector de timeslice) |
+| `GET /visualizations/chart-data/compare?job_ids=&tipo=&years_to_plot=&group_by=` | Multi-scenario por año (`group_by="year"`, default) o por escenario (`group_by="scenario"` → modo "alt") |
+| `GET /visualizations/chart-data/compare-facet?job_ids=&tipo=&region=` | Multi-scenario facets |
+| `GET /visualizations/chart-data/compare-line?job_ids=&tipo=` | Comparación "líneas totales" (una línea por escenario, sin desglose por serie) |
+| `GET /visualizations/{job_id}/pareto-data?tipo=` | Datos Pareto (barras + % acumulado) |
+| `GET /visualizations/{job_id}/result-summary` | KPI header (incluye `reserve_margin_dual`, `scenario_tag`, `is_infeasible_result`) |
+| `GET /visualizations/{job_id}/export-chart?tipo=&formato=&view_mode=` | Export individual server-side; soporta `view_mode` en {`column`, `line`, `area`, `pareto`, `table`} y `formato` en {`png`, `svg`, `csv`, `xlsx`} |
+| `GET /visualizations/{job_id}/export-all` | ZIP de SVG/PNG (Matplotlib headless) |
+| `GET /visualizations/{job_id}/export-raw` | Excel dump de filas crudas |
+| `GET /visualizations/{job_id}/export-csv-bundle` | Bundle de CSVs por chart |
+| `GET /visualizations/export-compare-facet?job_ids=&tipo=&formato=` | Export facet comparison (PNG/SVG) |
 
-All endpoints require authentication; chart-data endpoints require `SUCCEEDED` job status. Comparison is capped at **10 jobs**.
+All endpoints require authentication; chart-data endpoints require `SUCCEEDED` job status. Comparison is capped at **10 jobs**. Si el job es REGIONAL (`simulation_job.simulation_type='REGIONAL'`), `chart_service` llama a `regional.transform_regional_df` antes del groupby.
 
 ### chart_service internals
 
 `_load_variable_data` has two paths:
 - **Typed variables** (`Dispatch`, `NewCapacity`, `UnmetDemand`, `AnnualEmissions`): use typed DB columns directly.
 - **Intermediate variables** (everything else): parse `index_json` using position heuristics for 3/4/5-element indices. Malformed indices produce empty/partial charts.
+- `Dispatch` ahora preserva la dimensión TIMESLICE (columna `TIMESLICE`) — necesaria para el filtro por TS en el chart-data.
 
 Unit conversion (`_convertir_unidades`): PJ is the baseline. GW, MW, TWh, Gpc apply fixed multipliers.
+
+After computing colors and series, `build_chart_data` invoca `apply_global_series_config(db, tipo, agrupar_por, …)` (en `chart_series_config_service`) para **filtrar series ocultas, reordenar y aplicar colores/aliases admin** definidos en la tabla `chart_series_config`.
 
 ### Frontend chart components (`frontend/src/shared/charts/`)
 
 | Component | Mode |
 |-----------|------|
 | `HighchartsChart.tsx` | Single scenario — stacked bar, all years on X-axis |
-| `LineChart.tsx` | Single scenario — line chart view mode; supports synthetic series overlays |
-| `CompareChart.tsx` | Multi-scenario by year — one subplot per year, scenarios on X-axis |
-| `CompareChartFacet.tsx` | Multi-scenario facets — one complete chart per scenario |
+| `LineChart.tsx` | Single scenario — line/area mode; soporta synthetic series y `chart_type` por serie |
+| `CompareChart.tsx` | Multi-scenario por año (`by-year` / `by-year-alt`). En `by-year-alt` los subplots son los escenarios y las barras son los años seleccionados |
+| `CompareChartFacet.tsx` | Multi-scenario facets — un chart completo por escenario |
 | `ParetoChart.tsx` | Single/compare — bars by category + cumulative % line (dual Y-axis) |
-| `ChartSelector.tsx` | Controls: chart type, unit, sub-filter, location, view mode (bar/line/area/pareto), grouping (TECNOLOGIA/FUEL/SECTOR), bar orientation |
-| `ScenarioComparer.tsx` | Comparison mode toggle + scenario/year selection |
-| `SyntheticSeriesEditor.tsx` | UI to create/edit manual data overlays on line charts (year/value pairs, styling) |
+| `ChartDataTable.tsx` | View mode `table` — renderiza el `ChartDataResponse` como tabla HTML; espeja `apply_period_years`, `apply_cumulative_series`, `filter_chart_categories`, `reorder_chart_series` del backend para que el download server-side genere el mismo contenido |
+| `SeriesOrderModal.tsx` | Modal para reordenar series manualmente (`customSeriesOrder` se persiste por chart/template) |
+| `ChartSelector.tsx` | Controles: tipo, unidad, sub-filter, location, view mode (column/line/area/pareto/table), grouping (`AGRUPACION_OPTIONS`), bar orientation; soporta dropdown de Región (jobs REGIONAL) y selector de Timeslice cuando el job tiene 2+ TS |
+| `ScenarioComparer.tsx` | Modo de comparación: `facet`, `by-year`, `by-year-alt`, `line-total` + selección de años |
+| `SyntheticSeriesEditor.tsx` | UI para crear/editar series sintéticas (overlays) sobre line/area |
 | `highchartsSetup.ts` | Highcharts global initialization (modules, options) |
 | `chartExportingShared.ts` | Shared export utilities (PNG/SVG/CSV) for all chart types |
-| `serverChartExport.ts` | Server-side export: calls backend `/export-chart` endpoint |
-| `mergeFacetChartsSvg.ts` | Merges individual facet SVGs into a single combined SVG |
-| `chartLayoutPreferences.ts` | Persists chart layout/view preferences across sessions |
-| `defaultChartSelection.ts` | Default chart type selection logic on page load |
-| `techFamilies.ts` | Technology family definitions and prefix-to-family mappings |
-| `chartLegendInteractions.ts` | Plotly-style legend double-click: single click = toggle, double-click = isolate/restore |
-| `chartTooltips.ts` | Standardized tooltip builders: `buildStackedTooltipOptions`, `buildLineTooltipOptions`, `buildStackedSinglePointTooltipOptions` |
-| `syntheticSeriesStorage.ts` | localStorage persistence for synthetic series, keyed by chart signature (tipo+un+filtros+viewMode) |
+| `serverChartExport.ts` | Server-side export: llama `/export-chart` con `view_mode`, `period_years`, `cumulative`, etc. |
+| `mergeFacetChartsSvg.ts` | Une SVGs de facets en un SVG combinado client-side |
+| `chartLayoutPreferences.ts` | Persiste bar orientation / facet placement / facet legend mode en localStorage |
+| `chartShareLink.ts` | Codifica/decodifica el estado de la gráfica en query string compartible |
+| `defaultChartSelection.ts` | Selección por defecto al cargar la página |
+| `techFamilies.ts` | Familias de tecnologías y mapping prefijo → familia |
+| `chartLegendInteractions.ts` | Plotly-style: click = toggle, double-click = isolate/restore |
+| `chartTooltips.ts` | Tooltip builders: `buildStackedTooltipOptions`, `buildLineTooltipOptions`, `buildStackedSinglePointTooltipOptions` |
+| `syntheticSeriesStorage.ts` | localStorage persistence for synthetic series (clave = tipo+un+filtros+viewMode) |
+| `numberFormat.ts` | `formatAxis3Sig` — formato uniforme de valores en ejes/tooltips/tablas |
 
-The page component `ResultDetailPage.tsx` orchestrates API calls and routes to the correct chart component based on comparison mode and selected view mode (bar vs. line/area/pareto).
+The page component `ResultDetailPage.tsx` orchestrates API calls and routes to the correct chart component based on comparison mode and selected view mode (column/line/area/pareto/table). También obtiene las plantillas globales de tablas (`resultTableTemplatesApi`) y, si el usuario es Admin reportes, ofrece la pestaña de configuración de series.
 
 ### View modes and chart types
 
 `ChartSelection.viewMode` controls the render path:
-- `"column"` → `HighchartsChart` (stacked bars)
+- `"column"` → `HighchartsChart` (stacked bars; soporta orientación vertical/horizontal)
 - `"line"` / `"area"` → `LineChart` (line or area, supports synthetic series)
 - `"pareto"` → `ParetoChart` (bars + cumulative % line); requires `soportaPareto: true` on the chart item in `MENU`
+- `"table"` → `ChartDataTable` (matriz categorías × años; soporta `tablePeriodYears`, `tableCumulative`, `customSeriesOrder`, `yAxisMin`/`yAxisMax`)
 
 Special chart ID sets in `ChartSelector.tsx` control unit/grouping behavior:
-- `GEI_CHART_IDS` — emission charts with switchable units (MtCO₂eq ↔ ktCO₂eq)
-- `CONTAMINANTES_CHART_IDS` (`emisiones_contaminantes`, `emisiones_contaminantes_pct`) — fixed unit kt, grouping fixed to EMISION
-- `PORCENTAJE_CHART_IDS` (`factor_planta`) — fixed unit %, no grouping selector
-- `CHARTS_SIN_AGRUPACION` — charts where grouping selector is hidden (agrupación fija en backend)
+- `GEI_CHART_IDS` (`emisiones_total`, `emisiones_sectorial`, `emisiones_gei`) — emisión GEI con unidad intercambiable (MtCO₂eq ↔ ktCO₂eq)
+- `CONTAMINANTES_CHART_IDS` (`emisiones_contaminantes`) — unidad fija `kt`, agrupación fija EMISION
+- `PORCENTAJE_CHART_IDS` (`factor_planta`) — unidad fija %, sin selector de agrupación
+- `CHARTS_SIN_AGRUPACION` — gráficos sin selector de agrupación (incluye `factor_planta`, `emisiones_*`, `h2_produccion_verde`)
 
-Grouping options (`AGRUPACION_OPTIONS`): `TECNOLOGIA`, `FUEL`, `SECTOR`.
+Grouping options (`AGRUPACION_OPTIONS`): `TECNOLOGIA`, `FUEL`, `SECTOR`, `TRANSPORTE_GRUPO`, `REGION`. Además, `chart_service` soporta internamente `GROUP`, `EMISION`, `H2_PRODUCCION` y `YEAR` para configs específicas.
+
+Cada `ChartItem` puede declarar `allowedGroupings` (subconjunto permitido) y `defaultGrouping`.
+
+### Modos de comparación (multi-scenario)
+
+`CompareViewMode` (`ScenarioComparer`):
+- `facet` → un chart completo por escenario (`/compare-facet`)
+- `by-year` → un subplot por año, escenarios en X (`/compare?group_by=year`, default)
+- `by-year-alt` → un subplot por escenario, años en X (`/compare?group_by=scenario`)
+- `line-total` → una línea por escenario (totales anuales, `/compare-line`)
 
 ### Synthetic series
 
-Manual data overlays that appear on top of line charts. Defined via `SyntheticSeriesEditor.tsx`, stored in localStorage via `syntheticSeriesStorage.ts`. Each series has: name, color, data `[year, value][]`, lineStyle, markerSymbol, markerRadius, lineWidth, active flag. Inactive series are hidden. Excel paste supported (single value, row, column, or 2-column matrix).
+Manual data overlays that appear on top of line charts. Defined via `SyntheticSeriesEditor.tsx`, stored in localStorage via `syntheticSeriesStorage.ts`. Each series has: name, color, data `[year, value][]`, lineStyle, markerSymbol, markerRadius, lineWidth, active flag, optional `chart_type` (`line`/`area`/`column`). Inactive series are hidden. Excel paste supported (single value, row, column, or 2-column matrix).
+
+### Regional mode (`simulation_type='REGIONAL'`)
+
+Cuando el job se ejecutó en modo REGIONAL, la columna `TECHNOLOGY` lleva un prefijo geográfico de 2 letras (p. ej. `AN_PWRDIST`). `chart_service` detecta esto vía `_is_regional_job(db, job_id)` y delega a `regional.transform_regional_df`, que aplica una de las 3 vistas:
+1. **Acumulado nacional** (sin `region` y `agrupar_por != 'REGION'`) — quita prefijos para que el groupby colapse las 7 regiones.
+2. **Filtro por región** (`region in {AN, CA, …, SO}`) — solo deja la región y quita el prefijo.
+3. **Agrupar por región** (`agrupar_por='REGION'`) — la columna `REGION` se convierte en `COLOR`.
+
+Las tecnologías interregionales (`TRN*_XX_YY`) se excluyen en las 3 vistas. El Result Data Explorer **no** transforma; muestra los códigos crudos.
 
 ### Adding a new single-scenario chart type
 
 1. Add a filter function in `configs.py` (or reuse existing).
 2. Add entry to `CONFIGS` with: `variable_default`, `filtro`, `agrupar_por`, `color_fn`, `titulo_base`, `figura_base`, `es_capacidad`, `es_porcentaje`.
 3. If the chart supports sub-filters, register in `_config_has_sub_filtro` / `_config_sub_filtros` in `chart_service.py`.
-4. Add a `ChartItem` entry to the correct `Module` or `Subsector` in `MENU` inside `ChartSelector.tsx` with the same `id`. Mark `soportaPareto: true` if applicable.
+4. Add a `ChartItem` entry to the correct `Module` or `Subsector` in `MENU` inside `ChartSelector.tsx` with the same `id`. Mark `soportaPareto: true` y/o `soportaTabla: false` cuando aplique. Declara `allowedGroupings`/`defaultGrouping` si corresponde.
 
 ### Adding a new comparison chart type
 
-Add entry to `CONFIGS_COMPARACION` in `configs_comparacion.py` with `prefijo`, `agrupacion_default` or `agrupacion_fija`, `año_historico_unico`, `variable_default`.
+Add entry to `CONFIGS_COMPARACION` in `configs_comparacion.py` with `prefijo`, `agrupacion_default` or `agrupacion_fija`, `año_historico_unico`, `variable_default`. La agrupación acepta `FUEL` además de `COMBUSTIBLE` como sinónimo.
 
 ### Color rules
 
-Colors are deterministic, keyed by technology family/group. To change a color, edit `colors.py` (`COLORES_GRUPOS` for fuel/sector groups, `COLOR_MAP_PWR` for electricity technologies). Color changes affect all charts using that group.
+Colors are deterministic, keyed by technology family/group. To change a color, edit `colors.py` (`COLORES_GRUPOS` for fuel/sector groups, `COLOR_MAP_PWR` for electricity technologies, `COLORES_EMISIONES` for emission charts). Las regiones del SIN viven en `regional.REGION_COLORS`. Color changes affect all charts using that group; también se pueden sobreescribir admin-side vía `chart_series_config`.
+
+---
+
+## Series Configs y Plantillas de Tabla (admin reportes)
+
+Dos sistemas globales que afectan cómo se rinde cada gráfica para **todos** los usuarios. Editables solo por usuarios con `is_admin_reports` o `can_manage_scenarios`. Se administran desde `ReportsPage` (pestañas "Series por gráfica" y "Tablas en resultados").
+
+### `chart_series_config` — orden/color/oculto por serie
+
+Tabla `osemosys.chart_series_config` (modelo `ChartSeriesConfig`). Una fila por (`tipo`, `agrupar_por`, `series_code`) con `display_name`, `color`, `hidden`, `sort_index`, `group_key`, `notes`. El servicio `chart_series_config_service.apply_global_series_config()` se llama dentro de `build_chart_data` y aplica los overrides después del color_fn. La normalización `agrupar_por` colapsa `COMBUSTIBLE → FUEL`.
+
+Endpoints (prefijo `/chart-series-config`):
+- `GET /chart-types` — lista de tipos disponibles (CONFIGS ∪ CONFIGS_COMPARACION).
+- `GET ?tipo=&agrupar_por=` — filas de un chart.
+- `POST /populate` y `POST /populate-all` — inicializa filas a partir del catálogo OSeMOSYS (no destructivo).
+- `POST /row`, `PATCH /{id}`, `DELETE /{id}`, `POST /reorder`.
+
+UI: `frontend/src/features/reports/components/ChartSeriesConfigTab.tsx` (también embebido en `ResultDetailPage` para admins).
+
+### `result_table_template` — tablas globales en página de resultados
+
+Tabla `osemosys.result_table_template` + hijos en `result_table_template_column`. Cada plantilla define los parámetros que un usuario seleccionaría manualmente (tipo, un, sub_filtro, loc, variable, agrupar_por, region, timeslice, table_period_years, table_cumulative, custom_series_order, y_axis_min/max). Las plantillas con `is_enabled=true` aparecen automáticamente en `ResultDetailPage` (sección "Tablas de resultados") para todos los usuarios.
+
+Filas con `seed_key` se cargan vía `app/result_table_seeds.py` (upsert idempotente desde migraciones Alembic).
+
+Endpoints (prefijo `/result-table-templates`):
+- `GET ""` — plantillas habilitadas (todos los usuarios).
+- `GET /manage`, `POST /reorder`, `GET /{id}`, `POST`, `PATCH /{id}`, `DELETE /{id}` — admin.
+- `GET /presentation-options?tipo=&agrupar_por=&variable=` — series/categorías candidatas (admin).
+
+UI: `frontend/src/features/reports/components/ResultTablesAdminTab.tsx`.
 
 ---
 

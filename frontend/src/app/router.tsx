@@ -11,6 +11,7 @@ import { AuthLayout } from "@/layouts/AuthLayout";
 import { RequireAuth } from "@/routes/RequireAuth";
 import { RequireCatalogManager } from "@/routes/RequireCatalogManager";
 import { RequireOfficialDataImporter } from "@/routes/RequireOfficialDataImporter";
+import { RequireSystemSettingsManager } from "@/routes/RequireSystemSettingsManager";
 import { RequireUserManager } from "@/routes/RequireUserManager";
 import { paths } from "@/routes/paths";
 import { LoginPage } from "@/pages/LoginPage";
@@ -20,6 +21,7 @@ import { RouteErrorPage } from "@/pages/RouteErrorPage";
 const HomePage = lazy(() => import("@/pages/HomePage").then((m) => ({ default: m.HomePage })));
 const ScenariosPage = lazy(() => import("@/pages/ScenariosPage").then((m) => ({ default: m.ScenariosPage })));
 const ScenarioDetailPage = lazy(() => import("@/pages/ScenarioDetailPage").then((m) => ({ default: m.ScenarioDetailPage })));
+const ScenarioHistoryPage = lazy(() => import("@/pages/ScenarioHistoryPage").then((m) => ({ default: m.ScenarioHistoryPage })));
 const CatalogsPage = lazy(() => import("@/pages/CatalogsPage").then((m) => ({ default: m.CatalogsPage })));
 const SimulationPage = lazy(() => import("@/pages/SimulationPage").then((m) => ({ default: m.SimulationPage })));
 const ResultsPage = lazy(() => import("@/pages/ResultsPage").then((m) => ({ default: m.ResultsPage })));
@@ -34,6 +36,7 @@ const ReportsPage = lazy(() => import("@/pages/ReportsPage").then((m) => ({ defa
 const ReportDashboardPage = lazy(() => import("@/pages/ReportDashboardPage").then((m) => ({ default: m.ReportDashboardPage })));
 const HistoryPage = lazy(() => import("@/pages/HistoryPage").then((m) => ({ default: m.HistoryPage })));
 const ScenarioTagsAdminPage = lazy(() => import("@/pages/ScenarioTagsAdminPage").then((m) => ({ default: m.ScenarioTagsAdminPage })));
+const SystemSettingsAdminPage = lazy(() => import("@/pages/SystemSettingsAdminPage").then((m) => ({ default: m.SystemSettingsAdminPage })));
 const ChartViewerPage = lazy(() => import("@/pages/ChartViewerPage").then((m) => ({ default: m.ChartViewerPage })));
 
 /** Placeholder mínimo mientras se carga una página lazy (sin artefactos visuales). */
@@ -96,6 +99,7 @@ export const router = createBrowserRouter([
               { index: true, element: <SuspenseWrapper><HomePage /></SuspenseWrapper> },
               { path: "scenarios", element: <SuspenseWrapper><ScenariosPage /></SuspenseWrapper> },
               { path: "scenarios/:id", element: <SuspenseWrapper><ScenarioDetailPage /></SuspenseWrapper> },
+              { path: "scenarios/:id/history", element: <SuspenseWrapper><ScenarioHistoryPage /></SuspenseWrapper> },
               { path: "change-requests", element: <SuspenseWrapper><ChangeRequestsPage /></SuspenseWrapper> },
               { path: "simulation", element: <SuspenseWrapper><SimulationPage /></SuspenseWrapper> },
               { path: "results", element: <SuspenseWrapper><ResultsPage /></SuspenseWrapper> },
@@ -109,6 +113,10 @@ export const router = createBrowserRouter([
               {
                 element: <RequireUserManager />,
                 children: [{ path: "users-admin", element: <SuspenseWrapper><UsersAdminPage /></SuspenseWrapper> }],
+              },
+              {
+                element: <RequireSystemSettingsManager />,
+                children: [{ path: "system-settings", element: <SuspenseWrapper><SystemSettingsAdminPage /></SuspenseWrapper> }],
               },
               {
                 element: <RequireCatalogManager />,

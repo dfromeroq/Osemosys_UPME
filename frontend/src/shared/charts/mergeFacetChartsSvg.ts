@@ -65,16 +65,16 @@ function buildSharedLegendSvgBlock(
 
   const maxX = totalW - paddingX;
   let x = paddingX;
-  let rowY = legendHeaderBaselineY + 18;
-  const lineHeight = 22;
-  const charW = 6.5;
-  const markerSize = 10;
-  const markerGap = 8;
-  const itemPadX = 14;
+  let rowY = legendHeaderBaselineY + 16;
+  const lineHeight = 18;
+  const charW = 5.8;
+  const markerSize = 8;
+  const markerGap = 5;
+  const itemPadX = 10;
 
   const parts: string[] = [];
   parts.push(
-    `<text x="${paddingX}" y="${legendHeaderBaselineY}" fill="#64748b" font-size="11" font-weight="bold" font-family="Verdana, sans-serif" letter-spacing="0.06em">LEYENDA (TODAS LAS GRÁFICAS)</text>`,
+    `<text x="${paddingX}" y="${legendHeaderBaselineY}" fill="#64748b" font-size="16" font-weight="normal" font-family="Verdana, sans-serif" letter-spacing="0.04em">LEYENDA (TODAS LAS GRÁFICAS)</text>`,
   );
 
   for (const item of items) {
@@ -93,10 +93,10 @@ function buildSharedLegendSvgBlock(
 
     parts.push(`<g opacity="${opacity}">`);
     parts.push(
-      `<rect x="${x}" y="${rowY - markerSize + 3}" width="${markerSize}" height="${markerSize}" rx="2" fill="${markFillEsc}" stroke="#cbd5e1" stroke-width="0.75"/>`,
+      `<rect x="${x}" y="${rowY - markerSize + 2}" width="${markerSize}" height="${markerSize}" rx="2" fill="${markFillEsc}" stroke="#cbd5e1" stroke-width="0.75"/>`,
     );
     parts.push(
-      `<text x="${x + markerSize + markerGap}" y="${rowY}" fill="${textFill}" font-size="13" font-family="Verdana, sans-serif"${deco}>${nameEsc}</text>`,
+      `<text x="${x + markerSize + markerGap}" y="${rowY}" fill="${textFill}" font-size="16" font-family="Verdana, sans-serif"${deco}>${nameEsc}</text>`,
     );
     parts.push(`</g>`);
     x += itemW + itemPadX;
@@ -115,22 +115,23 @@ export function buildCombinedFacetSvgDocument(params: {
   sliceH: number;
   /** Leyenda compartida (mismo contenido que el panel React). */
   legendItems?: FacetExportLegendItem[];
+  /** Nombres de cada faceta (escenario) para mostrar a la izquierda. */
+  facetLabels?: string[];
 }): string {
-  const { mainTitle, fragmentInnerXmls, layout, sliceW, sliceH, legendItems } = params;
+  const { mainTitle, fragmentInnerXmls, layout, sliceW, sliceH, legendItems, facetLabels } = params;
   const n = fragmentInnerXmls.length;
   const paddingX = 24;
-  const gap = 16;
-  const bottomPad = 24;
-  const titleBaselineY = 44;
-  const titleToChartsGap = 28;
-  const chartsToLegendGap = 28;
+  const gap = 14;
+  const bottomPad = 20;
+  const titleBaselineY = 54;
+  const titleToChartsGap = 24;
+  const chartsToLegendGap = 22;
+  /** Ancho reservado para etiquetas de faceta a la izquierda (layout column). */
+  const facetLabelWidth = 120;
 
-  let totalW: number;
-  if (layout === "row") {
-    totalW = paddingX * 2 + n * sliceW + Math.max(0, n - 1) * gap;
-  } else {
-    totalW = paddingX * 2 + sliceW;
-  }
+  const totalW: number = (layout === "row")
+    ? paddingX * 2 + n * sliceW + Math.max(0, n - 1) * gap
+    : paddingX * 2 + facetLabelWidth + gap + sliceW;
 
   const chartStartY = titleBaselineY + titleToChartsGap;
 
@@ -139,15 +140,27 @@ export function buildCombinedFacetSvgDocument(params: {
 
   if (layout === "row") {
     let x = paddingX;
-    for (const inner of fragmentInnerXmls) {
+    for (let i = 0; i < n; i += 1) {
+      const inner = fragmentInnerXmls[i]!;
+      const rawLabel: string | undefined = facetLabels?.[i];
+      const label: string = rawLabel ? escapeXml(rawLabel) : "";
+      if (label) {
+        body += `<text x="${x}" y="${chartStartY + sliceH / 2}" fill="#1e293b" font-size="22" font-weight="bold" font-family="Verdana, sans-serif" text-anchor="end" dominant-baseline="middle" transform="rotate(-90,${x},${chartStartY + sliceH / 2})">${label}</text>`;
+      }
       body += `<g transform="translate(${x},${chartStartY})">${inner}</g>`;
       x += sliceW + gap;
     }
     chartsBottomY = chartStartY + sliceH;
   } else {
     let y = chartStartY;
-    for (const inner of fragmentInnerXmls) {
-      body += `<g transform="translate(${paddingX},${y})">${inner}</g>`;
+    for (let i = 0; i < n; i += 1) {
+      const inner = fragmentInnerXmls[i]!;
+      const rawLabel: string | undefined = facetLabels?.[i];
+      const label: string = rawLabel ? escapeXml(rawLabel) : "";
+      if (label) {
+        body += `<text x="${paddingX}" y="${y + sliceH / 2}" fill="#1e293b" font-size="22" font-weight="bold" font-family="Verdana, sans-serif" text-anchor="end" dominant-baseline="middle">${label}</text>`;
+      }
+      body += `<g transform="translate(${paddingX + facetLabelWidth + gap},${y})">${inner}</g>`;
       y += sliceH + gap;
     }
     chartsBottomY = chartStartY + (n - 1) * (sliceH + gap) + sliceH;
@@ -170,7 +183,7 @@ export function buildCombinedFacetSvgDocument(params: {
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}" style="font-family: Verdana, sans-serif; font-size: 1rem;" role="img" aria-label="${titleEsc}">
   <desc>Combined facet export (Highcharts)</desc>
   <rect fill="#FFFFFF" x="0" y="0" width="${totalW}" height="${totalH}" />
-  <text x="${paddingX}" y="${titleBaselineY}" fill="#1e293b" font-size="28" font-weight="bold" font-family="Verdana, sans-serif">${titleEsc}</text>
+  <text x="${paddingX}" y="${titleBaselineY}" fill="#1e293b" font-size="36" font-weight="bold" font-family="Verdana, sans-serif">${titleEsc}</text>
   ${body}
   ${legendFragment}
 </svg>`;

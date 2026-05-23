@@ -226,6 +226,11 @@ class ScenarioPublic(BaseModel):
     tag: ScenarioTagPublic | None = None
     tags: list[ScenarioTagPublic] = Field(default_factory=list)
     effective_access: ScenarioAccessPublic | None = None
+    # Resumen del reporte de calidad de datos. Solo el dict `summary`
+    # (n_bound_conflicts, n_bound_real_conflict, n_bound_numeric_precision,
+    # n_year_exclusions). El detalle completo se obtiene vía
+    # GET /scenarios/{id}/data-quality.
+    data_quality_summary: dict | None = None
 
 
 class ScenarioDeleteChildPublic(BaseModel):
@@ -257,6 +262,36 @@ class ScenarioDetachChildrenRequest(BaseModel):
 
 class ScenarioDetachChildrenResponse(BaseModel):
     detached_child_ids: list[int] = Field(default_factory=list)
+
+
+class ScenarioPeriodInfo(BaseModel):
+    """Periodo de modelado del escenario, derivado de las filas de ``YearSplit``.
+
+    El set ``YEAR`` que entra al modelo Pyomo se construye a partir de los años
+    presentes en el parámetro ``YearSplit`` (ver
+    ``app/simulation/core/data_processing.py``). Por eso este info se calcula
+    contando esas filas y tomando MIN/MAX de su columna ``year``.
+    """
+
+    min_year: int | None = None
+    max_year: int | None = None
+    year_split_rows: int = 0
+    year_count: int = 0
+
+
+class ExtendScenarioPeriodResult(BaseModel):
+    """Resultado de ampliar el periodo del escenario en un año.
+
+    El servidor copia todas las filas de ``osemosys_param_value`` cuyo
+    ``year == previous_max_year`` para el escenario, insertándolas con
+    ``year = new_year``. Es idempotente: si ya había una fila para
+    ``new_year`` con la misma combinación dimensional, se preserva
+    (``ON CONFLICT DO NOTHING``).
+    """
+
+    previous_max_year: int
+    new_year: int
+    rows_added: int
 
 
 class ScenarioPermissionCreate(BaseModel):
@@ -549,6 +584,8 @@ class OsemosysParamAuditEntryPublic(BaseModel):
     dimensions_json: dict | list | None = None
     source: str
     changed_by: str
+    batch_id: str | None = None
+    batch_label: str | None = None
     created_at: datetime
 
 
@@ -559,6 +596,53 @@ class OsemosysParamAuditPage(BaseModel):
     total: int
     offset: int
     limit: int
+
+
+class ScenarioAuditBatchPublic(BaseModel):
+    """Batch (operación) que agrupa N entradas de auditoría."""
+
+    batch_id: str | None = None
+    batch_label: str | None = None
+    changed_by: str
+    source: str
+    started_at: datetime
+    ended_at: datetime
+    stats: dict[str, int]
+    params_touched: list[str]
+    entries_count: int
+    preview: list[OsemosysParamAuditEntryPublic]
+
+
+class ScenarioAuditPage(BaseModel):
+    """Listado scenario-wide de auditoría (agrupado o plano)."""
+
+    items: list[ScenarioAuditBatchPublic] | list[OsemosysParamAuditEntryPublic]
+    total_batches: int
+    total_entries: int
+    offset: int
+    limit: int
+    grouped: bool
+
+
+class ScenarioAuditFacets(BaseModel):
+    """Valores únicos disponibles en el historial del escenario.
+
+    Solo se devuelven valores que efectivamente tuvieron cambios; eso permite
+    a la UI mostrar dropdowns de filtros sin opciones vacías.
+    """
+
+    param_names: list[str]
+    changed_by: list[str]
+    sources: list[str]
+    actions: list[str]
+    region_names: list[str]
+    technology_names: list[str]
+    fuel_names: list[str]
+    emission_names: list[str]
+    udc_names: list[str]
+    years: list[int]
+    date_min: datetime | None = None
+    date_max: datetime | None = None
 
 
 # ============================================================================

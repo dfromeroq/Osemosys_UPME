@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/test_regional_transform.py -v)",
+      "Bash(python *)"
+    ]
+  }
+}

@@ -1,0 +1,71 @@
+version: "3"
+
+vars:
+  DEFAULT_TAIL: '{{default "200" .TAIL}}'
+  DEFAULT_MIN: '{{default "15" .MIN}}'
+
+tasks:
+  up:
+    desc: "Levanta el stack completo en background, aplica migraciones y crea el usuario seed"
+    cmds:
+      - sudo docker compose up -d --build --wait
+      - sudo docker compose exec api alembic upgrade head
+      - sudo docker compose exec api python scripts/seed.py
+
+  down:
+    desc: "Detiene y elimina contenedores del proyecto osemosys (DB, Redis y artefactos se conservan)"
+    prompt: "¿Bajar el stack osemosys? Los volúmenes con datos se conservan."
+    cmds:
+      - sudo docker compose down
+
+  down:volumes:
+    desc: "Detiene y elimina contenedores Y borra todos los volúmenes (DB y Redis incluidos — acción irreversible)"
+    prompt: "¿Eliminar TODOS los volúmenes? Se perderán la base de datos y caché de Redis."
+    cmds:
+      - sudo docker compose down -v
+
+  logs:
+    desc: "Sigue logs agregados de todos los servicios (TAIL=N para cambiar líneas, ej: task logs TAIL=50)"
+    cmds:
+      - sudo docker compose logs -f --tail {{.DEFAULT_TAIL}}
+
+  health:
+    desc: Verifica estado del stack y health de API
+    cmds:
+      - sudo docker compose ps
+      - curl -fsS http://localhost:8010/api/v1/health
+
+  logs:api:
+    desc: Sigue logs del backend API
+    cmds:
+      - sudo docker compose logs -f --tail {{.DEFAULT_TAIL}} api
+
+  logs:worker:
+    desc: Sigue logs del worker de simulacion
+    cmds:
+      - sudo docker compose logs -f --tail {{.DEFAULT_TAIL}} simulation-worker
+
+  logs:frontend:
+    desc: Sigue logs del frontend (nginx + app)
+    cmds:
+      - sudo docker compose logs -f --tail {{.DEFAULT_TAIL}} frontend
+
+  logs:db:
+    desc: Sigue logs de PostgreSQL
+    cmds:
+      - sudo docker compose logs -f --tail {{.DEFAULT_TAIL}} db
+
+  logs:redis:
+    desc: Sigue logs de Redis
+    cmds:
+      - sudo docker compose logs -f --tail {{.DEFAULT_TAIL}} redis
+
+  logs:since:
+    desc: Muestra logs de todos los servicios desde una ventana en minutos
+    cmds:
+      - sudo docker compose logs --since {{.DEFAULT_MIN}}m --tail {{.DEFAULT_TAIL}}
+
+  logs:errors:
+    desc: Filtra errores recientes (ERROR, Traceback, FAILED, Exception)
+    cmds:
+      - sudo docker compose logs --since {{.DEFAULT_MIN}}m --tail {{.DEFAULT_TAIL}} api simulation-worker frontend db redis 2>&1 | rg -i "error|traceback|failed|exception"

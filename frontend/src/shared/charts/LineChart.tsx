@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Highcharts from './highchartsSetup';
+import { downloadChartFromServer } from './serverChartExport';
 import {
+  CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS,
   EXPORTING_CONTEXT_BUTTON_DARK,
-  buildChartExportMenuItems,
+  INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
+  createCleanExportMenuItem,
   onHighchartsExportError,
 } from './chartExportingShared';
 import { buildLineTooltipOptions } from './chartTooltips';
@@ -136,7 +139,7 @@ export const LineChart: React.FC<LineChartProps> = ({
       title: {
         text: data.title,
         style: {
-          fontSize: fb('16px'),
+          fontSize: fb('14pt'),
           fontWeight: 'bold',
           color: '#f8fafc',
         },
@@ -144,7 +147,7 @@ export const LineChart: React.FC<LineChartProps> = ({
       xAxis: {
         categories: data.categories,
         crosshair: { color: '#334155' },
-        labels: { style: { color: '#94a3b8', fontSize: fb('13px') } },
+        labels: { style: { color: '#94a3b8', fontSize: fb('11pt') } },
         lineColor: '#334155',
         tickColor: '#334155',
       },
@@ -157,10 +160,10 @@ export const LineChart: React.FC<LineChartProps> = ({
         ...(typeof yAxisMax === 'number' ? { max: yAxisMax } : null),
         title: {
           text: data.yAxisLabel,
-          style: { color: '#94a3b8', fontSize: fb('14px') },
+          style: { color: '#94a3b8', fontSize: fb('14pt') },
         },
         labels: {
-          style: { color: '#94a3b8', fontSize: fb('13px') },
+          style: { color: '#94a3b8', fontSize: fb('11pt') },
           // Mínimo 3 cifras significativas (sin notación científica).
           formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
             return formatAxis3Sig(this.value as number);
@@ -187,23 +190,49 @@ export const LineChart: React.FC<LineChartProps> = ({
         fallbackToExportServer: false,
         error: onHighchartsExportError,
         chartOptions: {
-          chart: { backgroundColor: '#FFFFFF' },
-          title: { style: { color: '#1e293b', fontSize: '28px' } },
+          chart: { backgroundColor: '#FFFFFF', spacingTop: 50 },
+          title: { style: { color: '#1e293b', fontSize: '28pt' } },
           xAxis: {
-            labels: { style: { color: '#334155', fontSize: '20px' } },
+            labels: { style: { color: '#334155', fontSize: '20pt' } },
             lineColor: '#cbd5e1',
             tickColor: '#cbd5e1',
           },
           yAxis: {
-            labels: { style: { color: '#334155', fontSize: '22px' } },
-            title: { style: { color: '#334155', fontSize: '24px' } },
+            labels: { style: { color: '#334155', fontSize: '20pt' } },
+            title: { style: { color: '#334155', fontSize: '28pt' } },
             gridLineColor: '#e2e8f0',
           },
-          legend: { itemStyle: { color: '#334155', fontSize: '24px' } },
+          legend: { itemStyle: { color: '#334155', fontSize: '20pt' } },
         },
         buttons: {
           contextButton: {
-            menuItems: buildChartExportMenuItems(serverExport) as string[],
+            // Highcharts admite objetos { text, onclick }; los tipos suelen declarar solo string[].
+            menuItems: (() => {
+              if (!serverExport) {
+                return [
+                  ...INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
+                  '_separator_',
+                  createCleanExportMenuItem('png', CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS),
+                  createCleanExportMenuItem('svg', CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS),
+                ];
+              }
+              const { jobId, selection } = serverExport;
+              const runServer = (fmt: "png" | "svg" | "csv", opts?: { clean?: boolean }) => {
+                const hiddenSeries = Array.from(hiddenNames);
+                void downloadChartFromServer(jobId, selection, fmt, { ...opts, hiddenSeries }).catch((e: unknown) => {
+                  console.error(e);
+                  window.alert("No se pudo descargar desde el servidor.");
+                });
+              };
+              return [
+                { text: "Descargar PNG", onclick: () => runServer("png") },
+                { text: "Descargar SVG", onclick: () => runServer("svg") },
+                { text: "Descargar CSV", onclick: () => runServer("csv") },
+                "_separator_",
+                { text: "Descargar PNG (limpia)", onclick: () => runServer("png", { clean: true }) },
+                { text: "Descargar SVG (limpia)", onclick: () => runServer("svg", { clean: true }) },
+              ];
+            })() as unknown as string[],
             ...EXPORTING_CONTEXT_BUTTON_DARK,
           },
         },
@@ -213,7 +242,7 @@ export const LineChart: React.FC<LineChartProps> = ({
         align: 'center',
         verticalAlign: 'bottom',
         layout: 'horizontal',
-        itemStyle: { color: '#94a3b8', fontWeight: 'normal', fontSize: fb('13px') },
+        itemStyle: { color: '#94a3b8', fontWeight: 'normal', fontSize: fb('11pt') },
         itemHoverStyle: { color: '#f8fafc' },
       },
     };

@@ -7,6 +7,7 @@ import desde Excel (create_scenario_from_excel), resumen por año.
 from __future__ import annotations
 
 import base64
+from datetime import datetime
 from pathlib import Path
 import shutil
 import uuid
@@ -30,6 +31,8 @@ from app.schemas.scenario import (
     OsemosysValuesWidePage,
     OsemosysWideFacets,
     SandIntegrationResponse,
+    ScenarioAuditFacets,
+    ScenarioAuditPage,
     ScenarioClone,
     ScenarioCreate,
     ScenarioDeleteImpact,
@@ -38,6 +41,8 @@ from app.schemas.scenario import (
     ScenarioExcelImportResponse,
     ScenarioExcelPreviewResponse,
     ScenarioExcelUpdateResponse,
+    ScenarioPeriodInfo,
+    ExtendScenarioPeriodResult,
     ScenarioOsemosysValueCreate,
     ScenarioOsemosysValuePublic,
     ScenarioOsemosysValueUpdate,
@@ -585,6 +590,132 @@ def get_scenario(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
 
 
+@router.get("/{scenario_id}/data-quality")
+def get_scenario_data_quality(
+    scenario_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Devuelve el reporte de calidad de datos persistido para el escenario.
+
+    El campo `scenario.data_quality_warnings` lo populan los servicios de
+    importación al cargar Excel/CSV (vía `data_validation.validate_and_persist`).
+    Si el escenario fue creado antes del refactor, devuelve un reporte vacío
+    o `null`.
+    """
+    try:
+        # Aprovechamos get_public para validar permisos de visibilidad.
+        ScenarioService.get_public(
+            db, scenario_id=scenario_id, current_user=current_user
+        )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+
+    scenario = db.get(Scenario, scenario_id)
+    return {
+        "scenario_id": scenario_id,
+        "data_quality_warnings": (scenario.data_quality_warnings if scenario else None) or {},
+    }
+
+
+@router.post("/{scenario_id}/data-quality/refresh")
+def refresh_scenario_data_quality(
+    scenario_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Re-ejecuta la detección sobre la BD y reescribe el reporte persistido.
+
+    Útil cuando los datos del escenario cambiaron por edición manual y se
+    quiere recalcular los warnings sin volver a importar.
+
+    **Aplica automáticamente la exclusión de dead_years** (DELETE de filas con
+    YearSplit=0 en todos los timeslices), igual que el flujo de import.
+    """
+    try:
+        ScenarioService.get_public(
+            db, scenario_id=scenario_id, current_user=current_user
+        )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+
+    from app.simulation.core import data_validation as dv
+
+    report = dv.validate_and_persist(
+        db,
+        scenario_id=scenario_id,
+        detected_during="manual",
+        apply_dead_years=True,
+    )
+    return {"scenario_id": scenario_id, "data_quality_warnings": report.to_dict()}
+
+
+@router.post("/{scenario_id}/data-quality/fix-numeric-precision")
+def fix_numeric_precision_conflicts(
+    scenario_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Corrige automáticamente los bound conflicts clasificados como
+    `numeric_precision` (gap < 1e-4) en el escenario.
+
+    Estrategia: el `lower` toma el valor del `upper` (mantiene el mayor de los
+    dos). Los conflicts `real_conflict` NUNCA se tocan — requieren
+    intervención del usuario.
+
+    Después del fix, recalcula y persiste el reporte de calidad.
+    """
+    try:
+        ScenarioService.get_public(
+            db, scenario_id=scenario_id, current_user=current_user
+        )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+
+    from app.simulation.core import data_validation as dv
+
+    # 1) Detectar conflictos actuales.
+    pre = dv.build_report_db(
+        db, scenario_id=scenario_id, detected_during="manual"
+    )
+    n_precision = pre.n_numeric_precision()
+    n_real = pre.n_real_conflicts()
+
+    # 2) Aplicar fix sólo a numeric_precision.
+    n_fixed = dv.apply_bound_fix_numeric_precision_db(
+        db, scenario_id=scenario_id, conflicts=pre.bound_conflicts
+    )
+    db.commit()
+
+    # 3) Re-detectar y persistir reporte final.
+    post = dv.validate_and_persist(
+        db,
+        scenario_id=scenario_id,
+        detected_during="manual_post_autofix",
+        apply_dead_years=False,
+    )
+
+    return {
+        "scenario_id": scenario_id,
+        "fixed_n_tuples": n_fixed,
+        "before": {
+            "n_real_conflict": n_real,
+            "n_numeric_precision": n_precision,
+        },
+        "after": {
+            "n_real_conflict": post.n_real_conflicts(),
+            "n_numeric_precision": post.n_numeric_precision(),
+        },
+        "data_quality_warnings": post.to_dict(),
+    }
+
+
 @router.get("/{scenario_id}/export-excel")
 def export_scenario_excel(
     scenario_id: int,
@@ -993,10 +1124,13 @@ def apply_excel_changes(
     except ForbiddenError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
 
+    n_changes = len(payload.changes)
     result = OfficialImportService.apply_excel_changes(
         db,
         scenario_id=scenario_id,
         changes=[c.model_dump() for c in payload.changes],
+        actor=current_user.username,
+        batch_label=f"Aplicación Excel ({n_changes} {'fila' if n_changes == 1 else 'filas'})",
     )
     ScenarioService.sync_catalogs_from_scenario_values(db, scenario_id=scenario_id)
     changed_param_names = sorted(
@@ -1099,6 +1233,181 @@ def list_osemosys_param_audit(
             param_name=param_name,
             offset=offset,
             limit=limit,
+        )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+
+
+def _audit_filters_from_query(
+    *,
+    param_name: list[str] | None,
+    region_name: list[str] | None,
+    technology_name: list[str] | None,
+    fuel_name: list[str] | None,
+    emission_name: list[str] | None,
+    udc_name: list[str] | None,
+    changed_by: list[str] | None,
+    action: list[str] | None,
+    source: list[str] | None,
+    batch_id: list[str] | None,
+    year_from: int | None,
+    year_to: int | None,
+    from_date: datetime | None,
+    to_date: datetime | None,
+    value_id: int | None,
+    q: str | None,
+) -> dict:
+    dim_filters: dict[str, list[str]] = {}
+    if region_name:
+        dim_filters["region_name"] = region_name
+    if technology_name:
+        dim_filters["technology_name"] = technology_name
+    if fuel_name:
+        dim_filters["fuel_name"] = fuel_name
+    if emission_name:
+        dim_filters["emission_name"] = emission_name
+    if udc_name:
+        dim_filters["udc_name"] = udc_name
+    return {
+        "param_names": param_name or None,
+        "actions": action or None,
+        "sources": source or None,
+        "changed_by": changed_by or None,
+        "batch_ids": batch_id or None,
+        "from_date": from_date,
+        "to_date": to_date,
+        "year_from": year_from,
+        "year_to": year_to,
+        "dimension_filters": dim_filters or None,
+        "value_id": value_id,
+        "q": (q or "").strip() or None,
+    }
+
+
+@router.get("/{scenario_id}/audit", response_model=ScenarioAuditPage)
+def list_scenario_audit(
+    scenario_id: int,
+    offset: int = 0,
+    limit: int = 50,
+    group_by_batch: bool = True,
+    param_name: list[str] | None = Query(default=None),
+    region_name: list[str] | None = Query(default=None),
+    technology_name: list[str] | None = Query(default=None),
+    fuel_name: list[str] | None = Query(default=None),
+    emission_name: list[str] | None = Query(default=None),
+    udc_name: list[str] | None = Query(default=None),
+    changed_by: list[str] | None = Query(default=None),
+    action: list[str] | None = Query(default=None),
+    source: list[str] | None = Query(default=None),
+    batch_id: list[str] | None = Query(default=None),
+    year_from: int | None = None,
+    year_to: int | None = None,
+    from_date: datetime | None = None,
+    to_date: datetime | None = None,
+    value_id: int | None = None,
+    q: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Historial scenario-wide con filtros y agrupación opcional por batch."""
+    filters = _audit_filters_from_query(
+        param_name=param_name,
+        region_name=region_name,
+        technology_name=technology_name,
+        fuel_name=fuel_name,
+        emission_name=emission_name,
+        udc_name=udc_name,
+        changed_by=changed_by,
+        action=action,
+        source=source,
+        batch_id=batch_id,
+        year_from=year_from,
+        year_to=year_to,
+        from_date=from_date,
+        to_date=to_date,
+        value_id=value_id,
+        q=q,
+    )
+    try:
+        return ScenarioService.list_scenario_audit(
+            db,
+            scenario_id=scenario_id,
+            current_user=current_user,
+            offset=offset,
+            limit=limit,
+            group_by_batch=group_by_batch,
+            filters=filters,
+        )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+
+
+@router.get(
+    "/{scenario_id}/audit/batches/{batch_id}",
+    response_model=OsemosysParamAuditPage,
+)
+def list_scenario_audit_batch_entries(
+    scenario_id: int,
+    batch_id: str,
+    offset: int = 0,
+    limit: int = 200,
+    param_name: list[str] | None = Query(default=None),
+    technology_name: list[str] | None = Query(default=None),
+    fuel_name: list[str] | None = Query(default=None),
+    emission_name: list[str] | None = Query(default=None),
+    region_name: list[str] | None = Query(default=None),
+    udc_name: list[str] | None = Query(default=None),
+    action: list[str] | None = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Entradas individuales de un batch concreto, paginadas."""
+    dim_filters: dict[str, list[str]] = {}
+    if region_name:
+        dim_filters["region_name"] = region_name
+    if technology_name:
+        dim_filters["technology_name"] = technology_name
+    if fuel_name:
+        dim_filters["fuel_name"] = fuel_name
+    if emission_name:
+        dim_filters["emission_name"] = emission_name
+    if udc_name:
+        dim_filters["udc_name"] = udc_name
+    filters = {
+        "param_names": param_name or None,
+        "actions": action or None,
+        "dimension_filters": dim_filters or None,
+    }
+    try:
+        return ScenarioService.list_scenario_audit_batch_entries(
+            db,
+            scenario_id=scenario_id,
+            batch_id=batch_id,
+            current_user=current_user,
+            offset=offset,
+            limit=limit,
+            filters=filters,
+        )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+
+
+@router.get("/{scenario_id}/audit/facets", response_model=ScenarioAuditFacets)
+def list_scenario_audit_facets(
+    scenario_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Valores únicos disponibles en la auditoría (alimenta filtros UI)."""
+    try:
+        return ScenarioService.list_scenario_audit_facets(
+            db, scenario_id=scenario_id, current_user=current_user
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
@@ -1333,6 +1642,55 @@ def upsert_permission(
             can_edit_direct=payload.can_edit_direct,
             can_propose=payload.can_propose,
             can_manage_values=payload.can_manage_values,
+        )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+    except ConflictError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+
+
+# ---------------------------------------------------------------------------
+#  Periodo del modelo (YearSplit) y ampliación por carry-forward
+# ---------------------------------------------------------------------------
+
+@router.get("/{scenario_id}/period-info", response_model=ScenarioPeriodInfo)
+def get_scenario_period_info(
+    scenario_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Periodo de modelado del escenario (derivado del parámetro ``YearSplit``)."""
+    try:
+        return ScenarioService.get_scenario_period_info(
+            db, scenario_id=scenario_id, current_user=current_user,
+        )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+
+
+@router.post(
+    "/{scenario_id}/extend-period",
+    response_model=ExtendScenarioPeriodResult,
+)
+def extend_scenario_period(
+    scenario_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Amplía el periodo del modelo en un año copiando ``max_year`` → ``max_year + 1``.
+
+    Elimina previamente cualquier fila existente para ``new_year`` en el
+    escenario, garantizando que el nuevo año sea una copia exacta del
+    último año actual del modelo (no quedan valores parciales heredados).
+    Requiere permiso de edición de valores (``can_manage_values``).
+    """
+    try:
+        return ScenarioService.extend_scenario_period(
+            db, scenario_id=scenario_id, current_user=current_user,
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e

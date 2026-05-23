@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from app.schemas.scenario import ScenarioTagPublic, SimulationType
 
 SimulationStatus = Literal["QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED"]
-SimulationSolver = Literal["highs", "glpk"]
+SimulationSolver = Literal["highs", "glpk", "gurobi"]
 SimulationInputMode = Literal["SCENARIO", "CSV_UPLOAD"]
 #: Estado del análisis de infactibilidad on-demand para un job infactible.
 #: ``NONE`` = aún no se ha corrido; se dispara vía POST /simulations/{id}/diagnose-infeasibility.
@@ -27,6 +27,9 @@ class SimulationSubmit(BaseModel):
     #: Si ``False`` (default), el diagnóstico queda para disparar manualmente
     #: desde la UI, evitando tiempo extra en cada corrida.
     run_iis_analysis: bool = False
+    #: Si ``True``, el pipeline escribe el modelo en formato ``.lp`` en
+    #: ``tmp/lp-files/sim_<id>_<nombre>_<timestamp>.lp`` antes de resolver.
+    generate_lp: bool = False
     display_name: str | None = Field(
         default=None,
         max_length=255,
@@ -71,6 +74,9 @@ class SimulationJobPublic(BaseModel):
     user_id: str
     username: str | None = None
     solver_name: SimulationSolver
+    #: Hilos efectivamente entregados al solver (NULL si el solver no soporta
+    #: multihilo o si la lectura del valor efectivo falló).
+    solver_threads_used: int | None = None
     input_mode: SimulationInputMode = "SCENARIO"
     input_name: str | None = None
     simulation_type: SimulationType = "NATIONAL"
@@ -89,6 +95,10 @@ class SimulationJobPublic(BaseModel):
     is_infeasible_result: bool = False
     #: El usuario pidió diagnóstico automático al encolar la simulación.
     run_iis_analysis: bool = False
+    #: El usuario pidió que se escriba el modelo a ``.lp`` durante la corrida.
+    generate_lp: bool = False
+    #: ``True`` cuando el ``.lp`` ya está escrito y disponible para descarga.
+    has_lp_file: bool = False
     #: Estado del análisis enriquecido de infactibilidad (opcional, se dispara
     #: desde la UI con el botón "Correr diagnóstico de infactibilidad").
     diagnostic_status: DiagnosticStatus = "NONE"
