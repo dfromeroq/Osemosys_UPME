@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -649,12 +649,10 @@ class ScenarioOperationService:
             OsemosysParamValueAudit.id_scenario == scenario_id
         ).delete(synchronize_session=False)
 
-        table_name = osemosys_table("osemosys_param_value")
         total_rows = int(
-            db.execute(
-                text(f"SELECT COUNT(*) FROM {table_name} WHERE id_scenario = :scenario_id"),
-                {"scenario_id": scenario_id},
-            ).scalar()
+            db.query(func.count(OsemosysParamValue.id))
+            .filter(OsemosysParamValue.id_scenario == scenario_id)
+            .scalar()
             or 0
         )
         ScenarioOperationService._update_progress(
@@ -669,35 +667,32 @@ class ScenarioOperationService:
         deleted_rows = 0
         cursor_id = 0
         while True:
+            batch_ids = (
+                select(OsemosysParamValue.id)
+                .where(
+                    OsemosysParamValue.id_scenario == scenario_id,
+                    OsemosysParamValue.id > cursor_id,
+                )
+                .order_by(OsemosysParamValue.id)
+                .limit(batch_size)
+                .subquery()
+            )
             batch = db.execute(
-                text(
-                    f"""
-                    SELECT MAX(id) AS max_id, COUNT(*) AS rows_count
-                    FROM (
-                        SELECT id
-                        FROM {table_name}
-                        WHERE id_scenario = :scenario_id AND id > :cursor_id
-                        ORDER BY id
-                        LIMIT :batch_size
-                    ) batch
-                    """
-                ),
-                {"scenario_id": scenario_id, "cursor_id": cursor_id, "batch_size": batch_size},
+                select(
+                    func.max(batch_ids.c.id).label("max_id"),
+                    func.count(batch_ids.c.id).label("rows_count"),
+                )
             ).mappings().first()
             if not batch or not batch["max_id"]:
                 break
             max_id = int(batch["max_id"])
             rows_count = int(batch["rows_count"] or 0)
             db.execute(
-                text(
-                    f"""
-                    DELETE FROM {table_name}
-                    WHERE id_scenario = :scenario_id
-                      AND id > :cursor_id
-                      AND id <= :max_id
-                    """
-                ),
-                {"scenario_id": scenario_id, "cursor_id": cursor_id, "max_id": max_id},
+                delete(OsemosysParamValue).where(
+                    OsemosysParamValue.id_scenario == scenario_id,
+                    OsemosysParamValue.id > cursor_id,
+                    OsemosysParamValue.id <= max_id,
+                )
             )
             deleted_rows += rows_count
             cursor_id = max_id

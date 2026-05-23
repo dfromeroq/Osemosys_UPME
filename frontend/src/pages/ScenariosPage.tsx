@@ -2154,7 +2154,7 @@ export function ScenariosPage() {
                     disabled={resolvingDeleteChildren || selectedDeleteChildIds.length === 0}
                     style={{ color: "rgba(248,113,113,0.95)" }}
                   >
-                    Borrar derivados seleccionados
+                    Borrar dependencias seleccionadas
                   </Button>
                 </>
               ) : null}
@@ -2210,7 +2210,7 @@ export function ScenariosPage() {
               y snapshot de los campos clave).
             </div>
             {deleteImpactLoading ? (
-              <small style={{ opacity: 0.78 }}>Evaluando escenarios derivados...</small>
+              <small style={{ opacity: 0.78 }}>Evaluando dependencias directas...</small>
             ) : deleteImpact?.direct_children.length ? (
               <div
                 style={{
@@ -2223,8 +2223,8 @@ export function ScenariosPage() {
                 }}
               >
                 <div style={{ fontSize: 13, lineHeight: 1.5 }}>
-                  <strong>Este escenario tiene derivados directos.</strong> Para borrar el
-                  padre primero selecciona qué derivados quieres eliminar o
+                  <strong>Este escenario tiene dependencias directas.</strong> Para borrar el
+                  padre primero selecciona qué dependencias quieres eliminar o
                   independizar. Independizar solo quita la relación de lineage; no
                   duplica datos ni ejecuta cálculos pesados.
                 </div>
@@ -2254,21 +2254,21 @@ export function ScenariosPage() {
                         <small style={{ opacity: 0.75 }}>
                           Dueño: {child.owner} · {simulationTypeLabel[child.simulation_type]} ·{" "}
                           {child.simulation_job_count} simulación(es)
-                          {child.child_count > 0 ? ` · ${child.child_count} derivado(s)` : ""}
+                          {child.child_count > 0 ? ` · ${child.child_count} dependencia(s)` : ""}
                         </small>
                       </span>
                     </label>
                   ))}
                 </div>
                 <small style={{ opacity: 0.72 }}>
-                  Si un derivado seleccionado también tiene derivados, su borrado se
+                  Si una dependencia seleccionada también tiene dependencias, su borrado se
                   bloqueará y podrás resolverlo en el mismo flujo al abrir ese
                   escenario.
                 </small>
               </div>
             ) : (
               <small style={{ color: "rgba(134,239,172,0.9)" }}>
-                No hay escenarios derivados bloqueando esta eliminación.
+                No hay dependencias directas bloqueando esta eliminación.
               </small>
             )}
           </div>
