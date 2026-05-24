@@ -130,6 +130,22 @@ class SimulationRepository:
         return list(db.execute(stmt).scalars().all())
 
     @staticmethod
+    def list_active_jobs_with_task_id(
+        db: Session, *, limit: int = 500
+    ) -> list[SimulationJob]:
+        """Lista jobs activos que ya tienen task Celery asociada."""
+        stmt = (
+            select(SimulationJob)
+            .where(
+                SimulationJob.status.in_(ACTIVE_STATUSES),
+                SimulationJob.celery_task_id.is_not(None),
+            )
+            .order_by(SimulationJob.queued_at.asc(), SimulationJob.id.asc())
+            .limit(limit)
+        )
+        return list(db.execute(stmt).scalars().all())
+
+    @staticmethod
     def get_job_for_user(db: Session, *, job_id: int, user_id: uuid.UUID) -> SimulationJob | None:
         """Obtiene job por id restringido al propietario."""
         stmt = select(SimulationJob).where(SimulationJob.id == job_id, SimulationJob.user_id == user_id)

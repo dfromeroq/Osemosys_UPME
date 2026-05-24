@@ -16,17 +16,21 @@ from app.models import (
     OsemosysOutputParamValue,
     OsemosysParamValue,
     OsemosysParamValueAudit,
+    Scenario,
+    ScenarioOperationJob,
     ScenarioPermission,
     SimulationJob,
     SimulationJobEvent,
     SimulationJobFavorite,
 )
 from app.schemas.scenario import ScenarioDetachChildrenRequest
+from app.services.scenario_operation_service import ScenarioOperationService
 
 from factories import create_osemosys_value, create_permission, create_scenario, create_user
 
 
-def test_delete_scenario_cleans_dependents_and_writes_audit_log(db_session) -> None:
+def test_delete_scenario_cleans_dependents_and_writes_audit_log(db_session, monkeypatch) -> None:
+    monkeypatch.setattr(ScenarioOperationService, "_enqueue_job", staticmethod(lambda db, *, job_id: None))
     owner = create_user(db_session, username="scenario-owner")
     scenario = create_scenario(db_session, name="Scenario to delete", owner=owner.username)
     permission = create_permission(db_session, scenario_id=scenario.id, user=owner)
@@ -85,7 +89,17 @@ def test_delete_scenario_cleans_dependents_and_writes_audit_log(db_session) -> N
     change_request_id = change_request.id
     change_value_id = change_value.id
 
-    delete_scenario(scenario.id, db=db_session, current_user=owner)
+    response = delete_scenario(scenario.id, db=db_session, current_user=owner)
+
+    assert response["operation_type"] == "DELETE_SCENARIO"
+    assert response["status"] == "QUEUED"
+    assert response["scenario_id"] == scenario_id
+    assert response["scenario_name"] == "Scenario to delete"
+    assert db_session.get(Scenario, scenario_id) is not None
+    assert db_session.get(SimulationJob, job_id) is not None
+
+    ScenarioOperationService.execute_job(db_session, job_id=response["id"])
+    db_session.expire_all()
 
     assert db_session.get(SimulationJob, job_id) is None
     assert db_session.get(OsemosysOutputParamValue, output_id) is None
@@ -104,6 +118,10 @@ def test_delete_scenario_cleans_dependents_and_writes_audit_log(db_session) -> N
     assert scenario_log.entity_id == scenario_id
     assert scenario_log.details_json["deleted_change_request_ids"] == [change_request_id]
     assert scenario_log.details_json["cascaded_simulation_job_ids"] == [job_id]
+    operation_job = db_session.get(ScenarioOperationJob, response["id"])
+    assert operation_job is not None
+    assert operation_job.status == "SUCCEEDED"
+    assert operation_job.result_json["deleted"] is True
 
 
 def test_delete_scenario_blocks_direct_children_before_deleting_data(db_session) -> None:
@@ -131,13 +149,13 @@ def test_delete_scenario_blocks_direct_children_before_deleting_data(db_session)
         delete_scenario(parent_id, db=db_session, current_user=owner)
 
     assert exc.value.status_code == 409
-    assert exc.value.detail["code"] == "scenario_has_children"
-    assert [item["id"] for item in exc.value.detail["children"]] == [child_id]
+    assert "escenarios derivados" in exc.value.detail
     assert db_session.get(OsemosysParamValue, parent_value_id) is not None
     assert db_session.get(DeletionLog, 1) is None
 
 
-def test_detach_scenario_children_allows_parent_delete(db_session) -> None:
+def test_detach_scenario_children_allows_parent_delete(db_session, monkeypatch) -> None:
+    monkeypatch.setattr(ScenarioOperationService, "_enqueue_job", staticmethod(lambda db, *, job_id: None))
     owner = create_user(db_session, username="detach-owner")
     parent = create_scenario(db_session, name="Parent scenario", owner=owner.username)
     child = create_scenario(
@@ -166,7 +184,14 @@ def test_detach_scenario_children_allows_parent_delete(db_session) -> None:
     db_session.refresh(child)
     assert child.base_scenario_id is None
 
-    delete_scenario(parent_id, db=db_session, current_user=owner)
+    response = delete_scenario(parent_id, db=db_session, current_user=owner)
+
+    assert response["operation_type"] == "DELETE_SCENARIO"
+    assert response["status"] == "QUEUED"
+    assert db_session.get(type(parent), parent_id) is not None
+
+    ScenarioOperationService.execute_job(db_session, job_id=response["id"])
+    db_session.expire_all()
 
     assert db_session.get(type(parent), parent_id) is None
     assert db_session.get(type(child), child_id) is not None

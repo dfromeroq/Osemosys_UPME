@@ -1084,7 +1084,7 @@ export const scenariosApi = {
       : httpClient.post<ChangeRequest>(`/change-requests/${id}/reject`).then((r) => r.data),
 
   deleteScenario: (scenarioId: number) =>
-    httpClient.delete(`/scenarios/${scenarioId}`),
+    httpClient.delete<ScenarioOperationJob>(`/scenarios/${scenarioId}`).then((r) => r.data),
 
   getScenarioDeleteImpact: (scenarioId: number) =>
     httpClient

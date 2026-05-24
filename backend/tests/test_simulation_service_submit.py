@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 import uuid
 
@@ -62,6 +62,7 @@ def _build_job(user_id: uuid.UUID, *, scenario_id: int | None = 1) -> SimpleName
         started_at=None,
         finished_at=None,
         celery_task_id=None,
+        celery_dispatched_at=None,
     )
 
 
@@ -270,12 +271,19 @@ def test_dispatch_queued_jobs_respects_reserved_weight(monkeypatch: pytest.Monke
         "add_event",
         lambda *args, **kwargs: None,
     )
+    task_ids = iter(["task-2", "task-3"])
+    monkeypatch.setattr(
+        simulation_service_module.uuid,
+        "uuid4",
+        lambda: next(task_ids),
+    )
 
     class _TaskStub:
         @staticmethod
-        def delay(job_id: int):
+        def apply_async(*, args, task_id: str):
+            job_id = args[0]
             dispatched.append(job_id)
-            return SimpleNamespace(id=f"task-{job_id}")
+            return SimpleNamespace(id=task_id)
 
     monkeypatch.setattr(simulation_service_module, "run_simulation_job", _TaskStub())
 
@@ -392,12 +400,18 @@ def test_dispatch_queued_jobs_respects_user_limit(monkeypatch: pytest.MonkeyPatc
         "add_event",
         lambda *args, **kwargs: None,
     )
+    monkeypatch.setattr(
+        simulation_service_module.uuid,
+        "uuid4",
+        lambda: "task-13",
+    )
 
     class _TaskStub:
         @staticmethod
-        def delay(job_id: int):
+        def apply_async(*, args, task_id: str):
+            job_id = args[0]
             dispatched.append(job_id)
-            return SimpleNamespace(id=f"task-{job_id}")
+            return SimpleNamespace(id=task_id)
 
     monkeypatch.setattr(simulation_service_module, "run_simulation_job", _TaskStub())
 
@@ -407,3 +421,113 @@ def test_dispatch_queued_jobs_respects_user_limit(monkeypatch: pytest.MonkeyPatc
     assert first.celery_task_id is None
     assert second.celery_task_id is None
     assert third.celery_task_id == "task-13"
+
+
+def test_reconcile_releases_stale_queued_task(monkeypatch: pytest.MonkeyPatch) -> None:
+    db = DummyDbSession()
+    job = _build_job(uuid.uuid4())
+    job.id = 21
+    job.celery_task_id = "dead-task"
+    job.celery_dispatched_at = datetime.now(timezone.utc) - timedelta(minutes=45)
+    events: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        simulation_service_module,
+        "get_settings",
+        lambda: SimpleNamespace(sim_stale_task_minutes=30),
+    )
+    monkeypatch.setattr(
+        simulation_service_module.SimulationRepository,
+        "list_active_jobs_with_task_id",
+        lambda _db, *, limit=500: [job],
+    )
+    monkeypatch.setattr(
+        SimulationService,
+        "_collect_live_celery_task_ids",
+        staticmethod(lambda: set()),
+    )
+    monkeypatch.setattr(
+        simulation_service_module.SimulationRepository,
+        "add_event",
+        lambda _db, **kwargs: events.append(kwargs),
+    )
+
+    reconciled = SimulationService.reconcile_stale_dispatched_jobs(db)
+
+    assert reconciled == 1
+    assert job.celery_task_id is None
+    assert job.celery_dispatched_at is None
+    assert events[0]["stage"] == "queue_reconcile"
+
+
+def test_reconcile_fails_stale_running_task(monkeypatch: pytest.MonkeyPatch) -> None:
+    db = DummyDbSession()
+    job = _build_job(uuid.uuid4())
+    job.id = 22
+    job.status = "RUNNING"
+    job.progress = 35.0
+    job.celery_task_id = "dead-running-task"
+    job.celery_dispatched_at = datetime.now(timezone.utc) - timedelta(minutes=45)
+    events: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        simulation_service_module,
+        "get_settings",
+        lambda: SimpleNamespace(sim_stale_task_minutes=30),
+    )
+    monkeypatch.setattr(
+        simulation_service_module.SimulationRepository,
+        "list_active_jobs_with_task_id",
+        lambda _db, *, limit=500: [job],
+    )
+    monkeypatch.setattr(
+        SimulationService,
+        "_collect_live_celery_task_ids",
+        staticmethod(lambda: set()),
+    )
+    monkeypatch.setattr(
+        simulation_service_module.SimulationRepository,
+        "add_event",
+        lambda _db, **kwargs: events.append(kwargs),
+    )
+
+    reconciled = SimulationService.reconcile_stale_dispatched_jobs(db)
+
+    assert reconciled == 1
+    assert job.status == "FAILED"
+    assert "worker fue terminado" in job.error_message
+    assert events[0]["stage"] == "run_reconcile"
+
+
+def test_reconcile_keeps_fresh_queued_task(monkeypatch: pytest.MonkeyPatch) -> None:
+    db = DummyDbSession()
+    job = _build_job(uuid.uuid4())
+    job.id = 23
+    job.celery_task_id = "fresh-task"
+    job.celery_dispatched_at = datetime.now(timezone.utc)
+
+    monkeypatch.setattr(
+        simulation_service_module,
+        "get_settings",
+        lambda: SimpleNamespace(sim_stale_task_minutes=30),
+    )
+    monkeypatch.setattr(
+        simulation_service_module.SimulationRepository,
+        "list_active_jobs_with_task_id",
+        lambda _db, *, limit=500: [job],
+    )
+    monkeypatch.setattr(
+        SimulationService,
+        "_collect_live_celery_task_ids",
+        staticmethod(lambda: set()),
+    )
+    monkeypatch.setattr(
+        simulation_service_module.SimulationRepository,
+        "add_event",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("No event expected")),
+    )
+
+    reconciled = SimulationService.reconcile_stale_dispatched_jobs(db)
+
+    assert reconciled == 0
+    assert job.celery_task_id == "fresh-task"
