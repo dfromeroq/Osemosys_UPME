@@ -406,7 +406,7 @@ export type CsvSimulationResult = {
   infeasibility_diagnostics?: InfeasibilityDiagnostics | null;
 };
 
-export type ScenarioOperationType = "CLONE_SCENARIO" | "APPLY_EXCEL_CHANGES";
+export type ScenarioOperationType = "CLONE_SCENARIO" | "APPLY_EXCEL_CHANGES" | "DELETE_SCENARIO";
 export type ScenarioOperationStatus = "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
 
 export type ScenarioOperationJob = {

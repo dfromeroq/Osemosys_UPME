@@ -294,6 +294,11 @@ def export_comparison_facet_image(
         description='JSON con datos exógenos (ExogenousDataConfig) para inyectar '
                     'como nueva serie en cada faceta.',
     ),
+    exogenous_contaminantes_data: str | None = Query(
+        None,
+        description='JSON con datos exógenos de contaminantes criterio para sumar '
+                    'a las series existentes en cada faceta.',
+    ),
     hidden_series: str | None = Query(
         None,
         description='Nombres de series ocultas separados por coma (series que el usuario '
@@ -353,6 +358,12 @@ def export_comparison_facet_image(
     if exogenous_data:
         facet_payload = chart_service._inject_exogenous_data_into_facets(
             facet_payload, exogenous_data
+        )
+
+    # Inyectar datos exógenos de contaminantes criterio
+    if exogenous_contaminantes_data:
+        facet_payload = chart_service._inject_exogenous_contaminantes_data(
+            facet_payload, exogenous_contaminantes_data
         )
 
     # Reorden custom de series — aplica a cada faceta para que el PNG/SVG

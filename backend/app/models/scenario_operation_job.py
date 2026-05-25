@@ -28,7 +28,7 @@ class ScenarioOperationJob(Base):
             name="scenario_operation_job_status",
         ),
         CheckConstraint(
-            "operation_type IN ('CLONE_SCENARIO','APPLY_EXCEL_CHANGES')",
+            "operation_type IN ('CLONE_SCENARIO','APPLY_EXCEL_CHANGES','DELETE_SCENARIO')",
             name="scenario_operation_job_type",
         ),
         Index("ix_scenario_operation_job_user_status", "user_id", "status"),

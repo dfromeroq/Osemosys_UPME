@@ -86,6 +86,11 @@ def test_handle_worker_lost_failure_marks_failed_by_task_id(
         )
         or True,
     )
+    monkeypatch.setattr(
+        tasks_module,
+        "_dispatch_pending_jobs_safely",
+        lambda: captured.update({"dispatched": True}),
+    )
 
     sender = SimpleNamespace(name=tasks_module.run_simulation_job.name)
     exc = RuntimeError("Worker exited prematurely: signal 9 (SIGKILL)")
@@ -99,6 +104,7 @@ def test_handle_worker_lost_failure_marks_failed_by_task_id(
     assert captured["task_id"] == "abc-task"
     assert captured["job_id"] == 777
     assert "WorkerLostError" in str(captured["reason"])
+    assert captured["dispatched"] is True
 
 
 def test_handle_worker_lost_failure_ignores_other_tasks(
@@ -108,6 +114,11 @@ def test_handle_worker_lost_failure_ignores_other_tasks(
         tasks_module,
         "_mark_failed_by_task_or_job_id",
         lambda **kwargs: (_ for _ in ()).throw(AssertionError("must not update")),
+    )
+    monkeypatch.setattr(
+        tasks_module,
+        "_dispatch_pending_jobs_safely",
+        lambda: (_ for _ in ()).throw(AssertionError("must not dispatch")),
     )
     sender = SimpleNamespace(name="another.task")
     tasks_module.handle_worker_lost_failure(
@@ -125,6 +136,11 @@ def test_handle_worker_lost_failure_ignores_non_workerlost(
         tasks_module,
         "_mark_failed_by_task_or_job_id",
         lambda **kwargs: (_ for _ in ()).throw(AssertionError("must not update")),
+    )
+    monkeypatch.setattr(
+        tasks_module,
+        "_dispatch_pending_jobs_safely",
+        lambda: (_ for _ in ()).throw(AssertionError("must not dispatch")),
     )
     sender = SimpleNamespace(name=tasks_module.run_simulation_job.name)
     tasks_module.handle_worker_lost_failure(

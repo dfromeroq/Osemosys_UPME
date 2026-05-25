@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -164,6 +165,14 @@ class SimulationService:
         """
         if not task_id:
             return False
+        live_task_ids = SimulationService._collect_live_celery_task_ids()
+        if live_task_ids is None:
+            return True
+        return task_id in live_task_ids
+
+    @staticmethod
+    def _collect_live_celery_task_ids() -> set[str] | None:
+        """Devuelve task ids active/reserved/scheduled o ``None`` si no hay señal fiable."""
         try:
             from app.simulation.celery_app import celery_app  # noqa: WPS433
 
@@ -172,20 +181,97 @@ class SimulationService:
             reserved_all = inspect.reserved() or None
             scheduled_all = inspect.scheduled() or None
         except Exception:  # pragma: no cover — broker caído / red
-            return True
+            return None
 
         # Si ningún worker contestó, no tenemos evidencia fiable: conservador.
         if active_all is None and reserved_all is None and scheduled_all is None:
-            return True
+            return None
 
+        live_ids: set[str] = set()
         for bucket in (active_all or {}, reserved_all or {}, scheduled_all or {}):
             for tasks in bucket.values():
                 for entry in tasks or []:
                     # `scheduled` envuelve la task real dentro de `request`.
                     candidate_id = entry.get("id") or (entry.get("request") or {}).get("id")
-                    if candidate_id == task_id:
-                        return True
-        return False
+                    if candidate_id:
+                        live_ids.add(str(candidate_id))
+        return live_ids
+
+    @staticmethod
+    def _as_utc(value) -> datetime | None:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            if value.tzinfo is None:
+                return value.replace(tzinfo=timezone.utc)
+            return value.astimezone(timezone.utc)
+        return None
+
+    @staticmethod
+    def reconcile_stale_dispatched_jobs(db: Session) -> int:
+        """Repara jobs activos cuyo task_id ya no aparece en workers Celery."""
+        jobs = SimulationRepository.list_active_jobs_with_task_id(db, limit=500)
+        if not jobs:
+            return 0
+
+        live_task_ids = SimulationService._collect_live_celery_task_ids()
+        if live_task_ids is None:
+            return 0
+
+        settings = get_settings()
+        stale_minutes = max(1, int(getattr(settings, "sim_stale_task_minutes", 30) or 30))
+        stale_cutoff = datetime.now(timezone.utc) - timedelta(minutes=stale_minutes)
+        reconciled = 0
+
+        for job in jobs:
+            task_id = str(getattr(job, "celery_task_id", "") or "")
+            if not task_id or task_id in live_task_ids:
+                continue
+
+            if job.status == "QUEUED":
+                dispatched_at = SimulationService._as_utc(
+                    getattr(job, "celery_dispatched_at", None)
+                ) or SimulationService._as_utc(getattr(job, "queued_at", None))
+                if dispatched_at is not None and dispatched_at > stale_cutoff:
+                    continue
+                job.celery_task_id = None
+                if hasattr(job, "celery_dispatched_at"):
+                    job.celery_dispatched_at = None
+                SimulationRepository.add_event(
+                    db,
+                    job_id=job.id,
+                    event_type="WARN",
+                    stage="queue_reconcile",
+                    message=(
+                        "Task Celery encolada no aparece activa/reservada; "
+                        "job liberado para reencolar."
+                    ),
+                    progress=job.progress,
+                )
+                reconciled += 1
+                continue
+
+            if job.status == "RUNNING":
+                reason = (
+                    "Task Celery en ejecución no aparece activa/reservada en "
+                    "ningún worker; probablemente el worker fue terminado."
+                )
+                job.status = "FAILED"
+                job.finished_at = func.now()
+                job.error_message = reason
+                SimulationRepository.add_event(
+                    db,
+                    job_id=job.id,
+                    event_type="ERROR",
+                    stage="run_reconcile",
+                    message=reason,
+                    progress=job.progress,
+                )
+                reconciled += 1
+
+        if reconciled:
+            db.commit()
+        return reconciled
 
     @staticmethod
     def _diagnostic_status_for(job) -> tuple[str, str | None]:
@@ -293,16 +379,36 @@ class SimulationService:
             if user_id is not None and int(reserved_jobs_by_user.get(user_id, 0) or 0) >= user_limit:
                 continue
 
+            dispatched_job = SimulationRepository.get_job_by_id(db, job_id=job.id)
+            if dispatched_job is None or dispatched_job.status != "QUEUED":
+                continue
+            task_id = str(uuid.uuid4())
+            dispatched_job.celery_task_id = task_id
+            if hasattr(dispatched_job, "celery_dispatched_at"):
+                dispatched_job.celery_dispatched_at = func.now()
+            db.commit()
+
             try:
                 if sync_mode:
-                    task = run_simulation_job.apply(args=[job.id], throw=False)
+                    task = run_simulation_job.apply(
+                        args=[job.id], task_id=task_id, throw=False
+                    )
                 else:
-                    task = run_simulation_job.delay(job.id)
+                    task = run_simulation_job.apply_async(
+                        args=[job.id], task_id=task_id
+                    )
             except Exception as exc:  # pragma: no cover - broker externo
                 db.rollback()
                 failed_job = SimulationRepository.get_job_by_id(db, job_id=job.id)
-                if failed_job and failed_job.status == "QUEUED":
+                if (
+                    failed_job
+                    and failed_job.status == "QUEUED"
+                    and failed_job.celery_task_id == task_id
+                ):
                     failed_job.status = "FAILED"
+                    failed_job.celery_task_id = None
+                    if hasattr(failed_job, "celery_dispatched_at"):
+                        failed_job.celery_dispatched_at = None
                     failed_job.error_message = f"QUEUE_ENQUEUE_ERROR: {exc}"
                     SimulationRepository.add_event(
                         db,
@@ -317,17 +423,20 @@ class SimulationService:
                     raise ConflictError("No se pudo encolar la simulacion. Intenta nuevamente.") from exc
                 continue
 
-            dispatched_job = SimulationRepository.get_job_by_id(db, job_id=job.id)
-            if dispatched_job is None or dispatched_job.status != "QUEUED":
+            confirmed_job = SimulationRepository.get_job_by_id(db, job_id=job.id)
+            if (
+                confirmed_job is None
+                or confirmed_job.status != "QUEUED"
+                or confirmed_job.celery_task_id != task.id
+            ):
                 continue
-            dispatched_job.celery_task_id = task.id
             SimulationRepository.add_event(
                 db,
-                job_id=dispatched_job.id,
+                job_id=confirmed_job.id,
                 event_type="INFO",
                 stage="queue",
                 message="Simulacion encolada." if not sync_mode else "Simulacion ejecutada en modo sincrono local.",
-                progress=float(dispatched_job.progress),
+                progress=float(confirmed_job.progress),
             )
             db.commit()
             running_weight += job_weight
@@ -337,6 +446,7 @@ class SimulationService:
     @staticmethod
     def dispatch_pending_jobs(db: Session) -> None:
         """Despacha jobs pendientes respetando la capacidad ponderada total."""
+        SimulationService.reconcile_stale_dispatched_jobs(db)
         SimulationService._dispatch_queued_jobs(db)
 
     @staticmethod

@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-ScenarioOperationType = Literal["CLONE_SCENARIO", "APPLY_EXCEL_CHANGES"]
+ScenarioOperationType = Literal["CLONE_SCENARIO", "APPLY_EXCEL_CHANGES", "DELETE_SCENARIO"]
 ScenarioOperationStatus = Literal["QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED"]
 
 

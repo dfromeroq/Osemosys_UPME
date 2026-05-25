@@ -264,6 +264,36 @@ class ScenarioDetachChildrenResponse(BaseModel):
     detached_child_ids: list[int] = Field(default_factory=list)
 
 
+class ScenarioPeriodInfo(BaseModel):
+    """Periodo de modelado del escenario, derivado de las filas de ``YearSplit``.
+
+    El set ``YEAR`` que entra al modelo Pyomo se construye a partir de los años
+    presentes en el parámetro ``YearSplit`` (ver
+    ``app/simulation/core/data_processing.py``). Por eso este info se calcula
+    contando esas filas y tomando MIN/MAX de su columna ``year``.
+    """
+
+    min_year: int | None = None
+    max_year: int | None = None
+    year_split_rows: int = 0
+    year_count: int = 0
+
+
+class ExtendScenarioPeriodResult(BaseModel):
+    """Resultado de ampliar el periodo del escenario en un año.
+
+    El servidor copia todas las filas de ``osemosys_param_value`` cuyo
+    ``year == previous_max_year`` para el escenario, insertándolas con
+    ``year = new_year``. Es idempotente: si ya había una fila para
+    ``new_year`` con la misma combinación dimensional, se preserva
+    (``ON CONFLICT DO NOTHING``).
+    """
+
+    previous_max_year: int
+    new_year: int
+    rows_added: int
+
+
 class ScenarioPermissionCreate(BaseModel):
     """Crea/actualiza permisos de un usuario sobre un escenario."""
 
