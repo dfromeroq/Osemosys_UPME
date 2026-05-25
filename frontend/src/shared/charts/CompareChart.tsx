@@ -67,7 +67,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
   // para garantizar que todos los subplots usen la misma escala.
   const effectiveSharedYAxis = sharedYAxis || isByYearAltMode;
 
-  const sharedYAxisMax = useMemo(() => {
+  const globalMaxRaw = useMemo(() => {
     if (!effectiveSharedYAxis) return 0;
     let globalMax = 0;
     data.subplots.forEach((subplot) => {
@@ -84,9 +84,9 @@ export const CompareChart: React.FC<CompareChartProps> = ({
   }, [data.subplots, effectiveSharedYAxis]);
 
   const sharedTickInterval = useMemo(() => {
-    if (!effectiveSharedYAxis || sharedYAxisMax <= 0) return undefined;
+    if (!effectiveSharedYAxis || globalMaxRaw <= 0) return undefined;
     const targetTicks = 5;
-    const roughInterval = sharedYAxisMax / targetTicks;
+    const roughInterval = globalMaxRaw / targetTicks;
     if (roughInterval <= 0) return undefined;
     const magnitude = Math.pow(10, Math.floor(Math.log10(roughInterval)));
     const normalized = roughInterval / magnitude;
@@ -94,7 +94,13 @@ export const CompareChart: React.FC<CompareChartProps> = ({
     if (normalized <= 3.5) return 2 * magnitude;
     if (normalized <= 7.5) return 5 * magnitude;
     return 10 * magnitude;
-  }, [sharedYAxisMax, effectiveSharedYAxis]);
+  }, [globalMaxRaw, effectiveSharedYAxis]);
+
+  const sharedYAxisMax = useMemo(() => {
+    if (!effectiveSharedYAxis || globalMaxRaw <= 0) return 0;
+    if (sharedTickInterval === undefined) return globalMaxRaw;
+    return Math.ceil(globalMaxRaw / sharedTickInterval) * sharedTickInterval;
+  }, [globalMaxRaw, sharedTickInterval, effectiveSharedYAxis]);
   const [hiddenNames, setHiddenNames] = useState<Set<string>>(() => new Set());
   const dataSignature = allSeriesNames.join('|');
   useEffect(() => {

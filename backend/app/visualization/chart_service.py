@@ -3248,7 +3248,7 @@ def _render_stacked_bar(
             np.nanmax(np.array(s.data, dtype=float)) for s in line_series
         ) if line_series else 0.0
         y_top = max(bottom.max(), line_max) if len(bottom) > 0 else line_max
-    y_top = max(y_top, 1.0) * 1.08  # 8% headroom
+    y_top = max(y_top, 1.0) * 1.20  # 20% headroom — asegura último tick ≥ max dato
 
     if y_axis_min is not None or y_axis_max is not None:
         cur_lo = float(y_axis_min) if y_axis_min is not None else 0.0
@@ -3538,7 +3538,7 @@ def _render_stacked_area(
         line_max = max(
             np.nanmax(np.array(s.data, dtype=float)) for s in line_series
         ) if line_series else 0.0
-    y_top = max(area_top, line_max, 1.0) * 1.08
+    y_top = max(area_top, line_max, 1.0) * 1.20
 
     if y_axis_min is not None or y_axis_max is not None:
         cur_lo = float(y_axis_min) if y_axis_min is not None else 0.0
@@ -3640,7 +3640,7 @@ def render_comparison_by_year_bytes(
                     global_max = max(global_max, float(finite.max()))
     if global_max <= 0:
         global_max = 1.0
-    y_top = global_max * 1.12
+    y_top = global_max * 1.20
 
     for idx, sp in enumerate(subplots):
         ax = axes[idx // cols][idx % cols]
@@ -4130,7 +4130,7 @@ def render_comparison_facet_figure_bytes(
         global_max = max(global_max, lm)
     if global_max <= 0:
         global_max = 1.0
-    y_top = global_max * 1.12
+    y_top = global_max * 1.20
 
     show_stack_totals = view_mode != "line" and all(len(b) <= 18 for b in stack_tops)
 
