@@ -3248,7 +3248,7 @@ def _render_stacked_bar(
             np.nanmax(np.array(s.data, dtype=float)) for s in line_series
         ) if line_series else 0.0
         y_top = max(bottom.max(), line_max) if len(bottom) > 0 else line_max
-    y_top = max(y_top, 1.0) * 1.08  # 8% headroom
+    y_top = max(y_top, 1.0) * 1.20  # 20% headroom — asegura último tick ≥ max dato
 
     if y_axis_min is not None or y_axis_max is not None:
         cur_lo = float(y_axis_min) if y_axis_min is not None else 0.0
@@ -3538,7 +3538,7 @@ def _render_stacked_area(
         line_max = max(
             np.nanmax(np.array(s.data, dtype=float)) for s in line_series
         ) if line_series else 0.0
-    y_top = max(area_top, line_max, 1.0) * 1.08
+    y_top = max(area_top, line_max, 1.0) * 1.20
 
     if y_axis_min is not None or y_axis_max is not None:
         cur_lo = float(y_axis_min) if y_axis_min is not None else 0.0
@@ -3640,7 +3640,7 @@ def render_comparison_by_year_bytes(
                     global_max = max(global_max, float(finite.max()))
     if global_max <= 0:
         global_max = 1.0
-    y_top = global_max * 1.12
+    y_top = global_max * 1.20
 
     for idx, sp in enumerate(subplots):
         ax = axes[idx // cols][idx % cols]
@@ -4130,7 +4130,7 @@ def render_comparison_facet_figure_bytes(
         global_max = max(global_max, lm)
     if global_max <= 0:
         global_max = 1.0
-    y_top = global_max * 1.12
+    y_top = global_max * 1.20
 
     show_stack_totals = view_mode != "line" and all(len(b) <= 18 for b in stack_tops)
 
@@ -4871,6 +4871,20 @@ def build_comparison_data_by_year_alt(
             _palette = get_colores_grupos()
             mapa_colores = {c: _palette.get(c, "#999999") for c in categorias_unicas}
 
+    from app.services.chart_series_config_service import (
+        apply_global_series_config,
+        normalize_agrupar_por,
+    )
+    agrup_key = normalize_agrupar_por(agrupacion_usar, agrupacion_usar)
+    ordered_stack = apply_global_series_config(
+        db,
+        tipo=tipo,
+        agrupar_por=agrup_key,
+        orden_color=list(categorias_unicas),
+        color_dict=mapa_colores,
+        default_name=lambda c: get_label(str(c)),
+    )
+
     # Construir subplots por escenario
     subplots: list[SubplotData] = []
     for jid in job_ids:
@@ -4881,14 +4895,14 @@ def build_comparison_data_by_year_alt(
         escenario_nombre = scenario_names.get(jid, f"Job {jid}")
 
         series: list[ChartSeries] = []
-        for categoria in categorias_unicas:
+        for categoria, col_cat, name_cat in ordered_stack:
             df_cat = df_escenario[df_escenario["CATEGORIA"] == categoria]
             if df_cat.empty:
                 series.append(
                     ChartSeries(
-                        name=get_label(str(categoria)),
+                        name=name_cat,
                         data=[0.0] * len(years_to_plot),
-                        color=mapa_colores.get(categoria, "#999999"),
+                        color=col_cat,
                         stack="default",
                     )
                 )
@@ -4902,9 +4916,9 @@ def build_comparison_data_by_year_alt(
 
             series.append(
                 ChartSeries(
-                    name=get_label(str(categoria)),
+                    name=name_cat,
                     data=data,
-                    color=mapa_colores.get(categoria, "#999999"),
+                    color=col_cat,
                     stack="default",
                 )
             )
