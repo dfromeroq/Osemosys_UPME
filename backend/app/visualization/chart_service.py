@@ -2323,6 +2323,112 @@ def _inject_exogenous_data_into_facets(
     )
 
 
+def _inject_exogenous_contaminantes_data(
+    facet_response: CompareChartFacetResponse,
+    exogenous_json: str,
+) -> CompareChartFacetResponse:
+    """Inyecta datos exógenos de contaminantes (BC, CO, etc.) sumándolos a las
+    series existentes en cada facet.
+
+    Espeja la lógica de ``injectContaminantesExogenousFacet`` en el frontend.
+    """
+    try:
+        exo = json.loads(exogenous_json)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return facet_response
+
+    if not isinstance(exo, dict):
+        return facet_response
+    if not exo.get("active"):
+        return facet_response
+    scenarios = exo.get("scenarios", [])
+    if not scenarios:
+        return facet_response
+
+    # Build exo_by_job: {job_id: {year: {pollutant_key: value}}}
+    exo_by_job: dict[int, dict[int, dict[str, float]]] = {}
+    for s in scenarios:
+        jid = s.get("jobId")
+        if jid is None:
+            continue
+        year_dict: dict[int, dict[str, float]] = {}
+        raw_data = s.get("data", {})
+        if not isinstance(raw_data, dict):
+            continue
+        for pollutant_key, pairs in raw_data.items():
+            if not isinstance(pairs, list):
+                continue
+            for pair in pairs:
+                if not isinstance(pair, (list, tuple)) or len(pair) < 2:
+                    continue
+                year = pair[0]
+                val = pair[1]
+                if year is None or val is None:
+                    continue
+                y = int(year)
+                v = float(val)
+                if y not in year_dict:
+                    year_dict[y] = {}
+                year_dict[y][str(pollutant_key)] = v
+        exo_by_job[int(jid)] = year_dict
+
+    def _strip_emi(name: str) -> str:
+        return name[3:] if name.startswith("EMI") else name
+
+    new_facets: list[FacetData] = []
+    for facet in facet_response.facets:
+        job_exo = exo_by_job.get(facet.job_id)
+        if not job_exo:
+            new_facets.append(facet)
+            continue
+
+        changed = False
+        new_series: list[ChartSeries] = []
+        for series in facet.series:
+            key = _strip_emi(series.name)
+            new_data: list[float | None] = []
+            for cat_idx, cat in enumerate(facet.categories):
+                try:
+                    year = int(cat)
+                except (ValueError, TypeError):
+                    new_data.append(series.data[cat_idx] if cat_idx < len(series.data) else None)
+                    continue
+                val = series.data[cat_idx] if cat_idx < len(series.data) else None
+                if val is None:
+                    new_data.append(None)
+                    continue
+                year_exo = job_exo.get(year)
+                if year_exo is not None and key in year_exo:
+                    summed = val + year_exo[key]
+                    new_data.append(summed)
+                    changed = True
+                else:
+                    new_data.append(val)
+            new_series.append(ChartSeries(
+                name=series.name,
+                data=new_data,
+                color=series.color,
+                stack=series.stack,
+            ))
+        if not changed:
+            new_facets.append(facet)
+        else:
+            new_facets.append(FacetData(
+                scenario_name=facet.scenario_name,
+                job_id=facet.job_id,
+                display_name=facet.display_name,
+                scenario_tag_name=facet.scenario_tag_name,
+                categories=facet.categories,
+                series=new_series,
+            ))
+
+    return CompareChartFacetResponse(
+        title=facet_response.title,
+        facets=new_facets,
+        yAxisLabel=facet_response.yAxisLabel,
+    )
+
+
 def _align_facet_x_axis(facets: list[FacetData]) -> None:
     """Unifica el eje X entre todos los facets, in-place.
 

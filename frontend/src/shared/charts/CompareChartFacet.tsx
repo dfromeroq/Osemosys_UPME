@@ -246,6 +246,8 @@ interface CompareChartFacetProps {
     scenarioAliases?: Record<number, string>;
     /** Datos exógenos (Refinerías) serializados como JSON string. */
     exogenousData?: string | undefined;
+    /** Datos exógenos contaminantes criterio serializados como JSON string. */
+    exogenousContaminantesData?: string | undefined;
   };
   /** Si true, los controles de export se colapsan en un menú kebab "⋯". */
   compactToolbar?: boolean;
@@ -814,6 +816,9 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
       }
       if (serverFacetExport.exogenousData) {
         payload.exogenous_data = serverFacetExport.exogenousData;
+      }
+      if (serverFacetExport.exogenousContaminantesData) {
+        payload.exogenous_contaminantes_data = serverFacetExport.exogenousContaminantesData;
       }
       if (hiddenSeriesNames.size > 0) {
         payload.hidden_series = Array.from(hiddenSeriesNames).join(",");
