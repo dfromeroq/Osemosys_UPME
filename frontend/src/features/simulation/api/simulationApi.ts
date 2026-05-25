@@ -400,6 +400,7 @@ export const simulationApi = {
       region?: string;
       job_display_overrides?: string;
       exogenous_data?: string;
+      exogenous_contaminantes_data?: string;
       hidden_series?: string;
     },
     fmt: "png" | "svg" = "png",
@@ -411,7 +412,6 @@ export const simulationApi = {
       fmt,
     };
     if (params.es_porcentaje) q.es_porcentaje = params.es_porcentaje;
-    if (params.view_mode) q.view_mode = params.view_mode;
     if (params.clean) q.clean = "true";
     if (params.sub_filtro) q.sub_filtro = params.sub_filtro;
     if (params.loc) q.loc = params.loc;
@@ -424,6 +424,7 @@ export const simulationApi = {
     if (params.region) q.region = params.region;
     if (params.job_display_overrides) q.job_display_overrides = params.job_display_overrides;
     if (params.exogenous_data) q.exogenous_data = params.exogenous_data;
+    if (params.exogenous_contaminantes_data) q.exogenous_contaminantes_data = params.exogenous_contaminantes_data;
     if (params.hidden_series) q.hidden_series = params.hidden_series;
 
     const response = await httpClient.get("/visualizations/export-compare-facet", {

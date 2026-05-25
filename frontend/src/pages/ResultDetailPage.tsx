@@ -69,17 +69,29 @@ import {
   syntheticSeriesSignature,
 } from '../shared/charts/syntheticSeriesStorage';
 import type { ExogenousDataConfig, SyntheticSeries } from '../types/domain';
+import type { ContaminantesExogenousConfig } from '../shared/charts/contaminantesExogenousTypes';
 import { ExogenousDataEditor } from '../shared/charts/ExogenousDataEditor';
+import { ContaminantesExogenousEditor } from '../shared/charts/ContaminantesExogenousEditor';
 import {
   loadExogenousData,
   saveExogenousData,
   exogenousDataSignature,
 } from '../shared/charts/exogenousDataStorage';
 import {
+  loadContaminantesExogenousData,
+  saveContaminantesExogenousData,
+  contaminantesExogenousSignature,
+} from '../shared/charts/contaminantesExogenousStorage';
+import {
   injectExogenousDataFacet,
   injectExogenousDataByYear,
   injectExogenousDataLineTotal,
 } from '../shared/charts/exogenousDataTransform';
+import {
+  injectContaminantesExogenousFacet,
+  injectContaminantesExogenousByYear,
+  injectContaminantesExogenousLineTotal,
+} from '../shared/charts/contaminantesExogenousTransform';
 import { savedChartsApi } from '@/features/reports/api/savedChartsApi';
 import { useCurrentUser } from '@/app/providers/useCurrentUser';
 import { ChartSeriesConfigTab } from '@/features/reports/components/ChartSeriesConfigTab';
@@ -574,6 +586,9 @@ export function ResultDetailPage() {
    */
   const [exogenousData, setExogenousData] = useState<ExogenousDataConfig | null>(null);
   const [showExogenousEditor, setShowExogenousEditor] = useState(false);
+  /** Datos exógenos para contaminantes criterio (BC, CO, etc.) */
+  const [contaminantesExogenousData, setContaminantesExogenousData] = useState<ContaminantesExogenousConfig | null>(null);
+  const [showContaminantesExogenousEditor, setShowContaminantesExogenousEditor] = useState(false);
   /**
    * Flujo "crear gráfica y agregarla al reporte". Si la URL tiene el query
    * param ?addToReport=<id>, el botón Guardar cambia de etiqueta y al guardar
@@ -868,8 +883,11 @@ export function ResultDetailPage() {
     if (exogenousData?.active && isComparing) {
       data = injectExogenousDataByYear(data, exogenousData, chartJobIds);
     }
+    if (contaminantesExogenousData?.active && isComparing) {
+      data = injectContaminantesExogenousByYear(data, contaminantesExogenousData, chartJobIds);
+    }
     return data;
-  }, [compareChartData, customSeriesOrder, scenarioAliases, chartJobIds, historicalBarLabel, exogenousData, isComparing]);
+  }, [compareChartData, customSeriesOrder, scenarioAliases, chartJobIds, historicalBarLabel, exogenousData, contaminantesExogenousData, isComparing]);
 
   // Forzar disposición vertical para chart mixto (áreas + líneas)
   const RECURSOS_CHARTS = new Set(['recursos_vs_demanda', 'recursos_vs_demanda_gas', 'recursos_vs_demanda_carbon']);
@@ -894,9 +912,12 @@ export function ResultDetailPage() {
       if (exogenousData?.active && isComparing) {
         data = injectExogenousDataFacet(data, exogenousData);
       }
+      if (contaminantesExogenousData?.active && isComparing) {
+        data = injectContaminantesExogenousFacet(data, contaminantesExogenousData);
+      }
       return data;
     },
-    [compareFacetData, customSeriesOrder, scenarioAliases, exogenousData, isComparing],
+    [compareFacetData, customSeriesOrder, scenarioAliases, exogenousData, contaminantesExogenousData, isComparing],
   );
 
   const displayCompareLineData = useMemo(
@@ -907,9 +928,12 @@ export function ResultDetailPage() {
       if (exogenousData?.active && isComparing) {
         data = injectExogenousDataLineTotal(data, exogenousData, chartJobIds);
       }
+      if (contaminantesExogenousData?.active && isComparing) {
+        data = injectContaminantesExogenousLineTotal(data, contaminantesExogenousData, chartJobIds);
+      }
       return data;
     },
-    [compareLineData, customSeriesOrder, scenarioAliases, chartJobIds, exogenousData, isComparing],
+    [compareLineData, customSeriesOrder, scenarioAliases, chartJobIds, exogenousData, contaminantesExogenousData, isComparing],
   );
 
   // Lista de series disponibles para el modal de orden, según el modo
@@ -985,6 +1009,27 @@ export function ResultDetailPage() {
   useEffect(() => {
     saveExogenousData(exogenousSignatureStr, exogenousData);
   }, [exogenousSignatureStr, exogenousData]);
+
+  // ── Contaminantes exógenos ──────────────────────────────────────────────
+
+  const contaminantesExogenousSignatureStr = useMemo(
+    () =>
+      contaminantesExogenousSignature({
+        tipo: chartSelection.tipo,
+        un: chartSelection.un,
+        agrupar_por: chartSelection.agrupar_por,
+        job_ids_signature: chartJobIds.slice().sort((a, b) => a - b).join(','),
+      }),
+    [chartSelection, chartJobIds],
+  );
+
+  useEffect(() => {
+    setContaminantesExogenousData(loadContaminantesExogenousData(contaminantesExogenousSignatureStr));
+  }, [contaminantesExogenousSignatureStr]);
+
+  useEffect(() => {
+    saveContaminantesExogenousData(contaminantesExogenousSignatureStr, contaminantesExogenousData);
+  }, [contaminantesExogenousSignatureStr, contaminantesExogenousData]);
 
   /** Al cambiar `display_name` en resúmenes, se vuelven a pedir los datos de gráficas (títulos de facetas / eje X en comparación). */
   const chartDisplayNamesSignature = useMemo(() => {
@@ -2174,7 +2219,7 @@ export function ResultDetailPage() {
                   : chartSelection.viewMode === 'area' ? 'area'
                   : 'column'
                 }
-                serverFacetExport={{ jobIds: chartJobIds, selection: chartSelection, scenarioAliases, exogenousData: exogenousData && isComparing ? JSON.stringify(exogenousData) : undefined }}
+                serverFacetExport={{ jobIds: chartJobIds, selection: chartSelection, scenarioAliases, exogenousData: exogenousData && isComparing ? JSON.stringify(exogenousData) : undefined, exogenousContaminantesData: contaminantesExogenousData && isComparing ? JSON.stringify(contaminantesExogenousData) : undefined }}
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
               />
@@ -2320,6 +2365,31 @@ export function ResultDetailPage() {
               </button>
             </div>
           ) : null}
+
+          {/* Datos exógenos: solo para emisiones_contaminantes en modo comparación. */}
+          {isComparing && chartSelection.tipo === 'emisiones_contaminantes' ? (
+            <div className="rounded-xl border border-slate-800 bg-slate-900/30 backdrop-blur-sm p-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="m-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                  Datos exógenos — Contaminantes Criterio
+                </p>
+                <p className="m-0 mt-1 text-xs text-slate-500">
+                  {contaminantesExogenousData?.active && contaminantesExogenousData.scenarios.some((s) => Object.keys(s.data).length > 0)
+                    ? 'Datos cargados. Se sumarán a las series existentes.'
+                    : 'Agrega datos de emisiones de contaminantes criterio por escenario.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowContaminantesExogenousEditor(true)}
+                className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/20"
+              >
+                {contaminantesExogenousData?.active && contaminantesExogenousData.scenarios.some((s) => Object.keys(s.data).length > 0)
+                  ? 'Editar datos exógenos'
+                  : '+ Agregar datos exógenos'}
+              </button>
+            </div>
+          ) : null}
         </>
       ) : null}
 
@@ -2356,6 +2426,21 @@ export function ResultDetailPage() {
               ?.flatMap((sp) => sp.categories.map((c) => Number(c)).filter(Number.isFinite))
             ?? singleChartData?.categories?.map((c) => Number(c)).filter(Number.isFinite)
         }
+      />
+
+      <ContaminantesExogenousEditor
+        open={showContaminantesExogenousEditor}
+        onClose={() => setShowContaminantesExogenousEditor(false)}
+        value={contaminantesExogenousData}
+        onChange={setContaminantesExogenousData}
+        scenarios={chartJobIds.map((jid, i) => ({
+          jobId: jid,
+          name: allSummaries.find((s) => Number(s.job_id) === jid)?.display_name
+            ?? allSummaries.find((s) => Number(s.job_id) === jid)?.scenario_name
+            ?? allSummaries.find((s) => Number(s.job_id) === jid)?.scenario_tag?.name
+            ?? `Escenario ${i + 1}`,
+        }))}
+        unitLabel={chartSelection.un}
       />
 
       <SaveChartModal
