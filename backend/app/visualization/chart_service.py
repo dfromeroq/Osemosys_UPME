@@ -146,6 +146,55 @@ def _apply_regional_transform(
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+def _get_simulation_max_year(db: Session, job_id: int) -> int | None:
+    """Último año del horizonte de simulación del job.
+
+    Misma fuente que la página "Periodo del modelo" del escenario
+    (``ScenarioService.get_scenario_period_info``): ``max(year)`` de las filas
+    ``YearSplit`` en ``osemosys_param_value`` del escenario asociado al job.
+    Es el set ``YEAR`` que entra realmente al modelo Pyomo (ver
+    ``data_processing.py``), por lo que coincide con lo que el usuario ve al
+    editar el escenario.
+
+    Para jobs en modo Excel/SAND (sin ``scenario_id``) o cuando no hay
+    ``YearSplit`` cargado, se cae al ``max(year)`` de los outputs del job
+    como aproximación.
+    """
+    scenario_id = (
+        db.query(SimulationJob.scenario_id)
+        .filter(SimulationJob.id == job_id)
+        .scalar()
+    )
+    if scenario_id is not None:
+        val = (
+            db.query(func.max(OsemosysParamValue.year))
+            .filter(
+                OsemosysParamValue.id_scenario == scenario_id,
+                OsemosysParamValue.param_name == "YearSplit",
+            )
+            .scalar()
+        )
+        if val is not None:
+            return int(val)
+    # Fallback: Excel/SAND o YearSplit ausente.
+    val = (
+        db.query(func.max(OsemosysOutputParamValue.year))
+        .filter(OsemosysOutputParamValue.id_simulation_job == job_id)
+        .scalar()
+    )
+    return int(val) if val is not None else None
+
+
+def _extend_years_to_sim_end(años: list[int], max_sim_year: int | None) -> list[int]:
+    """Extiende una lista ordenada de años hasta ``max_sim_year`` inclusive."""
+    if max_sim_year is None or not años:
+        return años
+    last = años[-1]
+    if max_sim_year <= last:
+        return años
+    return años + list(range(last + 1, max_sim_year + 1))
+
+
 def _load_variable_data(
     db: Session,
     job_id: int,
@@ -1656,7 +1705,13 @@ def build_chart_data(
     color_dict = dict(zip(orden_color, colores_ordenados))
 
     # ── Construir respuesta ──────────────────────────────────────────────
-    años = sorted(df_agg["YEAR"].unique())
+    años = [int(a) for a in sorted(df_agg["YEAR"].unique())]
+    # Extender el eje X hasta el último año del horizonte de simulación. Los
+    # años faltantes quedan en 0 (vía ``valor_por_año.get(a, 0.0)`` abajo).
+    # Para porcentajes (mix eléctrico, etc.) extender no tiene sentido — el
+    # 0 absoluto haría que la suma anual sea 0 y rompería el cálculo.
+    if not es_porcentaje:
+        años = _extend_years_to_sim_end(años, _get_simulation_max_year(db, job_id))
     categories = [str(a) for a in años]
 
     def _composite_label(code: str) -> str:
@@ -2766,6 +2821,13 @@ def build_comparison_line_data(
         )
 
     years_sorted = sorted(all_years)
+    # Extender el eje X hasta el mayor "último año de simulación" entre los
+    # escenarios comparados, para que la línea no se corte antes de tiempo.
+    sim_max_years = [
+        m for m in (_get_simulation_max_year(db, jid) for jid in job_ids) if m is not None
+    ]
+    if sim_max_years:
+        years_sorted = _extend_years_to_sim_end(years_sorted, max(sim_max_years))
     categories = [str(y) for y in years_sorted]
 
     series: list[ChartSeries] = []
