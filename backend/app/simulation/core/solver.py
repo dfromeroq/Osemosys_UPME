@@ -380,27 +380,44 @@ def _extract_reserve_margin_dual(instance: pyo.ConcreteModel) -> float | None:
 
     max_abs: float | None = None
 
-    def _update(con_data: object) -> None:
-        nonlocal max_abs
-        try:
-            d = dual_suffix.get(con_data)
-            if d is not None:
-                abs_d = abs(float(d))
-                if max_abs is None or abs_d > max_abs:
-                    max_abs = abs_d
-        except Exception:
-            pass
-
     native = getattr(instance, "ReserveMarginConstraint", None)
     if native is not None:
-        for idx in native:
-            _update(native[idx])
+        # `native.values()` itera ConstraintData directamente y evita el
+        # re-lookup `native[idx]` por cada (r,l,y). Para modelos con horario
+        # detallado son cientos de miles de iteraciones.
+        for con_data in native.values():
+            try:
+                d = dual_suffix.get(con_data)
+            except Exception:
+                continue
+            if d is None:
+                continue
+            try:
+                abs_d = abs(float(d))
+            except (TypeError, ValueError):
+                continue
+            if max_abs is None or abs_d > max_abs:
+                max_abs = abs_d
 
     udc = getattr(instance, "UDC1_UserDefinedConstraintInequality", None)
     if udc is not None:
-        for idx in udc:
-            if isinstance(idx, tuple) and len(idx) >= 2 and idx[1] == "UDC_Margin":
-                _update(udc[idx])
+        # Para UDC necesitamos la clave para filtrar por 'UDC_Margin', así que
+        # iteramos .items() en vez de .values().
+        for idx, con_data in udc.items():
+            if not (isinstance(idx, tuple) and len(idx) >= 2 and idx[1] == "UDC_Margin"):
+                continue
+            try:
+                d = dual_suffix.get(con_data)
+            except Exception:
+                continue
+            if d is None:
+                continue
+            try:
+                abs_d = abs(float(d))
+            except (TypeError, ValueError):
+                continue
+            if max_abs is None or abs_d > max_abs:
+                max_abs = abs_d
 
     if max_abs is None:
         return None
