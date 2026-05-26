@@ -13,6 +13,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useToast } from "@/app/providers/useToast";
 import {
   scenariosApi,
+  type AuditRevertResult,
   type OsemosysParamAuditEntry,
   type ScenarioAuditBatch,
   type ScenarioAuditFacets,
@@ -52,8 +53,13 @@ function deltaPct(oldV: number | null, newV: number | null): string | null {
   if (oldV == null || newV == null || !Number.isFinite(oldV) || !Number.isFinite(newV)) {
     return null;
   }
-  if (oldV === 0) return newV === 0 ? "0%" : "∞%";
-  return `${(((newV - oldV) / Math.abs(oldV)) * 100).toFixed(1)}%`;
+  if (oldV === 0) {
+    if (newV === 0) return "0%";
+    return newV > 0 ? "nuevo (era 0)" : "nuevo (era 0)";
+  }
+  const pct = ((newV - oldV) / Math.abs(oldV)) * 100;
+  if (!Number.isFinite(pct)) return null;
+  return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
 }
 
 function actionVariant(action: string): "success" | "info" | "danger" | "neutral" {
@@ -301,23 +307,41 @@ function MultiSelectChips({ label, options, selected, onChange }: MultiSelectChi
   );
 }
 
+function formatRevertSummary(result: AuditRevertResult): string {
+  const parts: string[] = [];
+  if (result.reverted) parts.push(`${result.reverted} revertido(s)`);
+  if (result.skipped) parts.push(`${result.skipped} omitido(s)`);
+  if (result.failed) parts.push(`${result.failed} fallido(s)`);
+  return parts.join(" · ") || "Sin cambios";
+}
+
 function BatchCard({
   scenarioId,
   batch,
+  onReverted,
+  canRevert,
 }: {
   scenarioId: number;
   batch: ScenarioAuditBatch;
+  onReverted: () => void;
+  canRevert: boolean;
 }) {
+  const { push } = useToast();
   const [expanded, setExpanded] = useState(false);
   const [entries, setEntries] = useState<OsemosysParamAuditEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reverting, setReverting] = useState(false);
+  const [revertResult, setRevertResult] = useState<AuditRevertResult | null>(null);
+  const [revertingEntryId, setRevertingEntryId] = useState<number | null>(null);
 
   const stats = batch.stats || {};
   const ins = stats.INSERT || 0;
   const upd = stats.UPDATE || 0;
   const del = stats.DELETE || 0;
   const isLegacy = !batch.batch_id;
+  const fullyReverted = batch.fully_reverted;
+  const isRevert = batch.is_revert;
 
   const loadEntries = useCallback(async () => {
     if (!batch.batch_id) {
@@ -349,6 +373,48 @@ function BatchCard({
     }
   }
 
+  async function handleRevertBatch(force: boolean) {
+    if (!batch.batch_id) return;
+    const verb = force ? "Forzar deshacer" : "Deshacer";
+    const ok = window.confirm(
+      `${verb} ${batch.entries_count} cambio(s) de esta operación?\n\n` +
+        `Esta acción genera un nuevo batch de revert; no es destructiva.`,
+    );
+    if (!ok) return;
+    setReverting(true);
+    try {
+      const res = await scenariosApi.revertAuditBatch(scenarioId, batch.batch_id, {
+        force,
+      });
+      setRevertResult(res);
+      push(formatRevertSummary(res), res.failed ? "error" : "success");
+      onReverted();
+    } catch (e) {
+      push(e instanceof Error ? e.message : "No se pudo revertir el batch.", "error");
+    } finally {
+      setReverting(false);
+    }
+  }
+
+  async function handleRevertEntry(entryId: number, force: boolean) {
+    const ok = window.confirm(
+      `${force ? "Forzar deshacer" : "Deshacer"} este cambio?`,
+    );
+    if (!ok) return;
+    setRevertingEntryId(entryId);
+    try {
+      const res = await scenariosApi.revertAuditEntry(scenarioId, entryId, { force });
+      push(formatRevertSummary(res), res.failed ? "error" : "success");
+      onReverted();
+      // Refresca también las entries expandidas.
+      if (expanded && batch.batch_id) void loadEntries();
+    } catch (e) {
+      push(e instanceof Error ? e.message : "No se pudo revertir el cambio.", "error");
+    } finally {
+      setRevertingEntryId(null);
+    }
+  }
+
   const sameTime = batch.started_at === batch.ended_at;
   const rows = entries ?? batch.preview;
 
@@ -370,18 +436,39 @@ function BatchCard({
               <Badge variant={batch.source === "API" ? "info" : "neutral"}>
                 {sourceLabel(batch.source)}
               </Badge>
+              {isRevert ? <Badge variant="warning">Revert</Badge> : null}
+              {fullyReverted ? (
+                <Badge variant="neutral">Revertido</Badge>
+              ) : batch.reverted_count > 0 ? (
+                <Badge variant="neutral">
+                  {batch.reverted_count}/{batch.entries_count} revertidos
+                </Badge>
+              ) : null}
               {isLegacy ? <Badge variant="warning">Legacy</Badge> : null}
               <span className="muted" style={{ fontSize: 12 }}>
                 {sameTime
                   ? formatDateTime(batch.started_at)
                   : `${formatDateTime(batch.started_at)} – ${formatDateTime(batch.ended_at)}`}
               </span>
+              {batch.batch_id ? (
+                <span
+                  className="muted"
+                  title={batch.batch_id}
+                  style={{ fontFamily: "monospace", fontSize: 11 }}
+                >
+                  #{batch.batch_id.slice(0, 8)}
+                </span>
+              ) : null}
             </div>
             {batch.batch_label ? (
               <div style={{ fontSize: 13 }}>{batch.batch_label}</div>
             ) : null}
             {batch.params_touched.length > 0 ? (
-              <div className="muted" style={{ fontSize: 12 }}>
+              <div
+                className="muted"
+                style={{ fontSize: 12 }}
+                title={batch.params_touched.join("\n")}
+              >
                 Parámetros afectados: {batch.params_touched.slice(0, 6).join(", ")}
                 {batch.params_touched.length > 6 ? `… (+${batch.params_touched.length - 6})` : ""}
               </div>
@@ -392,6 +479,16 @@ function BatchCard({
             {upd > 0 ? <Badge variant="info">~{upd}</Badge> : null}
             {del > 0 ? <Badge variant="danger">-{del}</Badge> : null}
             <Badge variant="neutral">{batch.entries_count} cambios</Badge>
+            {canRevert && batch.batch_id && !isRevert && !fullyReverted ? (
+              <Button
+                variant="ghost"
+                onClick={() => void handleRevertBatch(false)}
+                disabled={reverting}
+                title="Deshacer todos los cambios de esta operación"
+              >
+                {reverting ? "Deshaciendo…" : "Deshacer batch"}
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               onClick={toggle}
@@ -402,6 +499,31 @@ function BatchCard({
             </Button>
           </div>
         </div>
+
+        {revertResult && revertResult.results.some((r) => r.status === "conflict") ? (
+          <div
+            style={{
+              background: "rgba(245,158,11,0.10)",
+              border: "1px solid rgba(245,158,11,0.35)",
+              borderRadius: 6,
+              padding: 8,
+              fontSize: 12,
+            }}
+          >
+            <div style={{ marginBottom: 4 }}>
+              <strong>Conflictos detectados.</strong> Algunos valores fueron
+              modificados después; aplicar el revert puede sobrescribir esos
+              cambios.
+            </div>
+            <Button
+              variant="ghost"
+              onClick={() => void handleRevertBatch(true)}
+              disabled={reverting}
+            >
+              {reverting ? "Aplicando…" : "Forzar revert"}
+            </Button>
+          </div>
+        ) : null}
 
         {expanded ? (
           <div>
@@ -423,6 +545,9 @@ function BatchCard({
                   <thead>
                     <tr style={{ textAlign: "left" }}>
                       <th style={{ padding: 6, borderBottom: "1px solid rgba(148,163,184,0.25)" }}>
+                        #
+                      </th>
+                      <th style={{ padding: 6, borderBottom: "1px solid rgba(148,163,184,0.25)" }}>
                         Parámetro
                       </th>
                       <th style={{ padding: 6, borderBottom: "1px solid rgba(148,163,184,0.25)" }}>
@@ -434,26 +559,90 @@ function BatchCard({
                       <th style={{ padding: 6, borderBottom: "1px solid rgba(148,163,184,0.25)" }}>
                         Acción
                       </th>
+                      <th style={{ padding: 6, borderBottom: "1px solid rgba(148,163,184,0.25)" }}>
+                        Estado
+                      </th>
+                      {canRevert ? (
+                        <th
+                          style={{
+                            padding: 6,
+                            borderBottom: "1px solid rgba(148,163,184,0.25)",
+                          }}
+                        >
+                          Deshacer
+                        </th>
+                      ) : null}
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((e) => (
-                      <tr
-                        key={e.id}
-                        style={{ borderBottom: "1px solid rgba(148,163,184,0.12)" }}
-                      >
-                        <td style={{ padding: 6, fontFamily: "monospace" }}>{e.param_name}</td>
-                        <td style={{ padding: 6 }}>
-                          <DimensionChips dims={asDims(e.dimensions_json)} />
-                        </td>
-                        <td style={{ padding: 6 }}>
-                          <DiffCell entry={e} />
-                        </td>
-                        <td style={{ padding: 6 }}>
-                          <Badge variant={actionVariant(e.action)}>{e.action}</Badge>
-                        </td>
-                      </tr>
-                    ))}
+                    {rows.map((e) => {
+                      const alreadyReverted = e.reverted_at != null;
+                      const canRevertRow =
+                        canRevert && !e.is_revert && !alreadyReverted;
+                      return (
+                        <tr
+                          key={e.id}
+                          style={{
+                            borderBottom: "1px solid rgba(148,163,184,0.12)",
+                            opacity: alreadyReverted ? 0.55 : 1,
+                          }}
+                        >
+                          <td
+                            style={{
+                              padding: 6,
+                              fontFamily: "monospace",
+                              color: "var(--text-muted, #94a3b8)",
+                            }}
+                          >
+                            {e.id}
+                          </td>
+                          <td style={{ padding: 6, fontFamily: "monospace" }}>
+                            {e.param_name}
+                          </td>
+                          <td style={{ padding: 6 }}>
+                            <DimensionChips dims={asDims(e.dimensions_json)} />
+                          </td>
+                          <td style={{ padding: 6 }}>
+                            <DiffCell entry={e} />
+                          </td>
+                          <td style={{ padding: 6 }}>
+                            <Badge variant={actionVariant(e.action)}>{e.action}</Badge>
+                          </td>
+                          <td style={{ padding: 6 }}>
+                            {e.is_revert ? (
+                              <Badge variant="warning">Revert</Badge>
+                            ) : alreadyReverted ? (
+                              <span
+                                title={`Revertido por ${e.reverted_by ?? "?"} el ${formatDateTime(
+                                  e.reverted_at,
+                                )}`}
+                              >
+                                <Badge variant="neutral">Revertido</Badge>
+                              </span>
+                            ) : (
+                              <span className="muted">—</span>
+                            )}
+                          </td>
+                          {canRevert ? (
+                            <td style={{ padding: 6 }}>
+                              {canRevertRow ? (
+                                <Button
+                                  variant="ghost"
+                                  onClick={() => void handleRevertEntry(e.id, false)}
+                                  disabled={revertingEntryId === e.id}
+                                >
+                                  {revertingEntryId === e.id ? "…" : "Deshacer"}
+                                </Button>
+                              ) : (
+                                <span className="muted" style={{ fontSize: 11 }}>
+                                  —
+                                </span>
+                              )}
+                            </td>
+                          ) : null}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
                 {entries === null && batch.preview.length < batch.entries_count ? (
@@ -687,6 +876,33 @@ export function ScenarioHistoryPage() {
   const totalBatches = page?.total_batches ?? 0;
   const totalEntries = page?.total_entries ?? 0;
   const items = (page?.items ?? []) as (ScenarioAuditBatch | OsemosysParamAuditEntry)[];
+  const canRevert = Boolean(scenario?.effective_access?.can_manage_values);
+
+  const reloadAudit = useCallback(async () => {
+    try {
+      const res = await scenariosApi.listScenarioAudit(scenarioId, filters);
+      setPage(res);
+    } catch (e) {
+      push(
+        e instanceof Error ? e.message : "No se pudo recargar el historial.",
+        "error",
+      );
+    }
+  }, [scenarioId, filters, push]);
+
+  async function handleRevertEntryFromFlat(entryId: number, force: boolean) {
+    const ok = window.confirm(
+      `${force ? "Forzar deshacer" : "Deshacer"} este cambio?`,
+    );
+    if (!ok) return;
+    try {
+      const res = await scenariosApi.revertAuditEntry(scenarioId, entryId, { force });
+      push(formatRevertSummary(res), res.failed ? "error" : "success");
+      void reloadAudit();
+    } catch (e) {
+      push(e instanceof Error ? e.message : "No se pudo revertir.", "error");
+    }
+  }
 
   return (
     <section className="pageSection">
@@ -911,6 +1127,8 @@ export function ScenarioHistoryPage() {
                 key={b.batch_id ?? `legacy-${idx}-${b.started_at}`}
                 scenarioId={scenarioId}
                 batch={b}
+                canRevert={canRevert}
+                onReverted={() => void reloadAudit()}
               />
             ))
           ) : (
@@ -919,36 +1137,104 @@ export function ScenarioHistoryPage() {
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                   <thead>
                     <tr style={{ textAlign: "left" }}>
+                      <th style={{ padding: 6 }}>#</th>
                       <th style={{ padding: 6 }}>Fecha</th>
                       <th style={{ padding: 6 }}>Usuario</th>
+                      <th style={{ padding: 6 }}>Batch</th>
                       <th style={{ padding: 6 }}>Parámetro</th>
                       <th style={{ padding: 6 }}>Dimensiones</th>
                       <th style={{ padding: 6 }}>Cambio</th>
                       <th style={{ padding: 6 }}>Acción</th>
+                      <th style={{ padding: 6 }}>Estado</th>
+                      {canRevert ? <th style={{ padding: 6 }}>Deshacer</th> : null}
                     </tr>
                   </thead>
                   <tbody>
-                    {(items as OsemosysParamAuditEntry[]).map((e) => (
-                      <tr
-                        key={e.id}
-                        style={{ borderBottom: "1px solid rgba(148,163,184,0.12)" }}
-                      >
-                        <td style={{ padding: 6, whiteSpace: "nowrap" }}>
-                          {formatDateTime(e.created_at)}
-                        </td>
-                        <td style={{ padding: 6 }}>{e.changed_by}</td>
-                        <td style={{ padding: 6, fontFamily: "monospace" }}>{e.param_name}</td>
-                        <td style={{ padding: 6 }}>
-                          <DimensionChips dims={asDims(e.dimensions_json)} />
-                        </td>
-                        <td style={{ padding: 6 }}>
-                          <DiffCell entry={e} />
-                        </td>
-                        <td style={{ padding: 6 }}>
-                          <Badge variant={actionVariant(e.action)}>{e.action}</Badge>
-                        </td>
-                      </tr>
-                    ))}
+                    {(items as OsemosysParamAuditEntry[]).map((e) => {
+                      const alreadyReverted = e.reverted_at != null;
+                      const canRevertRow =
+                        canRevert && !e.is_revert && !alreadyReverted;
+                      return (
+                        <tr
+                          key={e.id}
+                          style={{
+                            borderBottom: "1px solid rgba(148,163,184,0.12)",
+                            opacity: alreadyReverted ? 0.55 : 1,
+                          }}
+                        >
+                          <td
+                            style={{
+                              padding: 6,
+                              fontFamily: "monospace",
+                              color: "var(--text-muted, #94a3b8)",
+                            }}
+                          >
+                            {e.id}
+                          </td>
+                          <td style={{ padding: 6, whiteSpace: "nowrap" }}>
+                            {formatDateTime(e.created_at)}
+                          </td>
+                          <td style={{ padding: 6 }}>{e.changed_by}</td>
+                          <td style={{ padding: 6 }}>
+                            {e.batch_id ? (
+                              <span
+                                title={e.batch_id}
+                                style={{ fontFamily: "monospace", fontSize: 11 }}
+                              >
+                                #{e.batch_id.slice(0, 8)}
+                              </span>
+                            ) : (
+                              <span className="muted">—</span>
+                            )}
+                          </td>
+                          <td style={{ padding: 6, fontFamily: "monospace" }}>
+                            {e.param_name}
+                          </td>
+                          <td style={{ padding: 6 }}>
+                            <DimensionChips dims={asDims(e.dimensions_json)} />
+                          </td>
+                          <td style={{ padding: 6 }}>
+                            <DiffCell entry={e} />
+                          </td>
+                          <td style={{ padding: 6 }}>
+                            <Badge variant={actionVariant(e.action)}>{e.action}</Badge>
+                          </td>
+                          <td style={{ padding: 6 }}>
+                            {e.is_revert ? (
+                              <Badge variant="warning">Revert</Badge>
+                            ) : alreadyReverted ? (
+                              <span
+                                title={`Revertido por ${e.reverted_by ?? "?"} el ${formatDateTime(
+                                  e.reverted_at,
+                                )}`}
+                              >
+                                <Badge variant="neutral">Revertido</Badge>
+                              </span>
+                            ) : (
+                              <span className="muted">—</span>
+                            )}
+                          </td>
+                          {canRevert ? (
+                            <td style={{ padding: 6 }}>
+                              {canRevertRow ? (
+                                <Button
+                                  variant="ghost"
+                                  onClick={() =>
+                                    void handleRevertEntryFromFlat(e.id, false)
+                                  }
+                                >
+                                  Deshacer
+                                </Button>
+                              ) : (
+                                <span className="muted" style={{ fontSize: 11 }}>
+                                  —
+                                </span>
+                              )}
+                            </td>
+                          ) : null}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -18,6 +18,7 @@ import logging
 from collections import defaultdict
 from typing import Iterable
 
+import numpy as np
 import pandas as pd
 import pyomo.environ as pyo
 
@@ -237,11 +238,22 @@ def _safe_extract(var_component) -> dict:
         comp_name = None
 
     if isinstance(var_component, pyo.Var) and hasattr(var_component, "_data"):
-        raw = {}
-        for k, v in var_component._data.items():
-            val = v.value
-            if val is not None and abs(val) >= 1e-10:
-                raw[k] = val
+        # VarData expone `.value` como property que retorna `self._value`. Leer
+        # el atributo directo evita la sobrecarga del descriptor y reduce el
+        # tiempo de extracción de variables grandes (RateOfActivity, etc.).
+        # Fallback a `.value` si alguna versión futura de Pyomo cambia el campo.
+        try:
+            raw = {
+                k: vv
+                for k, v in var_component._data.items()
+                if (vv := v._value) is not None and abs(vv) >= 1e-10
+            }
+        except AttributeError:
+            raw = {}
+            for k, v in var_component._data.items():
+                val = v.value
+                if val is not None and abs(val) >= 1e-10:
+                    raw[k] = val
         if cache is not None and comp_name:
             cache[comp_name] = raw
         return raw
@@ -585,25 +597,52 @@ def _compute_intermediate_variables(
             continue
         year_pairs.append((y, int(y_num)))
 
+    # Vectorización: para cada (r, t), AccumulatedNewCapacity[y] =
+    # Σ NewCapacity[r,t,yy] sobre yy con 0 <= y_num - yy_num < ol. Es una
+    # ventana móvil sobre años; con years ordenados se calcula con prefix-sum
+    # y `np.searchsorted` para localizar el límite inferior de cada ventana.
+    # Antes: O(R·T·Y²); ahora: O(R·T·Y).
     tca_entries: list[dict] = []
     anc_entries: list[dict] = []
-    for r in regions:
-        for t in technologies:
-            ol = int(_coerce_number(ol_data.get((r, t), 1), default=1.0))
-            if ol <= 0:
-                ol = 1
-            for y, y_num in year_pairs:
-                acc = sum(
-                    nc_raw.get((r, t, yy), 0.0)
-                    for yy, yy_num in year_pairs
-                    if 0 <= (int(y_num) - int(yy_num)) < ol
+    if year_pairs:
+        sorted_pairs = sorted(year_pairs, key=lambda p: p[1])
+        y_originals = [yo for yo, _ in sorted_pairs]
+        y_nums = np.fromiter((yn for _, yn in sorted_pairs), dtype=np.int64, count=len(sorted_pairs))
+
+        for r in regions:
+            for t in technologies:
+                ol = int(_coerce_number(ol_data.get((r, t), 1), default=1.0))
+                if ol <= 0:
+                    ol = 1
+                nc_vec = np.fromiter(
+                    (nc_raw.get((r, t, yo), 0.0) for yo in y_originals),
+                    dtype=np.float64,
+                    count=len(y_originals),
                 )
-                res = rc_data.get((r, t, y), 0.0)
-                total = acc + res
-                if abs(total) >= _EPS:
-                    tca_entries.append({"index": [r, t, y_num], "value": float(total)})
-                if abs(acc) >= _EPS:
-                    anc_entries.append({"index": [r, t, y_num], "value": float(acc)})
+                res_vec = np.fromiter(
+                    (rc_data.get((r, t, yo), 0.0) for yo in y_originals),
+                    dtype=np.float64,
+                    count=len(y_originals),
+                )
+                # Si no hay aportes ni residuales, saltar la pareja.
+                if not nc_vec.any() and not res_vec.any():
+                    continue
+                cumsum = np.concatenate(([0.0], np.cumsum(nc_vec)))  # len = Y+1
+                # Para cada año en y_nums queremos sumar nc_vec[j..i] donde
+                # j es el primer índice con y_nums[j] >= y_nums[i] - ol + 1.
+                lower_bounds = y_nums - ol + 1
+                j_indices = np.searchsorted(y_nums, lower_bounds, side="left")
+                upper_bounds = np.arange(1, len(y_nums) + 1)  # i+1
+                accs = cumsum[upper_bounds] - cumsum[j_indices]
+                totals = accs + res_vec
+
+                for i, y_num in enumerate(y_nums.tolist()):
+                    acc = float(accs[i])
+                    total = float(totals[i])
+                    if abs(total) >= _EPS:
+                        tca_entries.append({"index": [r, t, int(y_num)], "value": total})
+                    if abs(acc) >= _EPS:
+                        anc_entries.append({"index": [r, t, int(y_num)], "value": acc})
     if tca_entries:
         out["TotalCapacityAnnual"] = tca_entries
     if anc_entries:

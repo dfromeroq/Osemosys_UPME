@@ -26,7 +26,9 @@ from app.models import OsemosysParamValue, Scenario, ScenarioPermission, Simulat
 from app.schemas.pagination import PaginatedResponse
 from app.schemas.scenario import (
     ApplyExcelChangesRequest,
+    AuditRevertResult,
     OsemosysParamAuditPage,
+    ScenarioDataSummary as ScenarioDataSummarySchema,
     OsemosysValuesPage,
     OsemosysValuesWidePage,
     OsemosysWideFacets,
@@ -1415,6 +1417,91 @@ def list_scenario_audit_facets(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
 
 
+@router.get(
+    "/{scenario_id}/data-summary",
+    response_model=ScenarioDataSummarySchema,
+)
+def get_scenario_data_summary(
+    scenario_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """KPIs ligeros: nº de timeslices y nº de demandas con perfil."""
+    try:
+        return ScenarioService.get_scenario_data_summary(
+            db, scenario_id=scenario_id, current_user=current_user
+        )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+
+
+@router.post(
+    "/{scenario_id}/audit/entries/{entry_id}/revert",
+    response_model=AuditRevertResult,
+)
+def revert_audit_entry(
+    scenario_id: int,
+    entry_id: int,
+    force: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Deshace un cambio específico del historial.
+
+    Si el valor actual ya no coincide con `new_value` registrado en la entrada,
+    la operación retorna con `status="conflict"`; pasar `force=true` ignora el
+    chequeo y aplica el revert de todos modos.
+    """
+    try:
+        return ScenarioService.revert_audit_entry(
+            db,
+            scenario_id=scenario_id,
+            entry_id=entry_id,
+            current_user=current_user,
+            force=force,
+        )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+    except ConflictError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+
+
+@router.post(
+    "/{scenario_id}/audit/batches/{batch_id}/revert",
+    response_model=AuditRevertResult,
+)
+def revert_audit_batch(
+    scenario_id: int,
+    batch_id: str,
+    force: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Deshace todos los cambios de un batch (operación).
+
+    Los cambios se aplican en orden inverso. Si alguno tiene conflicto, el batch
+    completo no se aplica (a menos que `force=true`).
+    """
+    try:
+        return ScenarioService.revert_audit_batch(
+            db,
+            scenario_id=scenario_id,
+            batch_id=batch_id,
+            current_user=current_user,
+            force=force,
+        )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+    except ConflictError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+
+
 @router.get("/{scenario_id}/osemosys-values", response_model=OsemosysValuesPage)
 def list_osemosys_values(
     scenario_id: int,
@@ -1466,6 +1553,7 @@ def list_osemosys_values_wide(
     fuel_names: str | None = None,
     emission_names: str | None = None,
     udc_names: str | None = None,
+    timeslice_codes: str | None = None,
     year_rules: str | None = None,
     offset: int = 0,
     limit: int = 50,
@@ -1474,8 +1562,8 @@ def list_osemosys_values_wide(
 ) -> dict:
     """Paginación server-side en formato wide (años como columnas).
 
-    - `*_names`: listas CSV para filtrado IN por columna. El valor especial
-      `__NULL__` incluye filas con esa dimensión en NULL.
+    - `*_names` / `timeslice_codes`: listas CSV para filtrado IN por columna.
+      El valor especial `__NULL__` incluye filas con esa dimensión en NULL.
     - `year_rules`: reglas sobre años en formato
       `year:op[:value]` separadas por coma. Ejemplos:
       `2025:gt:0.5,2030:nonzero,2040:lt:10`. Ops soportadas: gt, lt, gte,
@@ -1497,6 +1585,7 @@ def list_osemosys_values_wide(
             fuel_names=_parse_csv_list(fuel_names),
             emission_names=_parse_csv_list(emission_names),
             udc_names=_parse_csv_list(udc_names),
+            timeslice_codes=_parse_csv_list(timeslice_codes),
             year_rules=_parse_year_rules(year_rules),
             offset=offset,
             limit=limit,
@@ -1519,6 +1608,7 @@ def list_osemosys_wide_facets(
     fuel_names: str | None = None,
     emission_names: str | None = None,
     udc_names: str | None = None,
+    timeslice_codes: str | None = None,
     year_rules: str | None = None,
     limit_per_column: int = 500,
     db: Session = Depends(get_db),
@@ -1541,6 +1631,7 @@ def list_osemosys_wide_facets(
             fuel_names=_parse_csv_list(fuel_names),
             emission_names=_parse_csv_list(emission_names),
             udc_names=_parse_csv_list(udc_names),
+            timeslice_codes=_parse_csv_list(timeslice_codes),
             year_rules=_parse_year_rules(year_rules),
             limit_per_column=limit_per_column,
         )

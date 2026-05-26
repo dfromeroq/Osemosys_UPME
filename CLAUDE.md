@@ -106,6 +106,8 @@ Entry: `POST /api/v1/simulations` → Celery task → `app/simulation/tasks.py` 
 | `mode_of_operation_normalize.py` | Normalizes MODE_OF_OPERATION values (scalar + series) |
 | `osemosys_defaults.py` | OSeMOSYS default parameter values used by infeasibility analysis to compute deviations |
 | `infeasibility_analysis.py` | IIS computation via HiGHS, constraint→parameter mapping, enriched diagnostics pipeline (`enrich_solution_dict`) |
+| `data_validation.py` | Detects and reports data quality issues (bound conflicts, dead years). `DataQualityReport`, `BoundConflict`, `YearExclusion` dataclasses. `detect_bound_conflicts`, `detect_dead_years`, `validate_and_persist`, `apply_dead_year_exclusion`, `apply_bound_fix_numeric_precision`. Two entry paths: CSV-based (post-processing) and DB-based (`_db` suffix). |
+| `constraint_diagnostics.py` | `diagnose_model_constraints(instance)` — pre-solve analysis of redundant/trivial constraints (EnergyBalanceEachTS5, etc.). Activated via env var `OSEMOSYS_CONSTRAINT_DIAGNOSTICS=1`. Emits structured report via logger. |
 
 **Two simulation entry paths in `data_processing.py`:**
 - `run_data_processing(db, scenario_id, csv_dir)` — DB path (main flow)
