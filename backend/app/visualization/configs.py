@@ -1364,6 +1364,16 @@ CONFIGS = {
         "agrupar_por": "TECNOLOGIA",
         "color_fn": _color_bioenergia,
         "variable_default": "ProductionByTechnology",
+        "unidad_factor_por_tecnologia": {
+            "kton": {
+                "MINWOO": 0.016993,
+                "MINBAG": 0.014743,
+                "MINWAS_ORG": 0.017,
+                "MINWAS": 0.0085,
+                "MINOPL": 0.0352,
+                "MINSGC": 0.0267,
+            },
+        },
     },
     "emisiones_total": {
         "titulo": "Emisiones - Total Anual - AnnualEmissions",
