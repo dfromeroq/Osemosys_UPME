@@ -869,6 +869,7 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
         tipo: sel.tipo,
         un: sel.un,
       };
+      if (sel.un2) payload.un2 = sel.un2;
       if (esPorcentaje) payload.es_porcentaje = 'true';
       if (sel.viewMode && sel.viewMode !== 'column') payload.view_mode = sel.viewMode;
       if (sel.sub_filtro) payload.sub_filtro = sel.sub_filtro;

@@ -4238,6 +4238,12 @@ def render_comparison_facet_figure_bytes(
         facet_axes = axes[0]
 
     y_label = data.yAxisLabel or "Valor"
+    n_facets = len(facet_axes)
+    _has_dual_axis = bool(
+        getattr(data, "yAxisLabelSecondary", None)
+        and _get_unit_conversion_ratio(data.yAxisLabel, getattr(data, "yAxisLabelSecondary", None))
+    )
+    _compact_axis = _has_dual_axis and layout == "horizontal" and n_facets > 1
     stack_tops: list[np.ndarray] = []
     line_maxes: list[float] = []
 
@@ -4336,12 +4342,13 @@ def render_comparison_facet_figure_bytes(
             fontsize=x_fs,
             color="#1e293b",
         )
-        ax.set_ylabel(
-            y_label,
-            fontsize=22,
-            color="#0f172a",
-            labelpad=8,
-        )
+        if not _compact_axis or idx == 0:
+            ax.set_ylabel(
+                y_label,
+                fontsize=22,
+                color="#0f172a",
+                labelpad=8,
+            )
         sim_lbl = (
             facet.display_name or facet.scenario_name or f"Job {facet.job_id}"
         ).strip()
@@ -4365,10 +4372,15 @@ def render_comparison_facet_figure_bytes(
         ax.set_axisbelow(True)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
-        for _side in ("left", "bottom"):
-            ax.spines[_side].set_visible(True)
-            ax.spines[_side].set_color("#1e293b")
-            ax.spines[_side].set_linewidth(1.35)
+        if _compact_axis and idx > 0:
+            ax.spines["left"].set_visible(False)
+        else:
+            ax.spines["left"].set_visible(True)
+            ax.spines["left"].set_color("#1e293b")
+            ax.spines["left"].set_linewidth(1.35)
+        ax.spines["bottom"].set_visible(True)
+        ax.spines["bottom"].set_color("#1e293b")
+        ax.spines["bottom"].set_linewidth(1.35)
         ax.tick_params(
             axis="y",
             labelsize=20,
@@ -4377,6 +4389,8 @@ def render_comparison_facet_figure_bytes(
             length=6,
             labelcolor="#0f172a",
         )
+        if _compact_axis and idx > 0:
+            ax.tick_params(axis="y", labelleft=False, left=False)
         ax.tick_params(
             axis="x",
             colors="#0f172a",
@@ -4403,13 +4417,14 @@ def render_comparison_facet_figure_bytes(
     effective_y_lo = float(y_axis_min) if y_axis_min is not None else 0.0
     effective_y_hi = float(y_axis_max) if y_axis_max is not None else y_top
 
-    for ax, bottom in zip(facet_axes, stack_tops):
+    for idx, (ax, bottom) in enumerate(zip(facet_axes, stack_tops)):
         ax.set_ylim(effective_y_lo, effective_y_hi)
-        _add_secondary_axis(
-            ax,
-            getattr(data, "yAxisLabelSecondary", None),
-            _get_unit_conversion_ratio(data.yAxisLabel, getattr(data, "yAxisLabelSecondary", None)),
-        )
+        if not _compact_axis or idx == n_facets - 1:
+            _add_secondary_axis(
+                ax,
+                getattr(data, "yAxisLabelSecondary", None),
+                _get_unit_conversion_ratio(data.yAxisLabel, getattr(data, "yAxisLabelSecondary", None)),
+            )
         ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _p: format_axis_3sig(v)))
         ax.yaxis.set_major_locator(
             MaxNLocator(nbins=7, min_n_ticks=5, steps=[1, 2, 2.5, 5, 10]),

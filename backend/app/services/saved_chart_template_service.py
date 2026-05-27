@@ -559,6 +559,7 @@ class SavedChartTemplateService:
                 job_ids=job_ids,
                 tipo=template.tipo,
                 un=template.un,
+                un2=template.un2 or None,
                 sub_filtro=template.sub_filtro,
                 loc=template.loc,
                 variable=template.variable,
