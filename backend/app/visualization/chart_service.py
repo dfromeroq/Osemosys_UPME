@@ -853,6 +853,22 @@ def _convertir_unidades(df: pd.DataFrame, un: str) -> pd.DataFrame:
     return df
 
 
+def _convertir_por_tecnologia(df: pd.DataFrame, un: str, factor_map: dict[str, dict[str, float]]) -> pd.DataFrame:
+    """Aplica factores de conversión por tecnología (p. ej. PJ → kton).
+
+    Opera sobre el DataFrame pre-agregación, cuando aún existe la
+    columna ``TECHNOLOGY``.  Si ``un`` no está en ``factor_map``,
+    devuelve el DataFrame sin cambios.
+    """
+    tech_factors = factor_map.get(un)
+    if tech_factors is None:
+        return df
+    df = df.copy()
+    factor_series = df["TECHNOLOGY"].map(tech_factors).fillna(1.0)
+    df["VALUE"] /= factor_series
+    return df
+
+
 def _convertir_unidades_emision(df: pd.DataFrame, un: str) -> pd.DataFrame:
     """Convierte emisiones GEI entre MtCO₂eq y ktCO₂eq.
 
@@ -1590,6 +1606,12 @@ def build_chart_data(
     if tipo in CONFIGS_CON_ALIAS_PWR:
         df = _aplicar_alias_pwr(df)
 
+    # ── Conversión por tecnología (kton, etc.) ───────────────────────────
+    # Debe ir antes del groupby porque necesita la columna TECHNOLOGY.
+    tech_factor_map = cfg.get("unidad_factor_por_tecnologia")
+    if tech_factor_map and un in tech_factor_map:
+        df = _convertir_por_tecnologia(df, un, tech_factor_map)
+
     # ── Agrupación ───────────────────────────────────────────────────────
     agrupar_col = agrupar_por if agrupar_por is not None else cfg["agrupar_por"]
 
@@ -1656,7 +1678,10 @@ def build_chart_data(
         )
 
     # ── Conversión de unidades ───────────────────────────────────────────
-    if es_emision:
+    # Si ya se aplicó conversión por tecnología (kton), no convertir otra vez.
+    if tech_factor_map and un in tech_factor_map:
+        pass
+    elif es_emision:
         if not es_emision_kt:
             df_agg = _convertir_unidades_emision(df_agg, un)
         # es_emision_kt: base = kt, sin conversión
@@ -2560,6 +2585,7 @@ def _procesar_bloque_comparacion(
     años: list[int],
     un: str,
     es_emision: bool = False,
+    tech_factor_map: dict | None = None,
 ) -> pd.DataFrame | None:
     """Pipeline para un bloque de datos de comparación.
 
@@ -2576,6 +2602,10 @@ def _procesar_bloque_comparacion(
     if df.empty:
         return None
 
+    # Conversión por tecnología (kton, etc.) — antes del groupby.
+    if tech_factor_map and un in tech_factor_map:
+        df = _convertir_por_tecnologia(df, un, tech_factor_map)
+
     df = df[df["YEAR"].isin(años)]
     if df.empty:
         return None
@@ -2591,7 +2621,9 @@ def _procesar_bloque_comparacion(
 
     # df = _convertir_unidades(df, un)
 
-    if not es_emision:
+    if tech_factor_map and un in tech_factor_map:
+        pass
+    elif not es_emision:
         df = _convertir_unidades(df, un)
 
     return df
@@ -2630,6 +2662,11 @@ def _procesar_bloque_single(
     # Alias de tecnologías del sector eléctrico (mismas reglas que build_chart_data).
     if tipo and tipo in CONFIGS_CON_ALIAS_PWR:
         df = _aplicar_alias_pwr(df)
+
+    # Conversión por tecnología (kton, etc.) — antes del groupby.
+    tech_factor_map = cfg.get("unidad_factor_por_tecnologia")
+    if tech_factor_map and un in tech_factor_map:
+        df = _convertir_por_tecnologia(df, un, tech_factor_map)
 
     agrupar_col = agrupacion_override if agrupacion_override is not None else cfg["agrupar_por"]
 
@@ -2672,7 +2709,9 @@ def _procesar_bloque_single(
 
     es_emision = cfg.get("es_emision", False)
     es_emision_kt = cfg.get("es_emision_kt", False)
-    if es_emision:
+    if tech_factor_map and un in tech_factor_map:
+        pass
+    elif es_emision:
         if not es_emision_kt:
             df = _convertir_unidades_emision(df, un)
     else:

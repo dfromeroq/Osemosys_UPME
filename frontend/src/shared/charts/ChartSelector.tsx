@@ -114,6 +114,9 @@ const CONTAMINANTES_CHART_IDS = new Set(['emisiones_contaminantes']);
 /** Gráficas con unidad fija % (factor de planta). */
 const PORCENTAJE_CHART_IDS = new Set(['factor_planta']);
 
+/** Gráficas de bioenergía que soportan unidad kton (factor por tecnología). */
+const KTON_CHART_IDS = new Set(['oferta_bioenergia']);
+
 const EMISSION_CHART_IDS = new Set([...GEI_CHART_IDS, ...CONTAMINANTES_CHART_IDS]);
 
 const EMISSION_UNITS: { value: string; label: string }[] = [
@@ -657,7 +660,7 @@ export function ChartSelector({
     } else if (
       !EMISSION_CHART_IDS.has(item.id) &&
       !PORCENTAJE_CHART_IDS.has(item.id) &&
-      (EMISSION_UNIT_VALUES.has(rest.un) || rest.un === 'ktCO2eq' || rest.un === '%')
+      (EMISSION_UNIT_VALUES.has(rest.un) || rest.un === 'ktCO2eq' || rest.un === '%' || rest.un === 'kton')
     ) {
       newUn = 'PJ';
     }
@@ -714,12 +717,15 @@ export function ChartSelector({
   const isGeiChart = GEI_CHART_IDS.has(value.tipo);
   const isContaminantesChart = CONTAMINANTES_CHART_IDS.has(value.tipo);
   const isPorcentajeChart = PORCENTAJE_CHART_IDS.has(value.tipo);
+  const isKtonChart = KTON_CHART_IDS.has(value.tipo);
   const displayUnit = isContaminantesChart
     ? 'kt'
     : isPorcentajeChart
     ? '%'
     : isGeiChart
     ? (EMISSION_UNITS.find((eu) => eu.value === value.un)?.label ?? 'MtCO₂eq')
+    : isKtonChart && value.un === 'kton'
+    ? 'kton'
     : value.un;
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -905,6 +911,19 @@ export function ChartSelector({
                 style={{ ...unitBtnStyle, ...(value.un === eu.value ? unitBtnActiveStyle : unitBtnInactiveStyle) }}
               >
                 {eu.label}
+              </button>
+            ))}
+          </div>
+        ) : isKtonChart ? (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {[...UNITS, 'kton' as const].map((u) => (
+              <button
+                key={u}
+                type="button"
+                onClick={() => onChange({ ...value, un: u })}
+                style={{ ...unitBtnStyle, ...(value.un === u ? unitBtnActiveStyle : unitBtnInactiveStyle) }}
+              >
+                {u}
               </button>
             ))}
           </div>
