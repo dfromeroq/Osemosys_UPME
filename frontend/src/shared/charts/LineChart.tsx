@@ -50,6 +50,18 @@ export const LineChart: React.FC<LineChartProps> = ({
   const legendDblclickStateRef = useRef(createLegendDblclickState());
   const [hiddenNames, setHiddenNames] = useState<Set<string>>(() => new Set());
 
+  const secondaryAxisMax = useMemo(() => {
+    if (!data.yAxisLabelSecondary) return null;
+    const primaryMax = Math.max(
+      0,
+      ...data.series.flatMap((s) => s.data).filter((v): v is number => typeof v === 'number'),
+    );
+    if (primaryMax <= 0) return null;
+    const ratio = getUnitConversionRatio(data.yAxisLabel, data.yAxisLabelSecondary);
+    if (ratio == null) return null;
+    return +(primaryMax * ratio).toPrecision(3);
+  }, [data.yAxisLabel, data.yAxisLabelSecondary, data.series]);
+
   const dataSignature = useMemo(
     () =>
       [
@@ -184,6 +196,11 @@ export const LineChart: React.FC<LineChartProps> = ({
               },
               gridLineColor: '#334155',
               gridLineWidth: 0,
+              lineWidth: 1,
+              lineColor: '#334155',
+              linkedTo: 0,
+              min: 0,
+              ...(secondaryAxisMax != null ? { max: secondaryAxisMax } : null),
             },
           ]
         : {
@@ -241,11 +258,15 @@ export const LineChart: React.FC<LineChartProps> = ({
                   labels: { style: { color: '#334155', fontSize: '20pt' } },
                   title: { style: { color: '#334155', fontSize: '28pt' } },
                   gridLineColor: '#e2e8f0',
+                  lineWidth: 1,
+                  lineColor: '#334155',
                 },
                 {
                   labels: { style: { color: '#334155', fontSize: '20pt' } },
                   title: { style: { color: '#334155', fontSize: '28pt' } },
                   gridLineColor: '#e2e8f0',
+                  lineWidth: 1,
+                  lineColor: '#334155',
                   opposite: true,
                 },
               ]
@@ -302,7 +323,7 @@ export const LineChart: React.FC<LineChartProps> = ({
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, serverExport, hiddenNames, syntheticSeries, amplified, chartHeight, yAxisMin, yAxisMax]);
+  }, [data, serverExport, hiddenNames, syntheticSeries, amplified, chartHeight, yAxisMin, yAxisMax, secondaryAxisMax]);
 
   return (
     <div style={{ width: '100%' }}>

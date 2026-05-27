@@ -983,8 +983,8 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
                 },
                 yAxis: data.yAxisLabelSecondary
                   ? [
-                      { lineWidth: 1, lineColor: "#334155" },
-                      { lineWidth: 0, gridLineWidth: 0 },
+                      { lineWidth: 1, lineColor: "#334155", labels: { enabled: true }, title: { text: data.yAxisLabel } },
+                      { opposite: true, lineWidth: 1, lineColor: "#334155", gridLineWidth: 0, labels: { enabled: true }, title: { text: data.yAxisLabelSecondary } },
                     ]
                   : { lineWidth: 1, lineColor: "#334155" },
               }

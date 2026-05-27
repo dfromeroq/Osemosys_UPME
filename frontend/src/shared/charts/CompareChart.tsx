@@ -265,11 +265,11 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         // Y-axis line always visible (provides chart boundaries between scenarios)
         // lineWidth: 1,
         lineWidth: idx === 0 ? 1 : 0,
-        lineColor: '#64748b',
+        lineColor: '#334155',
         labels: {
           // Only show labels on first subplot when Y-axis is shared
           enabled: !effectiveSharedYAxis || idx === 0,
-          style: { color: '#94a3b8', fontSize: '11pt' },
+          style: { color: '#334155', fontSize: '11pt' },
           formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
             return formatAxis3Sig(this.value as number);
           },
@@ -371,10 +371,10 @@ export const CompareChart: React.FC<CompareChartProps> = ({
           gridLineColor: '#e2e8f0',
           gridLineWidth: 1,
           lineWidth: (!effectiveSharedYAxis || idx === 0) ? 1 : 0,
-          lineColor: (!effectiveSharedYAxis || idx === 0) ? '#64748b' : 'transparent',
+          lineColor: '#334155',
           tickWidth: (!effectiveSharedYAxis || idx === 0) ? 1 : 0,
           tickLength: (!effectiveSharedYAxis || idx === 0) ? 6 : 0,
-          tickColor: (!effectiveSharedYAxis || idx === 0) ? '#64748b' : 'transparent',
+          tickColor: '#334155',
           labels: {
             enabled: !effectiveSharedYAxis || idx === 0,
             style: { color: '#334155', fontSize: '20pt' },
