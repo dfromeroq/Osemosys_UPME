@@ -225,7 +225,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         id: `y-${idx}`,
         title: {
           text: idx === 0 ? data.yAxisLabel : null,
-          style: { color: '#94a3b8', fontSize: '14pt' },
+          style: { color: '#334155', fontSize: '14pt' },
         },
         width: widthStr,
         left: leftStr,
