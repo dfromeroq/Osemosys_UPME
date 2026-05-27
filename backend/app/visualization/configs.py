@@ -1286,6 +1286,14 @@ CONFIGS = {
         # SMR sin captura (UPSSMR), azul para SMR con CCS (UPSSMRCCS).
         "color_fn": _color_h2_produccion,
         "variable_default": "ProductionByTechnology",
+        "unidad_factor_por_tecnologia": {
+            "kton": {
+                # "UPSSMR": 0.12,
+                # "UPSSMRCCS": 0.12,
+                "UPSALK": 0.12,
+                "UPSPEM": 0.12,
+            }
+        },
     },
     "cap_electrolisis_verde": {
         "titulo_base": "Capacidad Total de Electrólisis Verde",
@@ -1309,6 +1317,17 @@ CONFIGS = {
         "agrupar_por": "H2_CONSUMO",
         "color_fn": _color_h2_consumo,
         "variable_default": "UseByTechnology",
+        "unidad_factor_por_tecnologia": {
+            "kton": {
+                "DEMTRAHDGSTT": 0.12,
+                "DEMTRAHDGTCK_CSG": 0.12,
+                "UPSHDGRST": 0.12,
+                "UPSSAF": 0.12,
+                "DEMDERHDG": 0.12,
+                "DEMINDHDGFUR": 0.12,
+                "DEMEXPHDG": 0.12,
+            }
+        },
     },
     "h2_produccion_verde": {
         "titulo": "Hidrógeno Producción (Verde/Azul/Gris) - ProductionByTechnology",
