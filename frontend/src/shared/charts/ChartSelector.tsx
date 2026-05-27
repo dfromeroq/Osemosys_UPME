@@ -20,6 +20,8 @@ import React, { useMemo } from 'react';
 export interface ChartSelection {
   tipo: string;
   un: string;
+  /** Unidad del eje Y secundario. Cuando es undefined el dual-axis está desactivado. */
+  un2?: string;
   sub_filtro?: string;
   loc?: string;
   variable?: string;
@@ -880,7 +882,24 @@ export function ChartSelector({
       {/* ── Fila inferior: Unidades + Tipo de vista + Sub-filtro + Localización ── */}
       <div style={bottomRowStyle}>
       <div style={{ display: 'grid', gap: 6 }}>
-        <p style={labelStyle}>Unidades</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <p style={labelStyle}>Unidades</p>
+          {!(isContaminantesChart || isPorcentajeChart) && (
+            <label style={{ fontSize: 11, color: '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, userSelect: 'none' }}>
+              <input
+                type="checkbox"
+                checked={!!value.un2}
+                onChange={(e) => {
+                  const { un2: _u, ...rest } = value;
+                  void _u;
+                  onChange(e.target.checked ? { ...value, un2: value.un } : rest as ChartSelection);
+                }}
+                style={{ accentColor: '#3b82f6' }}
+              />
+              Eje Y2
+            </label>
+          )}
+        </div>
         {(isContaminantesChart || isPorcentajeChart) ? (
           <div style={{
             padding: '4px 12px',
@@ -920,6 +939,38 @@ export function ChartSelector({
                 {u}
               </button>
             ))}
+          </div>
+        )}
+        {!!value.un2 && !(isContaminantesChart || isPorcentajeChart) && (
+          <div style={{ display: 'grid', gap: 6 }}>
+            <p style={{ ...labelStyle, fontSize: 10, color: '#94a3b8' }}>Eje Y secundario</p>
+            {isGeiChart ? (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {EMISSION_UNITS.map((eu) => (
+                  <button
+                    key={eu.value}
+                    type="button"
+                    onClick={() => onChange({ ...value, un2: eu.value })}
+                    style={{ ...unitBtnStyle, ...((value.un2 ?? value.un) === eu.value ? unitBtnActiveStyle : unitBtnInactiveStyle) }}
+                  >
+                    {eu.label}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {UNITS.map((u) => (
+                  <button
+                    key={u}
+                    type="button"
+                    onClick={() => onChange({ ...value, un2: u })}
+                    style={{ ...unitBtnStyle, ...((value.un2 ?? value.un) === u ? unitBtnActiveStyle : unitBtnInactiveStyle) }}
+                  >
+                    {u}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

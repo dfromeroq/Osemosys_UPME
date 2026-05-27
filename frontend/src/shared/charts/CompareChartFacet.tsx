@@ -286,6 +286,7 @@ function resolveFacetChartsForExport(
 function FacetChart({
   facet,
   yAxisLabel,
+  yAxisSecondaryLabel,
   sharedYAxisMax,
   syncGroup,
   hiddenSeriesNames,
@@ -305,6 +306,7 @@ function FacetChart({
 }: {
   facet: FacetData;
   yAxisLabel: string;
+  yAxisSecondaryLabel?: string;
   sharedYAxisMax: number;
   syncGroup: string;
   hiddenSeriesNames: Set<string>;
@@ -450,43 +452,95 @@ function FacetChart({
           },
         },
       },
-      yAxis: {
-        min: typeof yAxisMin === 'number' ? yAxisMin : 0,
-        max: typeof yAxisMax === 'number'
-          ? yAxisMax
-          : (sharedYAxisMax > 0 ? sharedYAxisMax : null),
-        lineWidth: 1,
-        lineColor: "#64748b",
-        title: {
-          text: yAxisLabel,
-          style: { color: "#94a3b8", fontSize: "14pt" },
-        },
-        labels: {
-          style: { color: "#94a3b8", fontSize: `${FACET_Y_LABEL_FONT_PX}px` },
-          // Mínimo 3 cifras significativas (sin notación científica).
-          formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
-            return formatAxis3Sig(this.value as number);
-          },
-        },
-        gridLineColor: "#334155",
-        stackLabels: viewMode === "line"
-          ? { enabled: false }
-          : {
-              enabled: true,
-              style: {
-                fontWeight: "bold",
-                color: "#94a3b8",
-                textOutline: "none",
-                fontSize: "11pt",
+      yAxis: yAxisSecondaryLabel
+        ? [
+            {
+              min: typeof yAxisMin === 'number' ? yAxisMin : 0,
+              max: typeof yAxisMax === 'number'
+                ? yAxisMax
+                : (sharedYAxisMax > 0 ? sharedYAxisMax : null),
+              lineWidth: 1,
+              lineColor: "#64748b",
+              title: {
+                text: yAxisLabel,
+                style: { color: "#94a3b8", fontSize: "14pt" },
               },
-              formatter: stackLabelFormatter,
+              labels: {
+                style: { color: "#94a3b8", fontSize: `${FACET_Y_LABEL_FONT_PX}px` },
+                formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
+                  return formatAxis3Sig(this.value as number);
+                },
+              },
+              gridLineColor: "#334155",
+              stackLabels: viewMode === "line"
+                ? { enabled: false }
+                : {
+                    enabled: true,
+                    style: {
+                      fontWeight: "bold",
+                      color: "#94a3b8",
+                      textOutline: "none",
+                      fontSize: "11pt",
+                    },
+                    formatter: stackLabelFormatter,
+                  },
             },
-      },
+            {
+              opposite: true,
+              title: {
+                text: yAxisSecondaryLabel,
+                style: { color: "#94a3b8", fontSize: "14pt" },
+              },
+              labels: {
+                style: { color: "#94a3b8", fontSize: `${FACET_Y_LABEL_FONT_PX}px` },
+                formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
+                  return formatAxis3Sig(this.value as number);
+                },
+              },
+              gridLineColor: "#334155",
+              gridLineWidth: 0,
+            },
+          ]
+        : {
+            min: typeof yAxisMin === 'number' ? yAxisMin : 0,
+            max: typeof yAxisMax === 'number'
+              ? yAxisMax
+              : (sharedYAxisMax > 0 ? sharedYAxisMax : null),
+            lineWidth: 1,
+            lineColor: "#64748b",
+            title: {
+              text: yAxisLabel,
+              style: { color: "#94a3b8", fontSize: "14pt" },
+            },
+            labels: {
+              style: { color: "#94a3b8", fontSize: `${FACET_Y_LABEL_FONT_PX}px` },
+              formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
+                return formatAxis3Sig(this.value as number);
+              },
+            },
+            gridLineColor: "#334155",
+            stackLabels: viewMode === "line"
+              ? { enabled: false }
+              : {
+                  enabled: true,
+                  style: {
+                    fontWeight: "bold",
+                    color: "#94a3b8",
+                    textOutline: "none",
+                    fontSize: "11pt",
+                  },
+                  formatter: stackLabelFormatter,
+                },
+          },
       tooltip: viewMode === "line"
-        ? buildLineTooltipOptions({ unitLabel: yAxisLabel })
+        ? buildLineTooltipOptions({
+            unitLabel: yAxisLabel,
+            ...(yAxisSecondaryLabel ? { secondaryUnitLabel: yAxisSecondaryLabel } : null),
+          })
         : buildStackedTooltipOptions({
             unitLabel: yAxisLabel,
             headerPrefix: () => facetTitleText,
+            ...(yAxisSecondaryLabel ? { secondaryUnitLabel: yAxisSecondaryLabel } : null),
           }),
       plotOptions: {
         series: {
@@ -604,6 +658,7 @@ function FacetChart({
     viewMode,
     facetCount,
     facetExportInstanceId,
+    yAxisSecondaryLabel,
   ]);
 
   return (
@@ -926,10 +981,12 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
                   tickWidth: 1,
                   tickColor: "#334155",
                 },
-                yAxis: {
-                  lineWidth: 1,
-                  lineColor: "#334155",
-                },
+                yAxis: data.yAxisLabelSecondary
+                  ? [
+                      { lineWidth: 1, lineColor: "#334155" },
+                      { lineWidth: 0, gridLineWidth: 0 },
+                    ]
+                  : { lineWidth: 1, lineColor: "#334155" },
               }
             : {}),
         } as Highcharts.Options);
@@ -1097,6 +1154,7 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
                     <FacetChart
                       facet={facet}
                       yAxisLabel={data.yAxisLabel}
+                      {...(data.yAxisLabelSecondary ? { yAxisSecondaryLabel: data.yAxisLabelSecondary } : {})}
                       sharedYAxisMax={sharedYAxisMax}
                       syncGroup={data.title}
                       hiddenSeriesNames={hiddenSeriesNames}

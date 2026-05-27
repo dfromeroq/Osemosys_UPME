@@ -30,7 +30,7 @@ import {
 import { EditChartCardModal } from "./EditChartCardModal";
 
 function templateToSelection(t: SavedChartTemplate): ChartSelection {
-  const sel: ChartSelection = { tipo: t.tipo, un: t.un };
+  const sel: ChartSelection = { tipo: t.tipo, un: t.un, ...(t.un2 ? { un2: t.un2 } : {}) };
   if (t.sub_filtro) sel.sub_filtro = t.sub_filtro;
   if (t.loc) sel.loc = t.loc;
   if (t.variable) sel.variable = t.variable;
@@ -266,6 +266,7 @@ export function DashboardChartCard({
         tipo: template.tipo,
         un: template.un,
       };
+      if (template.un2) params.un2 = template.un2;
       if (template.sub_filtro) params.sub_filtro = template.sub_filtro;
       if (template.loc) params.loc = template.loc;
       const jobId = jobIds[0]!;
@@ -296,6 +297,7 @@ export function DashboardChartCard({
         tipo: template.tipo,
         un: template.un,
       };
+      if (template.un2) params.un2 = template.un2;
       if (template.sub_filtro) params.sub_filtro = template.sub_filtro;
       if (template.loc) params.loc = template.loc;
       if (template.variable) params.variable = template.variable;
@@ -337,6 +339,7 @@ export function DashboardChartCard({
         un: template.un,
         years_to_plot: filteredYears.join(","),
       };
+      if (template.un2) params.un2 = template.un2;
       if (template.sub_filtro) params.sub_filtro = template.sub_filtro;
       if (template.loc) params.loc = template.loc;
       if (template.agrupar_por) params.agrupacion = template.agrupar_por;
@@ -370,6 +373,7 @@ export function DashboardChartCard({
         years_to_plot: filteredYears.join(","),
         group_by: "scenario",
       };
+      if (template.un2) params.un2 = template.un2;
       if (template.sub_filtro) params.sub_filtro = template.sub_filtro;
       if (template.loc) params.loc = template.loc;
       if (template.agrupar_por) params.agrupacion = template.agrupar_por;
@@ -397,6 +401,7 @@ export function DashboardChartCard({
         tipo: template.tipo,
         un: template.un,
       };
+      if (template.un2) params.un2 = template.un2;
       if (template.sub_filtro) params.sub_filtro = template.sub_filtro;
       if (template.loc) params.loc = template.loc;
       simulationApi
@@ -424,6 +429,7 @@ export function DashboardChartCard({
         tipo: template.tipo,
         un: template.un,
       };
+      if (template.un2) params.un2 = template.un2;
       if (template.sub_filtro) params.sub_filtro = template.sub_filtro;
       if (template.loc) params.loc = template.loc;
       if (template.variable) params.variable = template.variable;

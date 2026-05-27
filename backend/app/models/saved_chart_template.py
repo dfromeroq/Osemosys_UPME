@@ -38,6 +38,7 @@ class SavedChartTemplate(Base):
 
     tipo: Mapped[str] = mapped_column(String(64), nullable=False)
     un: Mapped[str] = mapped_column(String(16), nullable=False)
+    un2: Mapped[str | None] = mapped_column(String(16), nullable=True)
     sub_filtro: Mapped[str | None] = mapped_column(String(64), nullable=True)
     loc: Mapped[str | None] = mapped_column(String(32), nullable=True)
     variable: Mapped[str | None] = mapped_column(String(64), nullable=True)

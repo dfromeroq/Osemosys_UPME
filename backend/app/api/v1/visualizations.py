@@ -93,6 +93,7 @@ def get_comparison_data(
     job_ids: str = Query(..., description="Job IDs separados por coma (max 10)"),
     tipo: str = Query(...),
     un: str = Query("PJ"),
+    un2: str | None = Query(None, description="Unidad del eje Y secundario (None = sin dual-axis)"),
     years_to_plot: str = Query("2024,2030,2050", description="Años a plotear separados por coma"),
     agrupacion: str | None = Query(None),
     sub_filtro: str | None = Query(None),
@@ -139,6 +140,7 @@ def get_comparison_data(
                 job_ids=job_id_list,
                 tipo=tipo,
                 un=un,
+                un2=un2,
                 years_to_plot=year_list,
                 agrupacion=agrupacion,
                 sub_filtro=sub_filtro,
@@ -151,6 +153,7 @@ def get_comparison_data(
                 job_ids=job_id_list,
                 tipo=tipo,
                 un=un,
+                un2=un2,
                 years_to_plot=year_list,
                 agrupacion=agrupacion,
                 sub_filtro=sub_filtro,
@@ -166,6 +169,7 @@ def get_comparison_facet_data(
     job_ids: str = Query(..., description="Job IDs separados por coma (max 10)"),
     tipo: str = Query(...),
     un: str = Query("PJ"),
+    un2: str | None = Query(None, description="Unidad del eje Y secundario (None = sin dual-axis)"),
     sub_filtro: str | None = Query(None),
     loc: str | None = Query(None),
     variable: str | None = Query(None),
@@ -184,6 +188,7 @@ def get_comparison_facet_data(
             job_ids=job_id_list,
             tipo=tipo,
             un=un,
+            un2=un2,
             sub_filtro=sub_filtro,
             loc=loc,
             variable=variable,
@@ -200,6 +205,7 @@ def get_comparison_line_data(
     job_ids: str = Query(..., description="Job IDs separados por coma (max 10)"),
     tipo: str = Query(...),
     un: str = Query("PJ"),
+    un2: str | None = Query(None, description="Unidad del eje Y secundario (None = sin dual-axis)"),
     sub_filtro: str | None = Query(None),
     loc: str | None = Query(None),
     db: Session = Depends(get_db),
@@ -210,7 +216,7 @@ def get_comparison_line_data(
     try:
         return chart_service.build_comparison_line_data(
             db=db, job_ids=job_id_list, tipo=tipo,
-            un=un, sub_filtro=sub_filtro, loc=loc,
+            un=un, un2=un2, sub_filtro=sub_filtro, loc=loc,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -246,6 +252,7 @@ def export_comparison_facet_image(
     job_ids: str = Query(..., description="Job IDs separados por coma (max 10)"),
     tipo: str = Query(...),
     un: str = Query("PJ"),
+    un2: str | None = Query(None, description="Unidad del eje Y secundario (None = sin dual-axis)"),
     sub_filtro: str | None = Query(None),
     loc: str | None = Query(None),
     variable: str | None = Query(None),
@@ -340,6 +347,7 @@ def export_comparison_facet_image(
             job_ids=job_id_list,
             tipo=tipo,
             un=un,
+            un2=un2,
             sub_filtro=sub_filtro,
             loc=loc,
             variable=variable,
@@ -413,6 +421,7 @@ def export_comparison_by_year_image(
     job_ids: str = Query(..., description="Job IDs separados por coma (max 10)"),
     tipo: str = Query(...),
     un: str = Query("PJ"),
+    un2: str | None = Query(None, description="Unidad del eje Y secundario (None = sin dual-axis)"),
     years_to_plot: str = Query("2024,2030,2050", description="Años a plotear separados por coma"),
     group_by: str = Query("year", description="Agrupación: 'year' (default) o 'scenario'"),
     agrupacion: str | None = Query(None),
@@ -476,6 +485,7 @@ def export_comparison_by_year_image(
                 job_ids=job_id_list,
                 tipo=tipo,
                 un=un,
+                un2=un2,
                 years_to_plot=year_list,
                 agrupacion=agrupacion,
                 sub_filtro=sub_filtro,
@@ -490,6 +500,7 @@ def export_comparison_by_year_image(
                 job_ids=job_id_list,
                 tipo=tipo,
                 un=un,
+                un2=un2,
                 years_to_plot=year_list,
                 agrupacion=agrupacion,
                 sub_filtro=sub_filtro,
@@ -550,6 +561,7 @@ def get_pareto_data(
     job_id: int,
     tipo: str = Query(...),
     un: str = Query("PJ"),
+    un2: str | None = Query(None, description="Unidad del eje Y secundario (None = sin dual-axis)"),
     sub_filtro: str | None = Query(None),
     loc: str | None = Query(None),
     db: Session = Depends(get_db),
@@ -565,7 +577,7 @@ def get_pareto_data(
     try:
         return chart_service.build_pareto_data(
             db=db, job_id=job["id"], tipo=tipo,
-            un=un, sub_filtro=sub_filtro, loc=loc,
+            un=un, un2=un2, sub_filtro=sub_filtro, loc=loc,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -595,6 +607,7 @@ def get_chart_data(
     job_id: int,
     tipo: str = Query(...),
     un: str = Query("PJ"),
+    un2: str | None = Query(None, description="Unidad del eje Y secundario (None = sin dual-axis)"),
     sub_filtro: str | None = Query(None),
     loc: str | None = Query(None),
     variable: str | None = Query(None),
@@ -622,6 +635,7 @@ def get_chart_data(
             job_id=job["id"],
             tipo=tipo,
             un=un,
+            un2=un2,
             sub_filtro=sub_filtro,
             loc=loc,
             variable=variable,
@@ -671,6 +685,7 @@ def export_chart(
     job_id: int,
     tipo: str = Query(...),
     un: str = Query("PJ"),
+    un2: str | None = Query(None, description="Unidad del eje Y secundario (None = sin dual-axis)"),
     sub_filtro: str | None = Query(None),
     loc: str | None = Query(None),
     variable: str | None = Query(None),
@@ -758,6 +773,7 @@ def export_chart(
                 job_id=job["id"],
                 tipo=tipo,
                 un=un,
+                un2=un2,
                 sub_filtro=sub_filtro,
                 loc=loc,
             )
@@ -802,6 +818,7 @@ def export_chart(
             job_id=job["id"],
             tipo=tipo,
             un=un,
+            un2=un2,
             sub_filtro=sub_filtro,
             loc=loc,
             variable=variable,
@@ -890,6 +907,7 @@ def export_chart(
 def export_all_charts(
     job_id: int,
     un: str = Query("PJ"),
+    un2: str | None = Query(None, description="Unidad del eje Y secundario (None = sin dual-axis)"),
     fmt: str = Query("svg", description="Formato de imagen: svg o png"),
     view_mode: str = Query(
         "column",
@@ -923,7 +941,7 @@ def export_all_charts(
 
     try:
         zip_bytes = chart_service.export_all_charts_zip(
-            db=db, job_id=job["id"], un=un, fmt=fmt, view_mode=view_mode, clean=clean,
+            db=db, job_id=job["id"], un=un, un2=un2, fmt=fmt, view_mode=view_mode, clean=clean,
         )
     except Exception as e:
         logger.exception("Error generando ZIP de gráficas")

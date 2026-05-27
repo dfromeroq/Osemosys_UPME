@@ -36,6 +36,7 @@ export function encodeChartShareParams(
   const s = state.selection;
   if (s.tipo) out.t = s.tipo;
   if (s.un) out.u = s.un;
+  if (s.un2) out.u2 = s.un2;
   if (s.sub_filtro) out.sf = s.sub_filtro;
   if (s.loc) out.loc = s.loc;
   if (s.variable) out.v = s.variable;
@@ -113,6 +114,8 @@ export function decodeChartShareParams(
     tipo: get("t") ?? "",
     un: get("u") ?? "",
   };
+  const u2 = get("u2");
+  if (u2) selection.un2 = u2;
   const sf = get("sf");
   if (sf) selection.sub_filtro = sf;
   const loc = get("loc");

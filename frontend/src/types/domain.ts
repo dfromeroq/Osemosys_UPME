@@ -480,6 +480,7 @@ export type ChartDataResponse = {
   series: ChartSeries[];
   title: string;
   yAxisLabel: string;
+  yAxisLabelSecondary?: string;
 };
 
 /** Overrides de presentación para tablas (plantillas admin). */
@@ -584,6 +585,7 @@ export type CompareChartResponse = {
   title: string;
   subplots: SubplotData[];
   yAxisLabel: string;
+  yAxisLabelSecondary?: string;
 };
 
 export type CompareMode = "off" | "facet" | "by-year" | "by-year-alt" | "line-total";
@@ -604,6 +606,7 @@ export type CompareChartFacetResponse = {
   title: string;
   facets: FacetData[];
   yAxisLabel: string;
+  yAxisLabelSecondary?: string;
 };
 
 export type ParetoChartResponse = {
@@ -714,6 +717,8 @@ export type SavedChartTemplate = {
   description: string | null;
   tipo: string;
   un: string;
+  /** Unidad del eje Y secundario (null = sin dual-axis). */
+  un2?: string | null;
   sub_filtro: string | null;
   loc: string | null;
   variable: string | null;

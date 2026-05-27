@@ -144,42 +144,92 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
         lineColor: '#334155',
         tickColor: '#334155',
       },
-      yAxis: {
-        // ``yAxisMin`` (si es número) sobreescribe el ``0`` de stack;
-        // ``null`` o no provisto → mantener el default 0 (stacks no
-        // tienen sentido bajo cero, salvo override explícito).
-        min: typeof yAxisMin === 'number' ? yAxisMin : 0,
-        ...(typeof yAxisMax === 'number' ? { max: yAxisMax } : null),
-        title: {
-          text: data.yAxisLabel,
-          style: { color: '#94a3b8', fontSize: fb('14pt') },
-        },
-        labels: {
-          style: { color: '#94a3b8', fontSize: fb('11pt') },
-          // Mínimo 3 cifras significativas (sin notación científica).
-          formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
-            return formatAxis3Sig(this.value as number);
+      yAxis: data.yAxisLabelSecondary
+        ? [
+            {
+              min: typeof yAxisMin === 'number' ? yAxisMin : 0,
+              ...(typeof yAxisMax === 'number' ? { max: yAxisMax } : null),
+              title: {
+                text: data.yAxisLabel,
+                style: { color: '#94a3b8', fontSize: fb('14pt') },
+              },
+              labels: {
+                style: { color: '#94a3b8', fontSize: fb('11pt') },
+                formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
+                  return formatAxis3Sig(this.value as number);
+                },
+              },
+              gridLineColor: '#334155',
+              stackLabels: {
+                enabled: true,
+                style: {
+                  fontWeight: 'bold',
+                  color: '#94a3b8',
+                  textOutline: 'none',
+                  fontSize: fb('11pt'),
+                },
+                // eslint-disable-next-line react-hooks/unsupported-syntax
+                formatter: function (this: Highcharts.StackItemObject) {
+                  if (typeof this.x === 'number' && this.x % 2 !== 0) return '';
+                  return Highcharts.numberFormat(this.total, 1, '.', ',');
+                },
+              },
+            },
+            {
+              opposite: true,
+              title: {
+                text: data.yAxisLabelSecondary,
+                style: { color: '#94a3b8', fontSize: fb('14pt') },
+              },
+              labels: {
+                style: { color: '#94a3b8', fontSize: fb('11pt') },
+                formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
+                  return formatAxis3Sig(this.value as number);
+                },
+              },
+              gridLineColor: '#334155',
+              gridLineWidth: 0,
+            },
+          ]
+        : {
+            // ``yAxisMin`` (si es número) sobreescribe el ``0`` de stack;
+            // ``null`` o no provisto → mantener el default 0 (stacks no
+            // tienen sentido bajo cero, salvo override explícito).
+            min: typeof yAxisMin === 'number' ? yAxisMin : 0,
+            ...(typeof yAxisMax === 'number' ? { max: yAxisMax } : null),
+            title: {
+              text: data.yAxisLabel,
+              style: { color: '#94a3b8', fontSize: fb('14pt') },
+            },
+            labels: {
+              style: { color: '#94a3b8', fontSize: fb('11pt') },
+              // Mínimo 3 cifras significativas (sin notación científica).
+              formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
+                return formatAxis3Sig(this.value as number);
+              },
+            },
+            gridLineColor: '#334155',
+            stackLabels: {
+              enabled: true,
+              style: {
+                fontWeight: 'bold',
+                color: '#94a3b8',
+                textOutline: 'none',
+                fontSize: fb('11pt'),
+              },
+              // Highcharts invoca el formatter con `this` como StackItemObject; no usar flecha.
+              // Mostrar solo cada 2 categorías (0, 2, 4, …) con 1 decimal máximo.
+              // eslint-disable-next-line react-hooks/unsupported-syntax -- API de Highcharts
+              formatter: function (this: Highcharts.StackItemObject) {
+                if (typeof this.x === 'number' && this.x % 2 !== 0) return '';
+                return Highcharts.numberFormat(this.total, 1, '.', ',');
+              },
+            },
           },
-        },
-        gridLineColor: '#334155',
-        stackLabels: {
-          enabled: true,
-          style: {
-            fontWeight: 'bold',
-            color: '#94a3b8',
-            textOutline: 'none',
-            fontSize: fb('11pt'),
-          },
-          // Highcharts invoca el formatter con `this` como StackItemObject; no usar flecha.
-          // Mostrar solo cada 2 categorías (0, 2, 4, …) con 1 decimal máximo.
-          // eslint-disable-next-line react-hooks/unsupported-syntax -- API de Highcharts
-          formatter: function (this: Highcharts.StackItemObject) {
-            if (typeof this.x === 'number' && this.x % 2 !== 0) return '';
-            return Highcharts.numberFormat(this.total, 1, '.', ',');
-          },
-        },
-      },
-      tooltip: buildStackedTooltipOptions({ unitLabel: data.yAxisLabel }),
+      tooltip: buildStackedTooltipOptions({
+        unitLabel: data.yAxisLabel,
+        ...(data.yAxisLabelSecondary ? { secondaryUnitLabel: data.yAxisLabelSecondary } : null),
+      }),
       plotOptions: {
         series: {
           events: { legendItemClick },
@@ -217,12 +267,27 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
             lineColor: '#cbd5e1',
             tickColor: '#cbd5e1',
           },
-          yAxis: {
-            labels: { style: { color: '#334155', fontSize: '20pt' } },
-            title: { style: { color: '#334155', fontSize: '28pt' } },
-            gridLineColor: '#e2e8f0',
-            stackLabels: { style: { color: '#1e293b', fontSize: '20pt', fontWeight: 'normal' } },
-          },
+          yAxis: data.yAxisLabelSecondary
+            ? [
+                {
+                  labels: { style: { color: '#334155', fontSize: '20pt' } },
+                  title: { style: { color: '#334155', fontSize: '28pt' } },
+                  gridLineColor: '#e2e8f0',
+                  stackLabels: { style: { color: '#1e293b', fontSize: '20pt', fontWeight: 'normal' } },
+                },
+                {
+                  labels: { style: { color: '#334155', fontSize: '20pt' } },
+                  title: { style: { color: '#334155', fontSize: '28pt' } },
+                  gridLineColor: '#e2e8f0',
+                  opposite: true,
+                },
+              ]
+            : {
+                labels: { style: { color: '#334155', fontSize: '20pt' } },
+                title: { style: { color: '#334155', fontSize: '28pt' } },
+                gridLineColor: '#e2e8f0',
+                stackLabels: { style: { color: '#1e293b', fontSize: '20pt', fontWeight: 'normal' } },
+              },
           legend: { itemStyle: { color: '#334155', fontSize: '20pt' } },
         },
         buttons: {

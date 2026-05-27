@@ -78,6 +78,15 @@ export const CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS: Partial<Highcharts.Options> = 
   plotOptions: { series: { dataLabels: { enabled: false } as any } },
 };
 
+export const CLEAN_EXPORT_OVERRIDES_DUAL_YAXIS: Partial<Highcharts.Options> = {
+  title: { text: '' },
+  yAxis: [
+    { stackLabels: { enabled: false } },
+    { labels: { enabled: true }, title: { text: '' } },
+  ],
+  plotOptions: { series: { dataLabels: { enabled: false } as any } },
+};
+
 /**
  * Overrides de Highcharts para exportación "limpia" en charts con múltiples yAxis.
  * `count` = número de subplots/ejes Y.

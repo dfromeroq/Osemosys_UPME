@@ -52,6 +52,9 @@ class ChartDataResponse(BaseModel):
     series: list[ChartSeries]
     title: str
     yAxisLabel: str
+    #: Etiqueta del eje Y secundario (eje derecho) cuando ``un2`` está activo.
+    #: ``None`` = sin eje secundario (comportamiento original).
+    yAxisLabelSecondary: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +80,7 @@ class CompareChartResponse(BaseModel):
     title: str
     subplots: list[SubplotData]
     yAxisLabel: str
+    yAxisLabelSecondary: str | None = None
 
 
 class FacetData(BaseModel):
@@ -98,6 +102,7 @@ class CompareChartFacetResponse(BaseModel):
     title: str
     facets: list[FacetData]
     yAxisLabel: str
+    yAxisLabelSecondary: str | None = None
 
 
 # ---------------------------------------------------------------------------

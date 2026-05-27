@@ -58,6 +58,8 @@ class SavedChartTemplateBase(BaseModel):
     description: str | None = None
     tipo: str = Field(min_length=1, max_length=64)
     un: str = Field(min_length=1, max_length=16)
+    #: Unidad del eje Y secundario (eje derecho). ``None`` = sin eje secundario.
+    un2: str | None = Field(default=None, min_length=1, max_length=16)
     sub_filtro: str | None = Field(default=None, max_length=64)
     loc: str | None = Field(default=None, max_length=32)
     variable: str | None = Field(default=None, max_length=64)

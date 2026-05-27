@@ -1,4 +1,5 @@
 import Highcharts from './highchartsSetup';
+import { getUnitConversionRatio } from './unitConversion';
 
 /**
  * Formateo consistente de valores numéricos para tooltips:
@@ -55,6 +56,8 @@ type StackedTooltipOptions = {
   scopeByYAxis?: boolean;
   /** Extrae un prefijo de cabecera a partir del punto activo (p.ej. año del subplot). */
   headerPrefix?: (ctx: Highcharts.TooltipFormatterContextObject) => string | null;
+  /** Etiqueta del eje Y secundario (eje derecho) para gráficas dual-axis. */
+  secondaryUnitLabel?: string;
 };
 
 /**
@@ -70,7 +73,7 @@ type StackedTooltipOptions = {
 export function buildStackedTooltipOptions(
   opts: StackedTooltipOptions,
 ): Highcharts.TooltipOptions {
-  const { unitLabel, scopeByYAxis = false, headerPrefix } = opts;
+  const { unitLabel, scopeByYAxis = false, headerPrefix, secondaryUnitLabel } = opts;
   const hidePercent = unitIsAlreadyPercent(unitLabel);
   return {
     ...TOOLTIP_BASE_OPTIONS,
@@ -90,6 +93,9 @@ export function buildStackedTooltipOptions(
         firstPoint && typeof firstPoint.total === 'number'
           ? firstPoint.total
           : points.reduce((acc, p) => acc + (p.y ?? 0), 0);
+      const secondaryRatio = secondaryUnitLabel
+        ? getUnitConversionRatio(unitLabel, secondaryUnitLabel)
+        : null;
 
       const visible = points.filter((p) => (p.y ?? 0) !== 0);
 
@@ -128,10 +134,14 @@ export function buildStackedTooltipOptions(
         ? ''
         : `<div style="color:#94a3b8; margin-bottom:6px">Total: <b style="color:#f8fafc">${fmtValue(stackTotal)}</b> ${escapeHtml(unitLabel)}</div>`;
 
+      const secondaryTotalLine = secondaryUnitLabel && secondaryRatio != null
+        ? `<div style="color:#94a3b8; margin-bottom:6px">${escapeHtml(secondaryUnitLabel)}: <b style="color:#f8fafc">${fmtValue(stackTotal * secondaryRatio)}</b></div>`
+        : '';
+
       return `
         <div style="min-width:260px">
           <div style="font-weight:700; font-size:14px; color:#f8fafc; margin-bottom:${hidePercent ? '6' : '2'}px">${escapeHtml(header)}</div>
-          ${totalLine}
+          ${totalLine}${secondaryTotalLine}
           <table style="border-collapse:collapse; font-size:11px">${rows}${emptyRow}</table>
         </div>
       `;
@@ -141,6 +151,7 @@ export function buildStackedTooltipOptions(
 
 type LineTooltipOptions = {
   unitLabel: string;
+  secondaryUnitLabel?: string;
 };
 
 /**
@@ -178,7 +189,7 @@ type LineTooltipOptions = {
 export function buildLineTooltipOptions(
   opts: LineTooltipOptions,
 ): Highcharts.TooltipOptions {
-  const { unitLabel } = opts;
+  const { unitLabel, secondaryUnitLabel } = opts;
   return {
     ...TOOLTIP_BASE_OPTIONS,
     shared: true,
@@ -188,6 +199,11 @@ export function buildLineTooltipOptions(
         .filter((p) => (p.y ?? 0) !== 0)
         .slice()
         .sort((a, b) => Math.abs(b.y ?? 0) - Math.abs(a.y ?? 0));
+
+      const sum = visible.reduce((acc, p) => acc + (p.y ?? 0), 0);
+      const secondaryRatio = secondaryUnitLabel
+        ? getUnitConversionRatio(unitLabel, secondaryUnitLabel)
+        : null;
 
       const rows = visible
         .map((p) => {
@@ -208,10 +224,15 @@ export function buildLineTooltipOptions(
         ? `<tr><td style="padding:4px 0; color:#94a3b8" colspan="2"><i>Sin valores distintos de 0</i></td></tr>`
         : '';
 
+      const secondaryTotalLine = secondaryUnitLabel && secondaryRatio != null && sum > 0
+        ? `<div style="color:#94a3b8; margin-top:4px">${escapeHtml(secondaryUnitLabel)}: <b style="color:#f8fafc">${fmtValue(sum * secondaryRatio)}</b></div>`
+        : '';
+
       return `
         <div style="min-width:220px">
           <div style="font-weight:700; font-size:14px; color:#f8fafc; margin-bottom:6px">${escapeHtml(String(this.x ?? ''))}</div>
           <table style="border-collapse:collapse; font-size:11px">${rows}${emptyRow}</table>
+          ${secondaryTotalLine}
         </div>
       `;
     },

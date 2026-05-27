@@ -871,6 +871,25 @@ def _emision_unit_label(un: str, es_emision_kt: bool) -> str:
     return "ktCO₂eq" if un == "ktCO2eq" else "MtCO₂eq"
 
 
+def _get_unit_conversion_ratio(un1: str, un2: str) -> float | None:
+    """Ratio ``valor_en_un1 → valor_en_un2``.
+
+    ``None`` si las unidades son iguales o no están reconocidas.
+    Útil para escalar el eje Y secundario en dual-axis.
+    """
+    if not un2 or un1 == un2:
+        return None
+    factors = {
+        "PJ": 1.0, "GW": 31.536, "MW": 0.031536,
+        "TWh": 3.6, "Gpc": 1.0095581216,
+        "MtCO2eq": 1.0, "ktCO2eq": 0.001, "kt": 0.001,
+    }
+    f1, f2 = factors.get(un1), factors.get(un2)
+    if f1 is None or f2 is None:
+        return None
+    return f1 / f2
+
+
 def _color_map_comparison(
     agrupacion: str,
     categorias_unicas: list[str],
@@ -1466,6 +1485,7 @@ def build_chart_data(
     job_id: int,
     tipo: str,
     un: str = "PJ",
+    un2: str | None = None,
     sub_filtro: str | None = None,
     loc: str | None = None,
     variable: str | None = None,
@@ -1753,6 +1773,8 @@ def build_chart_data(
             )
         )
 
+    _secondary_label: str | None = un2 if un2 and not es_porcentaje else None
+
     return ChartDataResponse(
         categories=categories,
         series=series,
@@ -1760,6 +1782,7 @@ def build_chart_data(
         yAxisLabel="%"
         if es_porcentaje
         else (_emision_unit_label(un, es_emision_kt) if es_emision else un),
+        yAxisLabelSecondary=_secondary_label,
     )
 
 
@@ -1845,6 +1868,7 @@ def build_comparison_data(
     job_ids: list[int],
     tipo: str,
     un: str = "PJ",
+    un2: str | None = None,
     years_to_plot: list[int] | None = None,
     agrupacion: str | None = None,
     sub_filtro: str | None = None,
@@ -2039,7 +2063,7 @@ def build_comparison_data(
         all_data.append(df)
 
     if not all_data:
-        return CompareChartResponse(title=title, subplots=[], yAxisLabel=un)
+        return CompareChartResponse(title=title, subplots=[], yAxisLabel=un, yAxisLabelSecondary=un2 if un2 else None)
 
     df_final = pd.concat(all_data, ignore_index=True)
 
@@ -2170,7 +2194,10 @@ def build_comparison_data(
         )
 
     return CompareChartResponse(
-        title=title, subplots=subplots, yAxisLabel="%" if es_porcentaje_override else un
+        title=title,
+        subplots=subplots,
+        yAxisLabel="%" if es_porcentaje_override else un,
+        yAxisLabelSecondary=un2 if un2 and not es_porcentaje_override else None,
     )
 
 
@@ -2184,6 +2211,7 @@ def build_comparison_facet_data(
     job_ids: list[int],
     tipo: str,
     un: str = "PJ",
+    un2: str | None = None,
     sub_filtro: str | None = None,
     loc: str | None = None,
     variable: str | None = None,
@@ -2293,6 +2321,7 @@ def build_comparison_facet_data(
         title=title,
         facets=facets,
         yAxisLabel=y_label,
+        yAxisLabelSecondary=un2 if un2 else None,
     )
 
 
@@ -2704,6 +2733,7 @@ def build_comparison_line_data(
     job_ids: list[int],
     tipo: str,
     un: str = "PJ",
+    un2: str | None = None,
     sub_filtro: str | None = None,
     loc: str | None = None,
     job_display_overrides: dict[int, str] | None = None,
@@ -2818,6 +2848,7 @@ def build_comparison_line_data(
             series=[],
             title=title,
             yAxisLabel=_emision_unit_label(un, es_emision_kt) if es_emision else un,
+            yAxisLabelSecondary=None,
         )
 
     years_sorted = sorted(all_years)
@@ -2849,7 +2880,8 @@ def build_comparison_line_data(
     )
     y_label = _emision_unit_label(un, es_emision_kt_line) if es_emision else un
     return ChartDataResponse(
-        categories=categories, series=series, title=title, yAxisLabel=y_label
+        categories=categories, series=series, title=title, yAxisLabel=y_label,
+        yAxisLabelSecondary=un2 if un2 else None,
     )
 
 
@@ -2863,6 +2895,7 @@ def build_pareto_data(
     job_id: int,
     tipo: str,
     un: str = "PJ",
+    un2: str | None = None,
     sub_filtro: str | None = None,
     loc: str | None = None,
 ) -> ParetoChartResponse:
@@ -3171,6 +3204,7 @@ def export_all_charts_zip(
     db: Session,
     job_id: int,
     un: str = "PJ",
+    un2: str | None = None,
     fmt: str = "svg",
     *,
     view_mode: str = "column",
@@ -3220,12 +3254,13 @@ def export_all_charts_zip(
                         job_id,
                         config_id,
                         un=un,
+                        un2=un2,
                         variable=var_name,
                     )
                     if chart.series:
                         charts_to_render.append((f"{label} — {var_suffix}", chart))
             else:
-                chart = build_chart_data(db, job_id, config_id, un=un)
+                chart = build_chart_data(db, job_id, config_id, un=un, un2=un2)
                 if chart.series:
                     charts_to_render.append((label, chart))
 
@@ -3291,6 +3326,25 @@ def _filter_hidden_series(
     if not hidden_names:
         return series_list
     return [s for s in series_list if s.name not in hidden_names]
+
+
+def _add_secondary_axis(
+    ax, ylabel: str | None, ratio: float | None
+) -> None:
+    """Agrega un eje Y secundario (twinx) con escala proporcional."""
+    if ylabel is None or ratio is None:
+        return
+    ax2 = ax.twinx()
+    ymin, ymax = ax.get_ylim()
+    ax2.set_ylim(
+        ymin * ratio if ymin else 0.0,
+        ymax * ratio,
+    )
+    ax2.set_ylabel(ylabel, fontsize=24, color="#0f172a", labelpad=8)
+    ax2.grid(False)
+    ax2.tick_params(axis="y", labelsize=22, colors="#334155")
+    from matplotlib.ticker import FuncFormatter
+    ax2.yaxis.set_major_formatter(FuncFormatter(lambda v, _p: format_axis_3sig(v)))
 
 
 def _render_stacked_bar(
@@ -3424,6 +3478,11 @@ def _render_stacked_bar(
         ax.set_ylim(cur_lo, cur_hi)
     else:
         ax.set_ylim(0.0, y_top)
+    _add_secondary_axis(
+        ax,
+        getattr(chart, "yAxisLabelSecondary", None),
+        _get_unit_conversion_ratio(chart.yAxisLabel, getattr(chart, "yAxisLabelSecondary", None)),
+    )
 
     fig.tight_layout()
 
@@ -3554,6 +3613,11 @@ def _render_line_chart(
             float(y_axis_min) if y_axis_min is not None else cur_lo,
             float(y_axis_max) if y_axis_max is not None else cur_hi,
         )
+    _add_secondary_axis(
+        ax,
+        getattr(chart, "yAxisLabelSecondary", None),
+        _get_unit_conversion_ratio(chart.yAxisLabel, getattr(chart, "yAxisLabelSecondary", None)),
+    )
 
     fig.tight_layout()
 
@@ -3714,6 +3778,11 @@ def _render_stacked_area(
         ax.set_ylim(cur_lo, cur_hi)
     else:
         ax.set_ylim(0.0, y_top)
+    _add_secondary_axis(
+        ax,
+        getattr(chart, "yAxisLabelSecondary", None),
+        _get_unit_conversion_ratio(chart.yAxisLabel, getattr(chart, "yAxisLabelSecondary", None)),
+    )
 
     fig.tight_layout()
 
@@ -3875,6 +3944,11 @@ def render_comparison_by_year_bytes(
     for j in range(n):
         ax = axes[j // cols][j % cols]
         ax.set_ylim(effective_y_lo, effective_y_hi)
+        _add_secondary_axis(
+            ax,
+            getattr(data, "yAxisLabelSecondary", None),
+            _get_unit_conversion_ratio(data.yAxisLabel, getattr(data, "yAxisLabelSecondary", None)),
+        )
 
     # Ocultar axes sobrantes
     for j in range(n, rows * cols):
@@ -4307,6 +4381,11 @@ def render_comparison_facet_figure_bytes(
 
     for ax, bottom in zip(facet_axes, stack_tops):
         ax.set_ylim(effective_y_lo, effective_y_hi)
+        _add_secondary_axis(
+            ax,
+            getattr(data, "yAxisLabelSecondary", None),
+            _get_unit_conversion_ratio(data.yAxisLabel, getattr(data, "yAxisLabelSecondary", None)),
+        )
         ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _p: format_axis_3sig(v)))
         ax.yaxis.set_major_locator(
             MaxNLocator(nbins=7, min_n_ticks=5, steps=[1, 2, 2.5, 5, 10]),
@@ -4887,6 +4966,7 @@ def build_comparison_data_by_year_alt(
     job_ids: list[int],
     tipo: str,
     un: str = "PJ",
+    un2: str | None = None,
     years_to_plot: list[int] | None = None,
     agrupacion: str | None = None,
     sub_filtro: str | None = None,
@@ -5002,6 +5082,7 @@ def build_comparison_data_by_year_alt(
             title=f"{title_base} (Comparación Alternativa)",
             subplots=[],
             yAxisLabel=un,
+            yAxisLabelSecondary=un2 if un2 and not es_porcentaje_override else None,
         )
 
     df_final = pd.concat(all_data, ignore_index=True)
@@ -5112,4 +5193,5 @@ def build_comparison_data_by_year_alt(
         title=title,
         subplots=subplots,
         yAxisLabel="%" if es_porcentaje_override else un,
+        yAxisLabelSecondary=un2 if un2 and not es_porcentaje_override else None,
     )

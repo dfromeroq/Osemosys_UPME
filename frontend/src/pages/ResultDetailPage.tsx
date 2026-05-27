@@ -518,7 +518,7 @@ export function ResultDetailPage() {
   // (otro tipo, otra agrupación, otro filtro): el conjunto de series cambia,
   // así que un orden custom anterior dejaría de tener sentido.
   const chartIdentityKey =
-    `${chartSelection.tipo}|${chartSelection.un}|${chartSelection.sub_filtro ?? ''}|${chartSelection.loc ?? ''}|${chartSelection.variable ?? ''}|${chartSelection.agrupar_por ?? ''}|${chartSelection.region ?? ''}|${chartSelection.timeslice ?? ''}`;
+    `${chartSelection.tipo}|${chartSelection.un}|${chartSelection.un2 ?? ''}|${chartSelection.sub_filtro ?? ''}|${chartSelection.loc ?? ''}|${chartSelection.variable ?? ''}|${chartSelection.agrupar_por ?? ''}|${chartSelection.region ?? ''}|${chartSelection.timeslice ?? ''}`;
   useEffect(() => {
     setCustomSeriesOrder(null);
     setYAxisMin(null);
@@ -1069,6 +1069,7 @@ export function ResultDetailPage() {
         tipo: chartSelection.tipo,
         un: chartSelection.un,
       };
+      if (chartSelection.un2) params.un2 = chartSelection.un2;
       if (chartSelection.sub_filtro) params.sub_filtro = chartSelection.sub_filtro;
       if (chartSelection.loc) params.loc = chartSelection.loc;
       if (chartSelection.variable) params.variable = chartSelection.variable;
@@ -1098,6 +1099,7 @@ export function ResultDetailPage() {
         un: chartSelection.un,
         years_to_plot: chartYearsToPlot.join(','),
       };
+      if (chartSelection.un2) params.un2 = chartSelection.un2;
       if (chartSelection.sub_filtro) params.sub_filtro = chartSelection.sub_filtro;
       if (chartSelection.loc) params.loc = chartSelection.loc;
       if (chartSelection.agrupar_por) params.agrupacion = chartSelection.agrupar_por;
@@ -1122,6 +1124,7 @@ export function ResultDetailPage() {
         years_to_plot: chartYearsToPlot.join(','),
         group_by: 'scenario',
       };
+      if (chartSelection.un2) params.un2 = chartSelection.un2;
       if (chartSelection.sub_filtro) params.sub_filtro = chartSelection.sub_filtro;
       if (chartSelection.loc) params.loc = chartSelection.loc;
       if (chartSelection.agrupar_por) params.agrupacion = chartSelection.agrupar_por;
@@ -1144,6 +1147,7 @@ export function ResultDetailPage() {
         tipo: chartSelection.tipo,
         un: chartSelection.un,
       };
+      if (chartSelection.un2) params.un2 = chartSelection.un2;
       if (chartSelection.sub_filtro) params.sub_filtro = chartSelection.sub_filtro;
       if (chartSelection.loc) params.loc = chartSelection.loc;
 
@@ -1163,6 +1167,7 @@ export function ResultDetailPage() {
         tipo: chartSelection.tipo,
         un: chartSelection.un,
       };
+      if (chartSelection.un2) params.un2 = chartSelection.un2;
       if (chartSelection.sub_filtro) params.sub_filtro = chartSelection.sub_filtro;
       if (chartSelection.loc) params.loc = chartSelection.loc;
       if (chartSelection.variable) params.variable = chartSelection.variable;
@@ -1180,6 +1185,7 @@ export function ResultDetailPage() {
           tipo: chartSelection.tipo,
           un: chartSelection.un,
         };
+        if (chartSelection.un2) paretoParams.un2 = chartSelection.un2;
         if (chartSelection.sub_filtro) paretoParams.sub_filtro = chartSelection.sub_filtro;
         if (chartSelection.loc) paretoParams.loc = chartSelection.loc;
 
@@ -1241,13 +1247,13 @@ export function ResultDetailPage() {
     setShowExportMenu(false);
     setExportingType('svg');
     try {
-      const response = await simulationApi.exportAllCharts(currentRunId, chartSelection.un);
+      const response = await simulationApi.exportAllCharts(currentRunId, chartSelection.un, chartSelection.un2);
       const blob = new Blob([response.data], {
         type: 'application/zip',
       });
       const disposition = response.headers['content-disposition'] || '';
       const match = disposition.match(/filename="?([^"]+)"?/);
-      const filename = match?.[1] || `Graficas_${currentRunId}_${chartSelection.un}.zip`;
+      const filename = match?.[1] || `Graficas_${currentRunId}_${chartSelection.un}${chartSelection.un2 ? `_${chartSelection.un2}` : ''}.zip`;
       downloadBlob(blob, filename);
     } catch (err) {
       console.error('Error exporting charts', err);
@@ -1255,7 +1261,7 @@ export function ResultDetailPage() {
     } finally {
       setExportingType(null);
     }
-  }, [currentRunId, chartSelection.un]);
+  }, [currentRunId, chartSelection.un, chartSelection.un2]);
 
   const handleExportCsvZip = useCallback(async () => {
     setShowExportMenu(false);

@@ -247,6 +247,7 @@ export const simulationApi = {
     params: {
       tipo: string;
       un?: string;
+      un2?: string;
       sub_filtro?: string;
       loc?: string;
       variable?: string;
@@ -286,6 +287,7 @@ export const simulationApi = {
       fmt,
       view_mode: selection.viewMode ?? "column",
     };
+    if (selection.un2) params.un2 = selection.un2;
     if (selection.sub_filtro) params.sub_filtro = selection.sub_filtro;
     if (selection.loc) params.loc = selection.loc;
     if (selection.variable) params.variable = selection.variable;
@@ -336,7 +338,7 @@ export const simulationApi = {
     return { blob, filename };
   },
 
-  async getCompareData(params: { job_ids: string, tipo: string, un?: string, years_to_plot?: string, agrupacion?: string, sub_filtro?: string, loc?: string, group_by?: string }) {
+  async getCompareData(params: { job_ids: string, tipo: string, un?: string, un2?: string, years_to_plot?: string, agrupacion?: string, sub_filtro?: string, loc?: string, group_by?: string }) {
     const { data } = await httpClient.get<CompareChartResponse>(`/visualizations/chart-data/compare`, { params });
     return data;
   },
@@ -345,6 +347,7 @@ export const simulationApi = {
     job_ids: string;
     tipo: string;
     un?: string;
+    un2?: string;
     sub_filtro?: string;
     loc?: string;
     variable?: string;
@@ -359,6 +362,7 @@ export const simulationApi = {
     job_ids: string;
     tipo: string;
     un?: string;
+    un2?: string;
     sub_filtro?: string;
     loc?: string;
   }) {
@@ -371,7 +375,7 @@ export const simulationApi = {
 
   async getParetoData(
     jobId: number,
-    params: { tipo: string; un?: string; sub_filtro?: string; loc?: string },
+    params: { tipo: string; un?: string; un2?: string; sub_filtro?: string; loc?: string },
   ) {
     const { data } = await httpClient.get<ParetoChartResponse>(
       `/visualizations/${jobId}/pareto-data`,
@@ -386,6 +390,7 @@ export const simulationApi = {
       job_ids: string;
       tipo: string;
       un?: string;
+      un2?: string;
       es_porcentaje?: string;
       view_mode?: string;
       sub_filtro?: string;
@@ -411,6 +416,7 @@ export const simulationApi = {
       un: params.un ?? "PJ",
       fmt,
     };
+    if (params.un2) q.un2 = params.un2;
     if (params.es_porcentaje) q.es_porcentaje = params.es_porcentaje;
     if (params.clean) q.clean = "true";
     if (params.sub_filtro) q.sub_filtro = params.sub_filtro;
@@ -448,6 +454,7 @@ export const simulationApi = {
       job_ids: string;
       tipo: string;
       un?: string;
+      un2?: string;
       years_to_plot?: string;
       group_by?: string;
       agrupacion?: string;
@@ -469,6 +476,7 @@ export const simulationApi = {
       un: params.un ?? "PJ",
       fmt,
     };
+    if (params.un2) q.un2 = params.un2;
     if (params.years_to_plot) q.years_to_plot = params.years_to_plot;
     if (params.group_by) q.group_by = params.group_by;
     if (params.agrupacion) q.agrupacion = params.agrupacion;
@@ -503,9 +511,11 @@ export const simulationApi = {
     return data;
   },
 
-  async exportAllCharts(jobId: number, un: string = "PJ", fmt: string = "svg") {
+  async exportAllCharts(jobId: number, un: string = "PJ", un2?: string, fmt: string = "svg") {
+    const params: Record<string, string> = { un, fmt };
+    if (un2) params.un2 = un2;
     const response = await httpClient.get(`/visualizations/${jobId}/export-all`, {
-      params: { un, fmt },
+      params,
       responseType: "blob",
       timeout: 5 * 60 * 1000,
     });

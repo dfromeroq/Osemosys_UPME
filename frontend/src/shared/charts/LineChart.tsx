@@ -5,11 +5,13 @@ import {
   CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS,
   EXPORTING_CONTEXT_BUTTON_DARK,
   INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
+  buildCleanExportOverridesMultiYAxis,
   createCleanExportMenuItem,
   onHighchartsExportError,
 } from './chartExportingShared';
 import { buildLineTooltipOptions } from './chartTooltips';
 import { bumpFontSize, formatAxis3Sig } from './numberFormat';
+import { getUnitConversionRatio } from './unitConversion';
 import {
   createLegendDblclickState,
   dispatchLegendClick,
@@ -151,27 +153,63 @@ export const LineChart: React.FC<LineChartProps> = ({
         lineColor: '#334155',
         tickColor: '#334155',
       },
-      yAxis: {
-        // Líneas: default = auto (a diferencia de columnas/áreas apiladas
-        // que sí fuerzan ``min: 0``). Esto mantiene consistencia con el
-        // export matplotlib (``_render_line_chart``), que tampoco fuerza 0.
-        // Si el usuario quiere 0 explícitamente, lo configura en yAxisMin.
-        ...(typeof yAxisMin === 'number' ? { min: yAxisMin } : null),
-        ...(typeof yAxisMax === 'number' ? { max: yAxisMax } : null),
-        title: {
-          text: data.yAxisLabel,
-          style: { color: '#94a3b8', fontSize: fb('14pt') },
-        },
-        labels: {
-          style: { color: '#94a3b8', fontSize: fb('11pt') },
-          // Mínimo 3 cifras significativas (sin notación científica).
-          formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
-            return formatAxis3Sig(this.value as number);
+      yAxis: data.yAxisLabelSecondary
+        ? [
+            {
+              ...(typeof yAxisMin === 'number' ? { min: yAxisMin } : null),
+              ...(typeof yAxisMax === 'number' ? { max: yAxisMax } : null),
+              title: {
+                text: data.yAxisLabel,
+                style: { color: '#94a3b8', fontSize: fb('14pt') },
+              },
+              labels: {
+                style: { color: '#94a3b8', fontSize: fb('11pt') },
+                formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
+                  return formatAxis3Sig(this.value as number);
+                },
+              },
+              gridLineColor: '#334155',
+            },
+            {
+              opposite: true,
+              title: {
+                text: data.yAxisLabelSecondary,
+                style: { color: '#94a3b8', fontSize: fb('14pt') },
+              },
+              labels: {
+                style: { color: '#94a3b8', fontSize: fb('11pt') },
+                formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
+                  return formatAxis3Sig(this.value as number);
+                },
+              },
+              gridLineColor: '#334155',
+              gridLineWidth: 0,
+            },
+          ]
+        : {
+            // Líneas: default = auto (a diferencia de columnas/áreas apiladas
+            // que sí fuerzan ``min: 0``). Esto mantiene consistencia con el
+            // export matplotlib (``_render_line_chart``), que tampoco fuerza 0.
+            // Si el usuario quiere 0 explícitamente, lo configura en yAxisMin.
+            ...(typeof yAxisMin === 'number' ? { min: yAxisMin } : null),
+            ...(typeof yAxisMax === 'number' ? { max: yAxisMax } : null),
+            title: {
+              text: data.yAxisLabel,
+              style: { color: '#94a3b8', fontSize: fb('14pt') },
+            },
+            labels: {
+              style: { color: '#94a3b8', fontSize: fb('11pt') },
+              // Mínimo 3 cifras significativas (sin notación científica).
+              formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
+                return formatAxis3Sig(this.value as number);
+              },
+            },
+            gridLineColor: '#334155',
           },
-        },
-        gridLineColor: '#334155',
-      },
-      tooltip: buildLineTooltipOptions({ unitLabel: data.yAxisLabel }),
+      tooltip: buildLineTooltipOptions({
+        unitLabel: data.yAxisLabel,
+        ...(data.yAxisLabelSecondary ? { secondaryUnitLabel: data.yAxisLabelSecondary } : null),
+      }),
       plotOptions: {
         series: {
           events: { legendItemClick },
@@ -197,11 +235,25 @@ export const LineChart: React.FC<LineChartProps> = ({
             lineColor: '#cbd5e1',
             tickColor: '#cbd5e1',
           },
-          yAxis: {
-            labels: { style: { color: '#334155', fontSize: '20pt' } },
-            title: { style: { color: '#334155', fontSize: '28pt' } },
-            gridLineColor: '#e2e8f0',
-          },
+          yAxis: data.yAxisLabelSecondary
+            ? [
+                {
+                  labels: { style: { color: '#334155', fontSize: '20pt' } },
+                  title: { style: { color: '#334155', fontSize: '28pt' } },
+                  gridLineColor: '#e2e8f0',
+                },
+                {
+                  labels: { style: { color: '#334155', fontSize: '20pt' } },
+                  title: { style: { color: '#334155', fontSize: '28pt' } },
+                  gridLineColor: '#e2e8f0',
+                  opposite: true,
+                },
+              ]
+            : {
+                labels: { style: { color: '#334155', fontSize: '20pt' } },
+                title: { style: { color: '#334155', fontSize: '28pt' } },
+                gridLineColor: '#e2e8f0',
+              },
           legend: { itemStyle: { color: '#334155', fontSize: '20pt' } },
         },
         buttons: {
@@ -209,11 +261,14 @@ export const LineChart: React.FC<LineChartProps> = ({
             // Highcharts admite objetos { text, onclick }; los tipos suelen declarar solo string[].
             menuItems: (() => {
               if (!serverExport) {
+                const cleanOverrides = data.yAxisLabelSecondary
+                  ? buildCleanExportOverridesMultiYAxis(2)
+                  : CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS;
                 return [
                   ...INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
                   '_separator_',
-                  createCleanExportMenuItem('png', CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS),
-                  createCleanExportMenuItem('svg', CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS),
+                  createCleanExportMenuItem('png', cleanOverrides),
+                  createCleanExportMenuItem('svg', cleanOverrides),
                 ];
               }
               const { jobId, selection } = serverExport;

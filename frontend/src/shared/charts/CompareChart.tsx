@@ -4,9 +4,12 @@ import Highcharts from './highchartsSetup';
 import {
   EXPORTING_CONTEXT_BUTTON_DARK,
   INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
+  CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS,
+  buildCleanExportOverridesMultiYAxis,
   createCleanExportMenuItem,
   onHighchartsExportError,
 } from './chartExportingShared';
+import { getUnitConversionRatio } from './unitConversion';
 import { buildStackedSinglePointTooltipOptions } from './chartTooltips';
 import { formatAxis3Sig } from './numberFormat';
 import {
@@ -101,6 +104,22 @@ export const CompareChart: React.FC<CompareChartProps> = ({
     if (sharedTickInterval === undefined) return globalMaxRaw;
     return Math.ceil(globalMaxRaw / sharedTickInterval) * sharedTickInterval;
   }, [globalMaxRaw, sharedTickInterval, effectiveSharedYAxis]);
+  const globalMaxSecondary = useMemo(() => {
+    if (!effectiveSharedYAxis || !data.yAxisLabelSecondary || globalMaxRaw <= 0) return 0;
+    const ratio = getUnitConversionRatio(data.yAxisLabel, data.yAxisLabelSecondary);
+    if (ratio == null) return 0;
+    const raw = globalMaxRaw * ratio;
+    const tickInterval = raw / 5;
+    if (tickInterval <= 0) return raw;
+    const magnitude = Math.pow(10, Math.floor(Math.log10(tickInterval)));
+    const normalized = tickInterval / magnitude;
+    let niceTick: number;
+    if (normalized <= 1.5) niceTick = magnitude;
+    else if (normalized <= 3.5) niceTick = 2 * magnitude;
+    else if (normalized <= 7.5) niceTick = 5 * magnitude;
+    else niceTick = 10 * magnitude;
+    return Math.ceil(raw / niceTick) * niceTick;
+  }, [data.yAxisLabel, data.yAxisLabelSecondary, globalMaxRaw, effectiveSharedYAxis]);
   const [hiddenNames, setHiddenNames] = useState<Set<string>>(() => new Set());
   const dataSignature = allSeriesNames.join('|');
   useEffect(() => {
@@ -132,6 +151,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         un: sel.un,
         years_to_plot: serverCompareExport.yearsToPlot.join(','),
       };
+      if (sel.un2) payload.un2 = sel.un2;
       if (serverCompareExport.isAltMode) payload.group_by = 'scenario';
       if (sel.sub_filtro) payload.sub_filtro = sel.sub_filtro;
       if (sel.loc) payload.loc = sel.loc;
@@ -214,6 +234,9 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         ...{ tickWidth: 2, tickLength: 10 },
       });
 
+      const primaryMax = typeof yAxisMax === 'number'
+        ? yAxisMax
+        : (effectiveSharedYAxis && sharedYAxisMax > 0 ? sharedYAxisMax : null);
       yAxis.push({
         id: `y-${idx}`,
         title: {
@@ -227,10 +250,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         top: '0%',
         height: '86%',
         min: typeof yAxisMin === 'number' ? yAxisMin : 0,
-        // Use shared maximum if enabled, otherwise use individual yAxisMax
-        max: typeof yAxisMax === 'number'
-          ? yAxisMax
-          : (effectiveSharedYAxis && sharedYAxisMax > 0 ? sharedYAxisMax : null),
+        max: primaryMax,
         ...(effectiveSharedYAxis && sharedYAxisMax > 0 && sharedTickInterval !== undefined
           ? { tickInterval: sharedTickInterval }
           : {}),
@@ -300,21 +320,51 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       });
     });
 
+    if (data.yAxisLabelSecondary) {
+      const lastIdx = numSubplots - 1;
+      const secondaryMax = effectiveSharedYAxis && globalMaxSecondary > 0
+        ? globalMaxSecondary
+        : null;
+      yAxis.push({
+        id: 'y-secondary',
+        title: {
+          text: data.yAxisLabelSecondary,
+          style: { color: '#334155', fontSize: '14pt' },
+        },
+        opposite: true,
+        max: secondaryMax,
+        gridLineWidth: 0,
+        lineWidth: 1,
+        lineColor: '#334155',
+        linkedTo: lastIdx,
+        labels: {
+          enabled: true,
+          style: { color: '#334155', fontSize: '11pt' },
+          formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
+            return formatAxis3Sig(this.value as number);
+          },
+        },
+      });
+    }
+
     const exportChartYAxisOptions = (() => {
       const GAP_PCT = 2;
       const totalGap = (numSubplots - 1) * GAP_PCT;
       const subplotWidth = (100 - totalGap) / numSubplots;
-      return data.subplots.map((sp, idx) => {
+      const primaryAxes: Highcharts.YAxisOptions[] = data.subplots.map((sp, idx) => {
         const leftStr = `${idx * (subplotWidth + GAP_PCT)}%`;
         const widthStr = `${subplotWidth}%`;
+        const primaryMax = effectiveSharedYAxis && sharedYAxisMax > 0
+          ? sharedYAxisMax
+          : undefined;
         return {
           left: leftStr,
           width: widthStr,
           top: '0%',
           height: '86%',
-          ...(effectiveSharedYAxis && sharedYAxisMax > 0 ? {
+          ...(primaryMax != null ? {
             min: 0,
-            max: sharedYAxisMax,
+            max: primaryMax,
             ...(sharedTickInterval !== undefined ? { tickInterval: sharedTickInterval } : {}),
             endOnTick: false,
           } : {}),
@@ -342,18 +392,42 @@ export const CompareChart: React.FC<CompareChartProps> = ({
               fontSize: '20pt',
             },
           },
-        };
+        } as Highcharts.YAxisOptions;
       });
+      if (data.yAxisLabelSecondary) {
+        const secondaryMax = effectiveSharedYAxis && globalMaxSecondary > 0
+          ? globalMaxSecondary
+          : undefined;
+        primaryAxes.push({
+          opposite: true,
+          ...(secondaryMax != null ? {
+            min: 0,
+            max: secondaryMax,
+            endOnTick: false,
+          } : {}),
+          gridLineWidth: 0,
+          lineWidth: 1,
+          lineColor: '#334155',
+          linkedTo: numSubplots - 1,
+          labels: {
+            enabled: true,
+            style: { color: '#334155', fontSize: '20pt' },
+          },
+          title: {
+            text: data.yAxisLabelSecondary,
+            style: { color: '#334155', fontSize: '28pt' },
+          },
+        } as Highcharts.YAxisOptions);
+      }
+      return primaryAxes;
     })();
 
-    const cleanExportOverrides: Partial<Highcharts.Options> = {
-      title: { text: '' },
-      yAxis: exportChartYAxisOptions.map(cfg => ({
-        ...cfg,
-        stackLabels: { enabled: false },
-      })),
-      plotOptions: { series: { dataLabels: { enabled: false } } },
-    };
+    const totalYAxisCount = data.yAxisLabelSecondary
+      ? numSubplots + 1
+      : numSubplots;
+    const cleanExportOverrides = totalYAxisCount > 1
+      ? buildCleanExportOverridesMultiYAxis(totalYAxisCount)
+      : CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS;
 
     return {
       chart: {
@@ -374,6 +448,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       yAxis,
       tooltip: buildStackedSinglePointTooltipOptions({
         unitLabel: data.yAxisLabel,
+        ...(data.yAxisLabelSecondary ? { secondaryUnitLabel: data.yAxisLabelSecondary } : null),
         headerPrefix: (ctx) => {
           const userOptions = ctx.series.userOptions as {
             custom?: {
@@ -455,7 +530,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, inverted, hiddenNames, yAxisMin, yAxisMax, sharedYAxisMax, effectiveSharedYAxis, isByYearAltMode, isArea]);
+  }, [data, inverted, hiddenNames, yAxisMin, yAxisMax, sharedYAxisMax, globalMaxSecondary, effectiveSharedYAxis, isByYearAltMode, isArea]);
 
   return (
     <div style={{ width: '100%' }}>
