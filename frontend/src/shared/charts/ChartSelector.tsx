@@ -96,8 +96,8 @@ const REGION_LABELS_FE: Record<string, string> = Object.fromEntries(
 // ─── Constantes ──────────────────────────────────────────────────────────────
 
 const CAPACITY_VARIABLES: { value: string; label: string }[] = [
-  { value: 'TotalCapacityAnnual',    label: 'Capacidad Total Anual' },
-  { value: 'NewCapacity',            label: 'Capacidad Nueva' },
+  { value: 'TotalCapacityAnnual', label: 'Capacidad Total Anual' },
+  { value: 'NewCapacity', label: 'Capacidad Nueva' },
   { value: 'AccumulatedNewCapacity', label: 'Capacidad Acumulada' },
 ];
 
@@ -115,6 +115,9 @@ const CONTAMINANTES_CHART_IDS = new Set(['emisiones_contaminantes']);
 
 /** Gráficas con unidad fija % (factor de planta). */
 const PORCENTAJE_CHART_IDS = new Set(['factor_planta']);
+
+/** Gráficas que soportan unidad kton (factor por tecnología). */
+const KTON_CHART_IDS = new Set(['oferta_bioenergia', 'cap_h2', 'h2_consumo']);
 
 const EMISSION_CHART_IDS = new Set([...GEI_CHART_IDS, ...CONTAMINANTES_CHART_IDS]);
 
@@ -160,7 +163,7 @@ const FUEL_LABELS: Record<string, string> = {
   MPW: 'MPW',  // Motores (Motor Power)
   OTH: 'OTH',  // Otros
   REF: 'REF',  // Refrigeración
-  TV:  'TV',   // Televisor
+  TV: 'TV',   // Televisor
   WHT: 'WHT',  // Calentador de agua (Water Heating)
   WSH: 'WSH',  // Lavadora (Washing)
   'con_crudo': 'Con crudo',
@@ -300,28 +303,30 @@ const MENU: Module[] = [
     emoji: '🏠',
     label: 'Demanda Final — Sectores',
     subsectors: [
-      { id: 'consum_combustible', label: '🔥 Todos los Sectores', charts: [
-          { id: 'dem_consumo_combustible', label: 'Consumo Por Sector', hasSub: true, subFiltroLabel: 'Combustible', subFiltros: ['NGS','DSL','ELC','GSL','COA','LPG','WOO','BGS','BAG','HDG','FOL','BDL','JET','WAS','OIL','AFR','SAF'], allowedGroupings: ['SECTOR', 'FUEL'], defaultGrouping: 'SECTOR' },
-        ]},
+      {
+        id: 'consum_combustible', label: '🔥 Todos los Sectores', charts: [
+          { id: 'dem_consumo_combustible', label: 'Consumo Por Sector', hasSub: true, subFiltroLabel: 'Combustible', subFiltros: ['NGS', 'DSL', 'ELC', 'GSL', 'COA', 'LPG', 'WOO', 'BGS', 'BAG', 'HDG', 'FOL', 'BDL', 'JET', 'WAS', 'OIL', 'AFR', 'SAF'], allowedGroupings: ['SECTOR', 'FUEL'], defaultGrouping: 'SECTOR' },
+        ]
+      },
       {
         id: 'residencial', label: '🏘️ Residencial',
         charts: [
-          { id: 'res_total', label: 'Sector Residencial - Consumo Total - UseByTechnology', hasSub: true, subFiltroLabel: 'Uso', hasLoc: true, subFiltros: ['CKN','WHT','AIR','REF','ILU','TV','FAN','WSH','OTH'], allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
-          { id: 'res_uso',   label: 'Sector Residencial - ProductionByTechnology',           hasSub: true, subFiltroLabel: 'Uso', hasLoc: true, subFiltros: ['CKN','WHT','AIR','REF','ILU','TV','FAN','WSH','OTH'], allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'res_total', label: 'Sector Residencial - Consumo Total - UseByTechnology', hasSub: true, subFiltroLabel: 'Uso', hasLoc: true, subFiltros: ['CKN', 'WHT', 'AIR', 'REF', 'ILU', 'TV', 'FAN', 'WSH', 'OTH'], allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'res_uso', label: 'Sector Residencial - ProductionByTechnology', hasSub: true, subFiltroLabel: 'Uso', hasLoc: true, subFiltros: ['CKN', 'WHT', 'AIR', 'REF', 'ILU', 'TV', 'FAN', 'WSH', 'OTH'], allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
         ],
       },
       {
         id: 'industrial', label: '🏗️ Industrial',
         charts: [
-          { id: 'ind_total', label: 'Sector Industrial - Consumo Total - UseByTechnology', hasSub: true, subFiltroLabel: 'Uso', subFiltros: ['BOI','FUR','MPW','AIR','REF','ILU','OTH'], allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
-          { id: 'ind_uso',   label: 'Sector Industrial - ProductionByTechnology',           hasSub: true, subFiltroLabel: 'Uso', subFiltros: ['BOI','FUR','MPW','AIR','REF','ILU','OTH'], allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'ind_total', label: 'Sector Industrial - Consumo Total - UseByTechnology', hasSub: true, subFiltroLabel: 'Uso', subFiltros: ['BOI', 'FUR', 'MPW', 'AIR', 'REF', 'ILU', 'OTH'], allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'ind_uso', label: 'Sector Industrial - ProductionByTechnology', hasSub: true, subFiltroLabel: 'Uso', subFiltros: ['BOI', 'FUR', 'MPW', 'AIR', 'REF', 'ILU', 'OTH'], allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
         ],
       },
       {
         id: 'transporte', label: '🚗 Transporte',
         charts: [
-          { id: 'tra_total', label: 'Sector Transporte - Consumo Total - UseByTechnology', hasSub: true, subFiltroLabel: 'Modo', subFiltros: ['CARRETERA','AVI','BOT','SHP','LDV','FWD','BUS','TCK_C2P','TCK_CSG','MOT','MIC','TAX','STT','MET'], allowedGroupings: ['TECNOLOGIA', 'FUEL', 'TRANSPORTE_GRUPO'], soportaPareto: true, soportaPorcentaje: true },
-          { id: 'tra_uso',   label: 'Sector Transporte - ProductionByTechnology',           hasSub: true, subFiltroLabel: 'Modo', subFiltros: ['CARRETERA','AVI','BOT','SHP','LDV','FWD','BUS','TCK_C2P','TCK_CSG','MOT','MIC','TAX','STT','MET'], allowedGroupings: ['TECNOLOGIA', 'FUEL', 'TRANSPORTE_GRUPO'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'tra_total', label: 'Sector Transporte - Consumo Total - UseByTechnology', hasSub: true, subFiltroLabel: 'Modo', subFiltros: ['CARRETERA', 'AVI', 'BOT', 'SHP', 'LDV', 'FWD', 'BUS', 'TCK_C2P', 'TCK_CSG', 'MOT', 'MIC', 'TAX', 'STT', 'MET'], allowedGroupings: ['TECNOLOGIA', 'FUEL', 'TRANSPORTE_GRUPO'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'tra_uso', label: 'Sector Transporte - ProductionByTechnology', hasSub: true, subFiltroLabel: 'Modo', subFiltros: ['CARRETERA', 'AVI', 'BOT', 'SHP', 'LDV', 'FWD', 'BUS', 'TCK_C2P', 'TCK_CSG', 'MOT', 'MIC', 'TAX', 'STT', 'MET'], allowedGroupings: ['TECNOLOGIA', 'FUEL', 'TRANSPORTE_GRUPO'], soportaPareto: true, soportaPorcentaje: true },
           { id: 'tra_por_modo', label: 'Sector Transporte - Consumo Por Modo - UseByTechnology', allowedGroupings: ['MODO'], defaultGrouping: 'MODO', soportaPareto: true, soportaPorcentaje: true },
         ],
 
@@ -329,16 +334,16 @@ const MENU: Module[] = [
       {
         id: 'terciario', label: '🏢 Terciario',
         charts: [
-          { id: 'ter_total', label: 'Sector Terciario - Consumo Total - UseByTechnology', hasSub: true, subFiltroLabel: 'Uso', subFiltros: ['ACL','AIR','CKN','DAT','FAN','ILU','MPW','REF','OTH'], allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
-          { id: 'ter_uso',   label: 'Sector Terciario - ProductionByTechnology',           hasSub: true, subFiltroLabel: 'Uso', subFiltros: ['ACL','AIR','CKN','DAT','FAN','ILU','MPW','REF','OTH'], allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'ter_total', label: 'Sector Terciario - Consumo Total - UseByTechnology', hasSub: true, subFiltroLabel: 'Uso', subFiltros: ['ACL', 'AIR', 'CKN', 'DAT', 'FAN', 'ILU', 'MPW', 'REF', 'OTH'], allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'ter_uso', label: 'Sector Terciario - ProductionByTechnology', hasSub: true, subFiltroLabel: 'Uso', subFiltros: ['ACL', 'AIR', 'CKN', 'DAT', 'FAN', 'ILU', 'MPW', 'REF', 'OTH'], allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
         ],
       },
-      { id: 'construccion', label: '🔨 Construcción',      charts: [{ id: 'con_total',   label: 'Sector Construcción - Consumo Total - UseByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true }] },
-      { id: 'agroforestal', label: '🌾 Agroforestal',      charts: [{ id: 'agf_total',   label: 'Sector Agroforestal - Consumo Total - UseByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true }] },
-      { id: 'mineria_dem',  label: '⛏️ Minería (demanda)', charts: [{ id: 'min_total',   label: 'Sector Minería - Consumo Total - UseByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true }] },
-      { id: 'coquerias',    label: '🧱 Coquerías',          charts: [{ id: 'coq_total',   label: 'Sector Coquerías - Consumo Total - UseByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true }] },
+      { id: 'construccion', label: '🔨 Construcción', charts: [{ id: 'con_total', label: 'Sector Construcción - Consumo Total - UseByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true }] },
+      { id: 'agroforestal', label: '🌾 Agroforestal', charts: [{ id: 'agf_total', label: 'Sector Agroforestal - Consumo Total - UseByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true }] },
+      { id: 'mineria_dem', label: '⛏️ Minería (demanda)', charts: [{ id: 'min_total', label: 'Sector Minería - Consumo Total - UseByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true }] },
+      { id: 'coquerias', label: '🧱 Coquerías', charts: [{ id: 'coq_total', label: 'Sector Coquerías - Consumo Total - UseByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true }] },
 
-      { id: 'otros_dem',    label: '📦 Otros Sectores',     charts: [{ id: 'otros_total', label: 'Otros Sectores - Consumo Total - UseByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true }] },
+      { id: 'otros_dem', label: '📦 Otros Sectores', charts: [{ id: 'otros_total', label: 'Otros Sectores - Consumo Total - UseByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true }] },
     ],
   },
   {
@@ -346,11 +351,11 @@ const MENU: Module[] = [
     emoji: '🏭',
     label: 'Capacidades Instaladas',
     charts: [
-      { id: 'cap_industrial', label: 'Sector Industrial (Capacidad) - TotalCapacityAnnual',  isCapacity: true },
-      { id: 'cap_transporte', label: 'Sector Transporte (Capacidad) - TotalCapacityAnnual',  isCapacity: true },
-      { id: 'cap_terciario',  label: 'Sector Terciario (Capacidad) - TotalCapacityAnnual',   isCapacity: true },
-      { id: 'cap_otros',      label: 'Otros Sectores (Capacidad) - TotalCapacityAnnual',     isCapacity: true },
-      { id: 'ref_capacidad',  label: 'Capacidad de Refinación por Derivado',                 isCapacity: false, allowedGroupings: ['TECNOLOGIA', 'FUEL'], },
+      { id: 'cap_industrial', label: 'Sector Industrial (Capacidad) - TotalCapacityAnnual', isCapacity: true },
+      { id: 'cap_transporte', label: 'Sector Transporte (Capacidad) - TotalCapacityAnnual', isCapacity: true },
+      { id: 'cap_terciario', label: 'Sector Terciario (Capacidad) - TotalCapacityAnnual', isCapacity: true },
+      { id: 'cap_otros', label: 'Otros Sectores (Capacidad) - TotalCapacityAnnual', isCapacity: true },
+      { id: 'ref_capacidad', label: 'Capacidad de Refinación por Derivado', isCapacity: false, allowedGroupings: ['TECNOLOGIA', 'FUEL'], },
     ],
   },
   {
@@ -362,7 +367,7 @@ const MENU: Module[] = [
         id: 'otros',
         label: '🔧 Otros',
         charts: [
-          { id: 'gas_consumo',    label: 'Gas Natural - UseByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'gas_consumo', label: 'Gas Natural - UseByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
           { id: 'gas_produccion', label: 'Gas Natural - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
           { id: 'ups_refinacion', label: 'Upstream Refinación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
           { id: 'saf_produccion', label: 'SAF - Producción - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
@@ -392,15 +397,17 @@ const MENU: Module[] = [
         id: 'refinerias',
         label: '🏭 Refinerías',
         charts: [
-          { id: 'ref_total',      label: 'Refinerías - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
-          { id: 'ref_import',     label: 'Refinerías - Importaciones - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
-          { id: 'ref_consumo',    label: 'Refinerías — Consumo Total por Tecnología', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
-          { id: 'ref_cartagena',   label: 'Refinería de Cartagena - UseByTechnology', allowedGroupings: ['FUEL'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'ref_total', label: 'Refinerías - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'ref_import', label: 'Refinerías - Importaciones - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'ref_consumo', label: 'Refinerías — Consumo Total por Tecnología', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+          { id: 'ref_cartagena', label: 'Refinería de Cartagena - UseByTechnology', allowedGroupings: ['FUEL'], soportaPareto: true, soportaPorcentaje: true },
           { id: 'ref_barrancabermeja', label: 'Refinería de Barrancabermeja - UseByTechnology', allowedGroupings: ['FUEL'], soportaPareto: true, soportaPorcentaje: true },
-          { id: 'ref_ambas', label: 'Refinerías (Cartagena + Barrancabermeja) - UseByTechnology', 
-            hasSub: true, subFiltroLabel: 'Crudo', 
+          {
+            id: 'ref_ambas', label: 'Refinerías (Cartagena + Barrancabermeja) - UseByTechnology',
+            hasSub: true, subFiltroLabel: 'Crudo',
             subFiltros: ['con_crudo', 'sin_crudo'],
-            allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+            allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true
+          },
         ],
       },
     ],
@@ -410,26 +417,26 @@ const MENU: Module[] = [
     emoji: '⛏️',
     label: 'Minería & Extracción',
     charts: [
-      { id: 'min_hidrocarburos',  label: 'Minería Hidrocarburos - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
-      { id: 'min_carbon',         label: 'Minería Carbón - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
-      { id: 'extraccion_min',     label: 'Minería - Extracción - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+      { id: 'min_hidrocarburos', label: 'Minería Hidrocarburos - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+      { id: 'min_carbon', label: 'Minería Carbón - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+      { id: 'extraccion_min', label: 'Minería - Extracción - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
       { id: 'solidos_extraccion', label: 'Sólidos - Extracción - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
-      { id: 'solidos_import',     label: 'Sólidos - Importación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
-      { id: 'solidos_flujos',     label: 'Sólidos - Importación/Exportación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
-      { id: 'exp_carbon',         label: 'Carbón — Exportación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+      { id: 'solidos_import', label: 'Sólidos - Importación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+      { id: 'solidos_flujos', label: 'Sólidos - Importación/Exportación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+      { id: 'exp_carbon', label: 'Carbón — Exportación - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
     ],
   },
-    {
-      id: 'hidrogeno',
-      emoji: '💧',
-      label: 'Hidrógeno',
-      charts: [
-        { id: 'cap_h2',     label: 'Hidrógeno - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true , soportaPorcentaje: true },
-        { id: 'h2_consumo', label: 'Hidrógeno - Consumo - UseByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
-        { id: 'cap_electrolisis_verde', label: 'Capacidad Total de Electrólisis Verde', isCapacity: true, allowedGroupings: ['TECNOLOGIA', 'ELECTROLISIS'], defaultGrouping: 'TECNOLOGIA' },
-        { id: 'h2_produccion_verde', label: 'Hidrógeno Producción (Verde/Azul/Gris)', soportaPareto: true, soportaPorcentaje: true },
-      ],
-    },
+  {
+    id: 'hidrogeno',
+    emoji: '💧',
+    label: 'Hidrógeno',
+    charts: [
+      { id: 'cap_h2', label: 'Hidrógeno - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+      { id: 'h2_consumo', label: 'Hidrógeno - Consumo - UseByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'], soportaPareto: true, soportaPorcentaje: true },
+      { id: 'cap_electrolisis_verde', label: 'Capacidad Total de Electrólisis Verde', isCapacity: true, allowedGroupings: ['TECNOLOGIA', 'ELECTROLISIS'], defaultGrouping: 'TECNOLOGIA' },
+      { id: 'h2_produccion_verde', label: 'Hidrógeno Producción (Verde/Azul/Gris)', soportaPareto: true, soportaPorcentaje: true },
+    ],
+  },
   {
     id: 'comercio',
     emoji: '🚢',
@@ -441,9 +448,9 @@ const MENU: Module[] = [
     emoji: '🌿',
     label: 'Emisiones',
     charts: [
-      { id: 'emisiones_total',     label: 'Emisiones - Total Anual - AnnualEmissions' },
+      { id: 'emisiones_total', label: 'Emisiones - Total Anual - AnnualEmissions' },
       { id: 'emisiones_sectorial', label: 'Emisiones - Por Sector - AnnualTechnologyEmission', soportaPorcentaje: true },
-      { id: 'emisiones_gei',       label: 'Emisiones GEI por Sector (CO₂, CH₄, N₂O)', soportaPorcentaje: true },
+      { id: 'emisiones_gei', label: 'Emisiones GEI por Sector (CO₂, CH₄, N₂O)', soportaPorcentaje: true },
       { id: 'emisiones_contaminantes', label: 'Emisiones Contaminantes Criterio (BC, CO, COV, NH₃, NOₓ, PM10, PM2.5, SOₓ)', soportaPorcentaje: true },
     ],
   },
@@ -465,7 +472,7 @@ const MENU: Module[] = [
       { id: 'oferta_bioenergia', label: 'Oferta Bioenergía - ProductionByTechnology', allowedGroupings: ['TECNOLOGIA', 'FUEL'] },
     ],
   },
-  ];
+];
 
 const FIRST_MODULE = MENU[0] as Module;
 
@@ -605,7 +612,7 @@ export function ChartSelector({
   }, [currentModule, subsectors, subsectorCharts, flatCharts, value.tipo_electrico]);
 
   // Valores derivados seguros
-  const activeVariable: string  = value.variable ?? '';
+  const activeVariable: string = value.variable ?? '';
   const activeAgrupacion: string = value.agrupar_por ?? 'TECNOLOGIA';
   const activeCapacityLabel: string =
     CAPACITY_VARIABLES.find((cv) => cv.value === activeVariable)?.label ?? activeVariable;
@@ -659,18 +666,18 @@ export function ChartSelector({
     } else if (
       !EMISSION_CHART_IDS.has(item.id) &&
       !PORCENTAJE_CHART_IDS.has(item.id) &&
-      (EMISSION_UNIT_VALUES.has(rest.un) || rest.un === 'ktCO2eq' || rest.un === '%')
+      (EMISSION_UNIT_VALUES.has(rest.un) || rest.un === 'ktCO2eq' || rest.un === '%' || rest.un === 'kton')
     ) {
       newUn = 'PJ';
     }
 
     onChange({
       ...rest,
-      tipo:       item.id,
-      un:         newUn,
-      variable:   item.isCapacity ? 'TotalCapacityAnnual' : '',
+      tipo: item.id,
+      un: newUn,
+      variable: item.isCapacity ? 'TotalCapacityAnnual' : '',
       sub_filtro: item.id === 'ref_ambas' ? 'con_crudo' : '',
-      loc:        '',
+      loc: '',
       ...(newViewMode != null ? { viewMode: newViewMode } : {}),
       ...(newGrouping != null ? { agrupar_por: newGrouping } : {}),
     });
@@ -716,13 +723,16 @@ export function ChartSelector({
   const isGeiChart = GEI_CHART_IDS.has(value.tipo);
   const isContaminantesChart = CONTAMINANTES_CHART_IDS.has(value.tipo);
   const isPorcentajeChart = PORCENTAJE_CHART_IDS.has(value.tipo);
+  const isKtonChart = KTON_CHART_IDS.has(value.tipo);
   const displayUnit = isContaminantesChart
     ? 'kt'
     : isPorcentajeChart
-    ? '%'
-    : isGeiChart
-    ? (EMISSION_UNITS.find((eu) => eu.value === value.un)?.label ?? 'MtCO₂eq')
-    : value.un;
+      ? '%'
+      : isGeiChart
+        ? (EMISSION_UNITS.find((eu) => eu.value === value.un)?.label ?? 'MtCO₂eq')
+        : isKtonChart && value.un === 'kton'
+          ? 'kton'
+          : value.un;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -795,7 +805,7 @@ export function ChartSelector({
                   <span style={{
                     ...chartBadgeStyle,
                     background: isActive ? 'rgba(59,130,246,0.25)' : 'rgba(255,255,255,0.06)',
-                    color:      isActive ? '#93c5fd'              : '#64748b',
+                    color: isActive ? '#93c5fd' : '#64748b',
                   }}>
                     {badge}
                   </span>
@@ -840,8 +850,8 @@ export function ChartSelector({
         // colapsar por las 7 regiones del SIN.
         const allowedOptions = isRegionalJob
           ? (baseOptions.some(o => o.value === 'REGION')
-              ? baseOptions
-              : [...baseOptions, AGRUPACION_OPTIONS.find(o => o.value === 'REGION')!])
+            ? baseOptions
+            : [...baseOptions, AGRUPACION_OPTIONS.find(o => o.value === 'REGION')!])
           : baseOptions.filter(o => o.value !== 'REGION');
         return (
           <div>
@@ -860,12 +870,12 @@ export function ChartSelector({
                     <span style={{ fontSize: 13 }}>
                       {opt.value === 'TECNOLOGIA' ? '⚙️'
                         : opt.value === 'COMBUSTIBLE' ? '🔥'
-                        : opt.value === 'FUEL' ? '⛽'
-                        : opt.value === 'SECTOR' ? '🏢'
-                        : opt.value === 'REGION' ? '🗺️'
-                        : opt.value === 'MODO' ? '🚗'
-                        : opt.value === 'ELECTROLISIS' ? '🧪'
-                        : '🔗'}
+                          : opt.value === 'FUEL' ? '⛽'
+                            : opt.value === 'SECTOR' ? '🏢'
+                              : opt.value === 'REGION' ? '🗺️'
+                                : opt.value === 'MODO' ? '🚗'
+                                  : opt.value === 'ELECTROLISIS' ? '🧪'
+                                    : '🔗'}
                     </span>
                     <span>{opt.label}</span>
                   </button>
@@ -881,9 +891,9 @@ export function ChartSelector({
 
       {/* ── Fila inferior: Unidades + Tipo de vista + Sub-filtro + Localización ── */}
       <div style={bottomRowStyle}>
-      <div style={{ display: 'grid', gap: 6 }}>
+        <div style={{ display: 'grid', gap: 6 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <p style={labelStyle}>Unidades</p>
+            <p style={labelStyle}>Unidades</p>
           {!(isContaminantesChart || isPorcentajeChart) && (
             <label style={{ fontSize: 11, color: '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, userSelect: 'none' }}>
               <input
@@ -900,47 +910,60 @@ export function ChartSelector({
             </label>
           )}
         </div>
-        {(isContaminantesChart || isPorcentajeChart) ? (
-          <div style={{
-            padding: '4px 12px',
-            borderRadius: 6,
-            border: '1px solid rgba(251,191,36,0.4)',
-            background: 'rgba(251,191,36,0.08)',
-            color: '#fcd34d',
-            fontSize: 12,
-            fontWeight: 600,
-            fontFamily: 'monospace',
-            display: 'inline-block',
-          }}>
-            {isContaminantesChart ? 'kt' : '%'}
-          </div>
-        ) : isGeiChart ? (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {EMISSION_UNITS.map((eu) => (
-              <button
-                key={eu.value}
-                type="button"
-                onClick={() => onChange({ ...value, un: eu.value })}
-                style={{ ...unitBtnStyle, ...(value.un === eu.value ? unitBtnActiveStyle : unitBtnInactiveStyle) }}
-              >
-                {eu.label}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {UNITS.map((u) => (
-              <button
-                key={u}
-                type="button"
-                onClick={() => onChange({ ...value, un: u })}
-                style={{ ...unitBtnStyle, ...(value.un === u ? unitBtnActiveStyle : unitBtnInactiveStyle) }}
-              >
-                {u}
-              </button>
-            ))}
-          </div>
-        )}
+          {(isContaminantesChart || isPorcentajeChart) ? (
+            <div style={{
+              padding: '4px 12px',
+              borderRadius: 6,
+              border: '1px solid rgba(251,191,36,0.4)',
+              background: 'rgba(251,191,36,0.08)',
+              color: '#fcd34d',
+              fontSize: 12,
+              fontWeight: 600,
+              fontFamily: 'monospace',
+              display: 'inline-block',
+            }}>
+              {isContaminantesChart ? 'kt' : '%'}
+            </div>
+          ) : isGeiChart ? (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {EMISSION_UNITS.map((eu) => (
+                <button
+                  key={eu.value}
+                  type="button"
+                  onClick={() => onChange({ ...value, un: eu.value })}
+                  style={{ ...unitBtnStyle, ...(value.un === eu.value ? unitBtnActiveStyle : unitBtnInactiveStyle) }}
+                >
+                  {eu.label}
+                </button>
+              ))}
+            </div>
+          ) : isKtonChart ? (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {[...UNITS, 'kton' as const].map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => onChange({ ...value, un: u })}
+                  style={{ ...unitBtnStyle, ...(value.un === u ? unitBtnActiveStyle : unitBtnInactiveStyle) }}
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {UNITS.map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => onChange({ ...value, un: u })}
+                  style={{ ...unitBtnStyle, ...(value.un === u ? unitBtnActiveStyle : unitBtnInactiveStyle) }}
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
+          )}
         {!!value.un2 && !(isContaminantesChart || isPorcentajeChart) && (
           <div style={{ display: 'grid', gap: 6 }}>
             <p style={{ ...labelStyle, fontSize: 10, color: '#94a3b8' }}>Eje Y secundario</p>
@@ -973,7 +996,7 @@ export function ChartSelector({
             )}
           </div>
         )}
-      </div>
+        </div>
 
         <div style={{ display: 'grid', gap: 6 }}>
           <p style={labelStyle}>Tipo de vista</p>
@@ -1072,45 +1095,45 @@ export function ChartSelector({
                       ▤ Tabla
                     </button>
                   )}
-                 </>
-               );
-             })()}
-           </div>
+                </>
+              );
+            })()}
+          </div>
 
-           {/* ── Dropdown "Tipo" para Sector Eléctrico ── */}
-           {(() => {
-             const elecIds = [
-               'elec_produccion_liquidos', 'elec_cap_liquidos', 'elec_fp_liquidos',
-               'elec_produccion', 'cap_electricidad', 'factor_planta',
-               'elec_produccion_termica', 'elec_cap_termica', 'elec_fp_termica',
-             ];
-             if (!elecIds.includes(value.tipo)) return null;
-             return (
-               <div style={{ display: 'grid', gap: 6 }}>
-                 <p style={labelStyle}>Tipo</p>
-                 <select
-                   style={selectStyle}
-                   value={value.tipo_electrico || 'todos'}
-                   onChange={(e) => {
-                     const tipo = e.target.value as 'liquidos' | 'todos' | 'termica';
-                     const chartMap: Record<string, string> = {
-                       'liquidos': 'elec_produccion_liquidos',
-                       'todos': 'elec_produccion',
-                       'termica': 'elec_produccion_termica',
-                     };
-                     const chartId = chartMap[tipo] || 'elec_produccion';
-                     onChange({ ...value, tipo_electrico: tipo, tipo: chartId });
-                   }}
-                 >
-                   <option value="liquidos">🛢️ Líquido</option>
-                   <option value="todos">🔌 Todos</option>
-                   <option value="termica">🔥 Gen. Térmica</option>
-                 </select>
-               </div>
-             );
-           })()}
+          {/* ── Dropdown "Tipo" para Sector Eléctrico ── */}
+          {(() => {
+            const elecIds = [
+              'elec_produccion_liquidos', 'elec_cap_liquidos', 'elec_fp_liquidos',
+              'elec_produccion', 'cap_electricidad', 'factor_planta',
+              'elec_produccion_termica', 'elec_cap_termica', 'elec_fp_termica',
+            ];
+            if (!elecIds.includes(value.tipo)) return null;
+            return (
+              <div style={{ display: 'grid', gap: 6 }}>
+                <p style={labelStyle}>Tipo</p>
+                <select
+                  style={selectStyle}
+                  value={value.tipo_electrico || 'todos'}
+                  onChange={(e) => {
+                    const tipo = e.target.value as 'liquidos' | 'todos' | 'termica';
+                    const chartMap: Record<string, string> = {
+                      'liquidos': 'elec_produccion_liquidos',
+                      'todos': 'elec_produccion',
+                      'termica': 'elec_produccion_termica',
+                    };
+                    const chartId = chartMap[tipo] || 'elec_produccion';
+                    onChange({ ...value, tipo_electrico: tipo, tipo: chartId });
+                  }}
+                >
+                  <option value="liquidos">🛢️ Líquido</option>
+                  <option value="todos">🔌 Todos</option>
+                  <option value="termica">🔥 Gen. Térmica</option>
+                </select>
+              </div>
+            );
+          })()}
 
-           {/* Controles específicos del modo tabla. */}
+          {/* Controles específicos del modo tabla. */}
           {value.viewMode === 'table' && (
             <div
               style={{
@@ -1284,23 +1307,23 @@ const pillStyle: React.CSSProperties = {
   borderRadius: 8, border: '1px solid transparent', cursor: 'pointer',
   transition: 'all 0.15s ease', fontFamily: 'inherit',
 };
-const pillActiveStyle: React.CSSProperties   = { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.45)', color: '#93c5fd' };
+const pillActiveStyle: React.CSSProperties = { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.45)', color: '#93c5fd' };
 const pillInactiveStyle: React.CSSProperties = { background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.08)', color: '#94a3b8' };
 
 const subsectorBtnStyle: React.CSSProperties = {
   padding: '5px 11px', borderRadius: 20, border: '1px solid transparent',
   cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', transition: 'all 0.12s ease',
 };
-const subsectorActiveStyle: React.CSSProperties   = { background: 'rgba(139,92,246,0.2)',  borderColor: 'rgba(139,92,246,0.45)', color: '#c4b5fd' };
+const subsectorActiveStyle: React.CSSProperties = { background: 'rgba(139,92,246,0.2)', borderColor: 'rgba(139,92,246,0.45)', color: '#c4b5fd' };
 const subsectorInactiveStyle: React.CSSProperties = { background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.07)', color: '#94a3b8' };
 
 const chartListStyle: React.CSSProperties = { display: 'grid', gap: 4 };
-const chartBtnStyle: React.CSSProperties  = {
+const chartBtnStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 10, width: '100%',
   padding: '9px 12px', borderRadius: 8, border: '1px solid transparent',
   cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.12s ease', textAlign: 'left',
 };
-const chartBtnActiveStyle: React.CSSProperties   = { background: 'rgba(59,130,246,0.12)', borderColor: 'rgba(59,130,246,0.3)', color: '#e2e8f0' };
+const chartBtnActiveStyle: React.CSSProperties = { background: 'rgba(59,130,246,0.12)', borderColor: 'rgba(59,130,246,0.3)', color: '#e2e8f0' };
 const chartBtnInactiveStyle: React.CSSProperties = { background: 'transparent', borderColor: 'transparent', color: '#94a3b8' };
 const chartBadgeStyle: React.CSSProperties = {
   flexShrink: 0, fontSize: 9, fontWeight: 700, letterSpacing: '0.05em',
@@ -1312,7 +1335,7 @@ const varBtnStyle: React.CSSProperties = {
   padding: '6px 14px', borderRadius: 7, border: '1px solid transparent',
   cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', transition: 'all 0.12s ease',
 };
-const varBtnActiveStyle: React.CSSProperties   = { background: 'rgba(16,185,129,0.18)',  borderColor: 'rgba(16,185,129,0.4)',  color: '#6ee7b7' };
+const varBtnActiveStyle: React.CSSProperties = { background: 'rgba(16,185,129,0.18)', borderColor: 'rgba(16,185,129,0.4)', color: '#6ee7b7' };
 const varBtnInactiveStyle: React.CSSProperties = { background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.08)', color: '#94a3b8' };
 
 // Estilos para el selector de agrupación (color naranja para diferenciarlo)
@@ -1321,7 +1344,7 @@ const agrupBtnStyle: React.CSSProperties = {
   padding: '6px 14px', borderRadius: 7, border: '1px solid transparent',
   cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', transition: 'all 0.12s ease',
 };
-const agrupBtnActiveStyle: React.CSSProperties   = { background: 'rgba(234,88,12,0.18)',  borderColor: 'rgba(234,88,12,0.45)', color: '#fb923c' };
+const agrupBtnActiveStyle: React.CSSProperties = { background: 'rgba(234,88,12,0.18)', borderColor: 'rgba(234,88,12,0.45)', color: '#fb923c' };
 const agrupBtnInactiveStyle: React.CSSProperties = { background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.08)', color: '#94a3b8' };
 const agrupDescStyle: React.CSSProperties = {
   margin: '6px 0 0', fontSize: 11, color: '#64748b', fontStyle: 'italic',
@@ -1335,7 +1358,7 @@ const unitBtnStyle: React.CSSProperties = {
   padding: '4px 12px', borderRadius: 6, border: '1px solid transparent',
   cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'monospace', transition: 'all 0.12s ease',
 };
-const unitBtnActiveStyle: React.CSSProperties   = { background: 'rgba(251,191,36,0.18)',  borderColor: 'rgba(251,191,36,0.4)',  color: '#fcd34d' };
+const unitBtnActiveStyle: React.CSSProperties = { background: 'rgba(251,191,36,0.18)', borderColor: 'rgba(251,191,36,0.4)', color: '#fcd34d' };
 const unitBtnInactiveStyle: React.CSSProperties = { background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.08)', color: '#94a3b8' };
 
 const selectStyle: React.CSSProperties = {
@@ -1347,7 +1370,7 @@ const viewBtnStyle: React.CSSProperties = {
   padding: '4px 12px', borderRadius: 6, border: '1px solid transparent',
   cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', transition: 'all 0.12s ease',
 };
-const viewBtnActiveStyle: React.CSSProperties   = { background: 'rgba(99,102,241,0.2)',  borderColor: 'rgba(99,102,241,0.45)', color: '#a5b4fc' };
+const viewBtnActiveStyle: React.CSSProperties = { background: 'rgba(99,102,241,0.2)', borderColor: 'rgba(99,102,241,0.45)', color: '#a5b4fc' };
 const viewBtnInactiveStyle: React.CSSProperties = { background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.08)', color: '#94a3b8' };
 
 const summaryStyle: React.CSSProperties = {

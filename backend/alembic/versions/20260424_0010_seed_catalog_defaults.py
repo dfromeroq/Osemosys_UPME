@@ -485,6 +485,7 @@ def _seed_variable_units(conn) -> int:
                 {"code": "MW",  "label": "MW",  "factor": 1.0 / 0.031536},
                 {"code": "TWh", "label": "TWh", "factor": 1.0 / 3.6},
                 {"code": "Gpc", "label": "Gpc", "factor": 1.0 / 1.0095581216},
+                {"code": "kton", "label": "kton", "factor": None},
             ],
         },
         {
