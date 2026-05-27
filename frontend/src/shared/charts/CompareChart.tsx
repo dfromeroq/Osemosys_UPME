@@ -66,8 +66,8 @@ export const CompareChart: React.FC<CompareChartProps> = ({
   const isByYearAltMode =
     data.subplots.length > 0 && !!data.subplots[0]?.scenario_name;
 
-  // En modo alternativo (por escenarios), siempre forzar eje Y compartido
-  // para garantizar que todos los subplots usen la misma escala.
+  // Forzar eje Y compartido en modo alternativo (por escenarios) o cuando
+  // hay dual-axis activo, para garantizar escala consistente entre subplots.
   const effectiveSharedYAxis = sharedYAxis || isByYearAltMode;
 
   const globalMaxRaw = useMemo(() => {
@@ -104,22 +104,6 @@ export const CompareChart: React.FC<CompareChartProps> = ({
     if (sharedTickInterval === undefined) return globalMaxRaw;
     return Math.ceil(globalMaxRaw / sharedTickInterval) * sharedTickInterval;
   }, [globalMaxRaw, sharedTickInterval, effectiveSharedYAxis]);
-  const globalMaxSecondary = useMemo(() => {
-    if (!effectiveSharedYAxis || !data.yAxisLabelSecondary || globalMaxRaw <= 0) return 0;
-    const ratio = getUnitConversionRatio(data.yAxisLabel, data.yAxisLabelSecondary);
-    if (ratio == null) return 0;
-    const raw = globalMaxRaw * ratio;
-    const tickInterval = raw / 5;
-    if (tickInterval <= 0) return raw;
-    const magnitude = Math.pow(10, Math.floor(Math.log10(tickInterval)));
-    const normalized = tickInterval / magnitude;
-    let niceTick: number;
-    if (normalized <= 1.5) niceTick = magnitude;
-    else if (normalized <= 3.5) niceTick = 2 * magnitude;
-    else if (normalized <= 7.5) niceTick = 5 * magnitude;
-    else niceTick = 10 * magnitude;
-    return Math.ceil(raw / niceTick) * niceTick;
-  }, [data.yAxisLabel, data.yAxisLabelSecondary, globalMaxRaw, effectiveSharedYAxis]);
   const [hiddenNames, setHiddenNames] = useState<Set<string>>(() => new Set());
   const dataSignature = allSeriesNames.join('|');
   useEffect(() => {
@@ -321,10 +305,6 @@ export const CompareChart: React.FC<CompareChartProps> = ({
     });
 
     if (data.yAxisLabelSecondary) {
-      const lastIdx = numSubplots - 1;
-      const secondaryMax = effectiveSharedYAxis && globalMaxSecondary > 0
-        ? globalMaxSecondary
-        : null;
       yAxis.push({
         id: 'y-secondary',
         title: {
@@ -332,8 +312,16 @@ export const CompareChart: React.FC<CompareChartProps> = ({
           style: { color: '#334155', fontSize: '14pt' },
         },
         opposite: true,
-        min: 0,
-        max: secondaryMax,
+        top: '0%',
+        height: '86%',
+        ...(effectiveSharedYAxis && sharedYAxisMax > 0
+          ? {
+              min: 0,
+              max: sharedYAxisMax,
+              ...(sharedTickInterval !== undefined ? { tickInterval: sharedTickInterval } : {}),
+              endOnTick: false,
+            }
+          : {}),
         gridLineWidth: 0,
         lineWidth: 1,
         lineColor: '#334155',
@@ -341,18 +329,9 @@ export const CompareChart: React.FC<CompareChartProps> = ({
           enabled: true,
           style: { color: '#334155', fontSize: '11pt' },
           formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
-            return formatAxis3Sig(this.value as number);
+            const ratio = getUnitConversionRatio(data.yAxisLabel, data.yAxisLabelSecondary!);
+            return ratio != null ? formatAxis3Sig((this.value as number) * ratio) : formatAxis3Sig(this.value as number);
           },
-        },
-        tickPositioner: function (this: Highcharts.Axis) {
-          if (!data.yAxisLabelSecondary) return [] as Highcharts.AxisTickPositionsArray;
-          const primary = this.chart.yAxis[lastIdx];
-          if (!primary || !primary.tickPositions?.length) return [] as Highcharts.AxisTickPositionsArray;
-          const ratio = getUnitConversionRatio(data.yAxisLabel, data.yAxisLabelSecondary);
-          if (!ratio) return [] as Highcharts.AxisTickPositionsArray;
-          return primary.tickPositions.map(
-            t => +(t * ratio).toPrecision(6)
-          ) as Highcharts.AxisTickPositionsArray;
         },
       });
     }
@@ -405,37 +384,32 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         } as Highcharts.YAxisOptions;
       });
       if (data.yAxisLabelSecondary) {
-        const lastIdx = numSubplots - 1;
-        const secondaryMax = effectiveSharedYAxis && globalMaxSecondary > 0
-          ? globalMaxSecondary
-          : undefined;
         primaryAxes.push({
           opposite: true,
-          ...(secondaryMax != null ? {
-            min: 0,
-            max: secondaryMax,
-            endOnTick: false,
-          } : {}),
+          top: '0%',
+          height: '86%',
+          ...(effectiveSharedYAxis && sharedYAxisMax > 0
+            ? {
+                min: 0,
+                max: sharedYAxisMax,
+                ...(sharedTickInterval !== undefined ? { tickInterval: sharedTickInterval } : {}),
+                endOnTick: false,
+              }
+            : {}),
           gridLineWidth: 0,
           lineWidth: 1,
           lineColor: '#334155',
           labels: {
             enabled: true,
             style: { color: '#334155', fontSize: '20pt' },
+            formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
+              const ratio = getUnitConversionRatio(data.yAxisLabel, data.yAxisLabelSecondary!);
+              return ratio != null ? formatAxis3Sig((this.value as number) * ratio) : formatAxis3Sig(this.value as number);
+            },
           },
           title: {
             text: data.yAxisLabelSecondary,
             style: { color: '#334155', fontSize: '28pt' },
-          },
-          tickPositioner: function (this: Highcharts.Axis) {
-            if (!data.yAxisLabelSecondary) return [] as Highcharts.AxisTickPositionsArray;
-            const primary = this.chart.yAxis[lastIdx];
-            if (!primary || !primary.tickPositions?.length) return [] as Highcharts.AxisTickPositionsArray;
-            const ratio = getUnitConversionRatio(data.yAxisLabel, data.yAxisLabelSecondary);
-            if (!ratio) return [] as Highcharts.AxisTickPositionsArray;
-            return primary.tickPositions.map(
-              t => +(t * ratio).toPrecision(6)
-            ) as Highcharts.AxisTickPositionsArray;
           },
         } as Highcharts.YAxisOptions);
       }
@@ -550,7 +524,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, inverted, hiddenNames, yAxisMin, yAxisMax, sharedYAxisMax, globalMaxSecondary, effectiveSharedYAxis, isByYearAltMode, isArea]);
+  }, [data, inverted, hiddenNames, yAxisMin, yAxisMax, sharedYAxisMax, effectiveSharedYAxis, isByYearAltMode, isArea]);
 
   return (
     <div style={{ width: '100%' }}>
