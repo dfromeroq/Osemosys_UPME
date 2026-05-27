@@ -332,17 +332,27 @@ export const CompareChart: React.FC<CompareChartProps> = ({
           style: { color: '#334155', fontSize: '14pt' },
         },
         opposite: true,
+        min: 0,
         max: secondaryMax,
         gridLineWidth: 0,
         lineWidth: 1,
         lineColor: '#334155',
-        linkedTo: lastIdx,
         labels: {
           enabled: true,
           style: { color: '#334155', fontSize: '11pt' },
           formatter: function (this: Highcharts.AxisLabelsFormatterContextObject) {
             return formatAxis3Sig(this.value as number);
           },
+        },
+        tickPositioner: function (this: Highcharts.Axis) {
+          if (!data.yAxisLabelSecondary) return [] as Highcharts.AxisTickPositionsArray;
+          const primary = this.chart.yAxis[lastIdx];
+          if (!primary || !primary.tickPositions?.length) return [] as Highcharts.AxisTickPositionsArray;
+          const ratio = getUnitConversionRatio(data.yAxisLabel, data.yAxisLabelSecondary);
+          if (!ratio) return [] as Highcharts.AxisTickPositionsArray;
+          return primary.tickPositions.map(
+            t => +(t * ratio).toPrecision(6)
+          ) as Highcharts.AxisTickPositionsArray;
         },
       });
     }
@@ -395,6 +405,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         } as Highcharts.YAxisOptions;
       });
       if (data.yAxisLabelSecondary) {
+        const lastIdx = numSubplots - 1;
         const secondaryMax = effectiveSharedYAxis && globalMaxSecondary > 0
           ? globalMaxSecondary
           : undefined;
@@ -408,7 +419,6 @@ export const CompareChart: React.FC<CompareChartProps> = ({
           gridLineWidth: 0,
           lineWidth: 1,
           lineColor: '#334155',
-          linkedTo: numSubplots - 1,
           labels: {
             enabled: true,
             style: { color: '#334155', fontSize: '20pt' },
@@ -416,6 +426,16 @@ export const CompareChart: React.FC<CompareChartProps> = ({
           title: {
             text: data.yAxisLabelSecondary,
             style: { color: '#334155', fontSize: '28pt' },
+          },
+          tickPositioner: function (this: Highcharts.Axis) {
+            if (!data.yAxisLabelSecondary) return [] as Highcharts.AxisTickPositionsArray;
+            const primary = this.chart.yAxis[lastIdx];
+            if (!primary || !primary.tickPositions?.length) return [] as Highcharts.AxisTickPositionsArray;
+            const ratio = getUnitConversionRatio(data.yAxisLabel, data.yAxisLabelSecondary);
+            if (!ratio) return [] as Highcharts.AxisTickPositionsArray;
+            return primary.tickPositions.map(
+              t => +(t * ratio).toPrecision(6)
+            ) as Highcharts.AxisTickPositionsArray;
           },
         } as Highcharts.YAxisOptions);
       }

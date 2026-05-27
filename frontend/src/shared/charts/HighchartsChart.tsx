@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Highcharts from './highchartsSetup';
 import { downloadChartFromServer } from './serverChartExport';
 import {
+  CLEAN_EXPORT_OVERRIDES_DUAL_YAXIS,
   CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS,
   EXPORTING_CONTEXT_BUTTON_DARK,
   INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
@@ -14,6 +15,7 @@ import {
   dispatchLegendClick,
 } from './chartLegendInteractions';
 import { bumpFontSize, formatAxis3Sig } from './numberFormat';
+import { getUnitConversionRatio } from './unitConversion';
 import HighchartsReact from 'highcharts-react-official';
 import type { ChartDataResponse } from '../../types/domain';
 import type { ChartSelection } from './ChartSelector';
@@ -109,6 +111,20 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
       };
     });
 
+    let secondaryAxisMax: number | null = null;
+    if (data.yAxisLabelSecondary) {
+      const primaryMax = Math.max(
+        0,
+        ...data.series.flatMap((s) => s.data).filter((v): v is number => typeof v === 'number'),
+      );
+      if (primaryMax > 0) {
+        const ratio = getUnitConversionRatio(data.yAxisLabel, data.yAxisLabelSecondary);
+        if (ratio != null) {
+          secondaryAxisMax = +(primaryMax * ratio).toPrecision(3);
+        }
+      }
+    }
+
     // En modo amplificado: +3pt en todas las fuentes.
     const fb = (s: string) => (amplified ? bumpFontSize(s, 3) ?? s : s);
     // Altura: explícita si se pasó como prop; sino default por orientación.
@@ -189,6 +205,20 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
               },
               gridLineColor: '#334155',
               gridLineWidth: 0,
+              lineWidth: 1,
+              lineColor: '#334155',
+              min: 0,
+              ...(secondaryAxisMax != null ? { max: secondaryAxisMax } : null),
+              tickPositioner: function (this: Highcharts.Axis) {
+                if (!data.yAxisLabelSecondary) return [] as Highcharts.AxisTickPositionsArray;
+                const primary = this.chart.yAxis[0];
+                if (!primary || !primary.tickPositions?.length) return [] as Highcharts.AxisTickPositionsArray;
+                const ratio = getUnitConversionRatio(data.yAxisLabel, data.yAxisLabelSecondary);
+                if (!ratio) return [] as Highcharts.AxisTickPositionsArray;
+                return primary.tickPositions.map(
+                  t => +(t * ratio).toPrecision(6)
+                ) as Highcharts.AxisTickPositionsArray;
+              },
             },
           ]
         : {
@@ -274,12 +304,25 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
                   title: { style: { color: '#334155', fontSize: '28pt' } },
                   gridLineColor: '#e2e8f0',
                   stackLabels: { style: { color: '#1e293b', fontSize: '20pt', fontWeight: 'normal' } },
+                  min: 0,
                 },
                 {
                   labels: { style: { color: '#334155', fontSize: '20pt' } },
                   title: { style: { color: '#334155', fontSize: '28pt' } },
                   gridLineColor: '#e2e8f0',
                   opposite: true,
+                  min: 0,
+                  ...(secondaryAxisMax != null ? { max: secondaryAxisMax } : null),
+                  tickPositioner: function (this: Highcharts.Axis) {
+                    if (!data.yAxisLabelSecondary) return [] as Highcharts.AxisTickPositionsArray;
+                    const primary = this.chart.yAxis[0];
+                    if (!primary || !primary.tickPositions?.length) return [] as Highcharts.AxisTickPositionsArray;
+                    const ratio = getUnitConversionRatio(data.yAxisLabel, data.yAxisLabelSecondary);
+                    if (!ratio) return [] as Highcharts.AxisTickPositionsArray;
+                    return primary.tickPositions.map(
+                      t => +(t * ratio).toPrecision(6)
+                    ) as Highcharts.AxisTickPositionsArray;
+                  },
                 },
               ]
             : {
@@ -295,11 +338,14 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
             // Highcharts admite objetos { text, onclick }; los tipos suelen declarar solo string[].
             menuItems: (() => {
               if (!serverExport) {
+                const cleanOverrides = data.yAxisLabelSecondary
+                  ? CLEAN_EXPORT_OVERRIDES_DUAL_YAXIS
+                  : CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS;
                 return [
                   ...INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
                   '_separator_',
-                  createCleanExportMenuItem('png', CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS),
-                  createCleanExportMenuItem('svg', CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS),
+                  createCleanExportMenuItem('png', cleanOverrides),
+                  createCleanExportMenuItem('svg', cleanOverrides),
                 ];
               }
               const { jobId, selection } = serverExport;

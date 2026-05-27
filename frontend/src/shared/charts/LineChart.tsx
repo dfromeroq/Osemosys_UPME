@@ -198,9 +198,18 @@ export const LineChart: React.FC<LineChartProps> = ({
               gridLineWidth: 0,
               lineWidth: 1,
               lineColor: '#334155',
-              linkedTo: 0,
               min: 0,
               ...(secondaryAxisMax != null ? { max: secondaryAxisMax } : null),
+              tickPositioner: function (this: Highcharts.Axis) {
+                if (!data.yAxisLabelSecondary) return [] as Highcharts.AxisTickPositionsArray;
+                const primary = this.chart.yAxis[0];
+                if (!primary || !primary.tickPositions?.length) return [] as Highcharts.AxisTickPositionsArray;
+                const ratio = getUnitConversionRatio(data.yAxisLabel, data.yAxisLabelSecondary);
+                if (!ratio) return [] as Highcharts.AxisTickPositionsArray;
+                return primary.tickPositions.map(
+                  t => +(t * ratio).toPrecision(6)
+                ) as Highcharts.AxisTickPositionsArray;
+              },
             },
           ]
         : {
@@ -268,6 +277,18 @@ export const LineChart: React.FC<LineChartProps> = ({
                   lineWidth: 1,
                   lineColor: '#334155',
                   opposite: true,
+                  min: 0,
+                  ...(secondaryAxisMax != null ? { max: secondaryAxisMax } : null),
+                  tickPositioner: function (this: Highcharts.Axis) {
+                    if (!data.yAxisLabelSecondary) return [] as Highcharts.AxisTickPositionsArray;
+                    const primary = this.chart.yAxis[0];
+                    if (!primary || !primary.tickPositions?.length) return [] as Highcharts.AxisTickPositionsArray;
+                    const ratio = getUnitConversionRatio(data.yAxisLabel, data.yAxisLabelSecondary);
+                    if (!ratio) return [] as Highcharts.AxisTickPositionsArray;
+                    return primary.tickPositions.map(
+                      t => +(t * ratio).toPrecision(6)
+                    ) as Highcharts.AxisTickPositionsArray;
+                  },
                 },
               ]
             : {

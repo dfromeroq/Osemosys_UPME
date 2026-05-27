@@ -3334,6 +3334,28 @@ def _add_secondary_axis(
     """Agrega un eje Y secundario (twinx) con escala proporcional."""
     if ylabel is None or ratio is None:
         return
+    import matplotlib.ticker as _mticker
+
+    class _ProportionalLocator(_mticker.Locator):
+        """Locator que escala los ticks del eje primario por un ratio fijo.
+        Se evalúa en cada render, por lo que siempre refleja los ticks finales
+        del primario (incluso si cambian por tight_layout/bbox_inches).
+        """
+        def __init__(self, primary_axis, ratio):
+            super().__init__()
+            self.primary_axis = primary_axis
+            self.ratio = ratio
+
+        def __call__(self):
+            primary_ticks = self.primary_axis.get_yticks()
+            valid = [t for t in primary_ticks if t >= -1e-9]
+            if not valid:
+                return []
+            return [t * self.ratio for t in valid]
+
+        def tick_values(self, vmin, vmax):
+            return self.__call__()
+
     ax2 = ax.twinx()
     ymin, ymax = ax.get_ylim()
     ax2.set_ylim(
@@ -3343,8 +3365,10 @@ def _add_secondary_axis(
     ax2.set_ylabel(ylabel, fontsize=24, color="#0f172a", labelpad=8)
     ax2.grid(False)
     ax2.tick_params(axis="y", labelsize=22, colors="#334155")
-    from matplotlib.ticker import FuncFormatter
-    ax2.yaxis.set_major_formatter(FuncFormatter(lambda v, _p: format_axis_3sig(v)))
+    ax2.yaxis.set_major_formatter(_mticker.FuncFormatter(
+        lambda v, _p: format_axis_3sig(v),
+    ))
+    ax2.yaxis.set_major_locator(_ProportionalLocator(ax, ratio))
 
 
 def _render_stacked_bar(

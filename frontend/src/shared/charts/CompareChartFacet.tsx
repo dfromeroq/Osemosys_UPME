@@ -10,6 +10,7 @@ import {
   EXPORTING_CONTEXT_BUTTON_DARK,
   HIGHCHARTS_GETSVG_MERGE_OPTIONS,
   INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
+  buildCleanExportOverridesMultiYAxis,
   createCleanExportMenuItem,
   onHighchartsExportError,
 } from "./chartExportingShared";
@@ -20,6 +21,7 @@ import {
 } from "./mergeFacetChartsSvg";
 import { buildLineTooltipOptions, buildStackedTooltipOptions } from "./chartTooltips";
 import { formatAxis3Sig } from "./numberFormat";
+import { getUnitConversionRatio } from "./unitConversion";
 import {
   createLegendDblclickState,
   dispatchLegendClick,
@@ -499,6 +501,22 @@ function FacetChart({
               },
               gridLineColor: "#334155",
               gridLineWidth: 0,
+              lineWidth: 1,
+              lineColor: "#334155",
+              min: 0,
+              ...(sharedYAxisMax > 0
+                ? { max: +(sharedYAxisMax * (getUnitConversionRatio(yAxisLabel, yAxisSecondaryLabel ?? '') ?? 1)).toPrecision(3) }
+                : null),
+              tickPositioner: function (this: Highcharts.Axis) {
+                if (!yAxisSecondaryLabel) return [] as Highcharts.AxisTickPositionsArray;
+                const primary = this.chart.yAxis[0];
+                if (!primary || !primary.tickPositions?.length) return [] as Highcharts.AxisTickPositionsArray;
+                const ratio = getUnitConversionRatio(yAxisLabel, yAxisSecondaryLabel);
+                if (!ratio) return [] as Highcharts.AxisTickPositionsArray;
+                return primary.tickPositions.map(
+                  t => +(t * ratio).toPrecision(6)
+                ) as Highcharts.AxisTickPositionsArray;
+              },
             },
           ]
         : {
@@ -626,8 +644,8 @@ function FacetChart({
             menuItems: [
               ...INDIVIDUAL_CHART_EXPORT_MENU_ITEMS,
               '_separator_',
-              createCleanExportMenuItem('png', CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS),
-              createCleanExportMenuItem('svg', CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS),
+              createCleanExportMenuItem('png', yAxisSecondaryLabel ? buildCleanExportOverridesMultiYAxis(2) : CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS),
+              createCleanExportMenuItem('svg', yAxisSecondaryLabel ? buildCleanExportOverridesMultiYAxis(2) : CLEAN_EXPORT_OVERRIDES_SINGLE_YAXIS),
             ] as unknown as string[],
             ...EXPORTING_CONTEXT_BUTTON_DARK,
           },
