@@ -527,7 +527,7 @@ class SimulationService:
             else None,
             username=current_user.username,
             scenario_name=scenario.name,
-            scenario_description=scenario.description,
+            scenario_description=getattr(scenario, "description", None),
             scenario_tag=scenario_tags_list[0] if scenario_tags_list else None,
             scenario_tags=scenario_tags_list,
         )
