@@ -1141,6 +1141,9 @@ export function ScenariosPage() {
           <thead style={{ background: "rgba(255,255,255,0.03)" }}>
             <tr>
               <th style={{ textAlign: "left", fontSize: 13, padding: "10px 12px", color: "var(--muted)" }}>
+                ID
+              </th>
+              <th style={{ textAlign: "left", fontSize: 13, padding: "10px 12px", color: "var(--muted)" }}>
                 Escenario
               </th>
               <th style={{ textAlign: "left", fontSize: 13, padding: "10px 12px", color: "var(--muted)" }}>
@@ -1237,13 +1240,13 @@ export function ScenariosPage() {
           <tbody>
             {loadingRows ? (
               <tr>
-                <td colSpan={10} style={{ padding: 14, opacity: 0.75 }}>
+                <td colSpan={11} style={{ padding: 14, opacity: 0.75 }}>
                   Cargando escenarios...
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={10} style={{ padding: 14, opacity: 0.75 }}>
+                <td colSpan={11} style={{ padding: 14, opacity: 0.75 }}>
                   Sin registros.
                 </td>
               </tr>
@@ -1264,6 +1267,9 @@ export function ScenariosPage() {
                     const operationJob = deleteJob ?? cloneJob;
                     return (
                       <>
+                  <td style={{ padding: "10px 12px", fontFamily: "var(--font-mono, monospace)", fontSize: 12, color: "var(--muted)" }}>
+                    {row.id}
+                  </td>
                   <td style={{ padding: "10px 12px" }}>
                     <button
                       type="button"

@@ -351,6 +351,7 @@ export function SimulationPage() {
   const [solverName, setSolverName] = useState<SimulationSolver>("highs");
   /** Nombre opcional al encolar desde escenario (si está vacío, el backend usa el nombre del escenario). */
   const [newRunDisplayName, setNewRunDisplayName] = useState("");
+  const [newRunDescription, setNewRunDescription] = useState("");
   const [csvSolverName, setCsvSolverName] = useState<SimulationSolver>("highs");
   // Si el usuario marca estos checkboxes al encolar, el pipeline corre el
   // análisis enriquecido de infactibilidad (IIS + mapeo a parámetros) inline
@@ -592,9 +593,11 @@ export function SimulationPage() {
         runIisAnalysis,
         generateLp,
         display_name: newRunDisplayName.trim() || null,
+        description: newRunDescription.trim() || null,
       });
       push("Simulación encolada correctamente.", "success");
       setNewRunDisplayName("");
+      setNewRunDescription("");
       await refreshRuns();
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Error enviando simulación.";
@@ -1081,6 +1084,30 @@ export function SimulationPage() {
             Refrescar estado
           </Button>
         </div>
+        <label className="field" style={{ margin: 0 }}>
+          <span
+            className="field__label"
+            style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}
+          >
+            <span>Descripción / comentario (opcional)</span>
+            <span style={{ fontSize: 11, opacity: 0.55, fontWeight: 400 }}>
+              {newRunDescription.length}/500
+            </span>
+          </span>
+          <textarea
+            className="field__input"
+            rows={3}
+            maxLength={500}
+            value={newRunDescription}
+            onChange={(e) => setNewRunDescription(e.target.value)}
+            placeholder="Notas sobre esta corrida: supuestos, contexto, hipótesis a comparar, etc."
+            disabled={submitting}
+            style={{ resize: "vertical", minHeight: 60, fontFamily: "inherit" }}
+          />
+          <small style={{ opacity: 0.6, marginTop: 4 }}>
+            Aparece en la columna “Descripción” de la tabla de simulaciones y se conserva con el resultado.
+          </small>
+        </label>
         <label
           style={{
             display: "inline-flex",
@@ -1716,15 +1743,59 @@ export function SimulationPage() {
               },
             },
             {
+              key: "description",
+              header: "Descripción",
+              render: (r) => {
+                const desc = r.description?.trim();
+                if (!desc) return <span style={{ opacity: 0.5 }}>—</span>;
+                return (
+                  <span
+                    title={desc}
+                    style={{
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                      maxWidth: 240,
+                      fontSize: "0.85em",
+                      opacity: 0.85,
+                    }}
+                  >
+                    {desc}
+                  </span>
+                );
+              },
+              filter: {
+                type: "text",
+                getValue: (r) => r.description ?? "",
+                placeholder: "Descripción…",
+              },
+            },
+            {
               key: "scenario",
               header: "Escenario",
-              render: (r) =>
-                r.scenario_name ??
-                (r.input_mode === "CSV_UPLOAD"
-                  ? r.input_name ?? "CSV upload"
-                  : r.scenario_id === null
-                    ? "—"
-                    : `#${r.scenario_id}`),
+              render: (r) => {
+                const label =
+                  r.scenario_name ??
+                  (r.input_mode === "CSV_UPLOAD"
+                    ? r.input_name ?? "CSV upload"
+                    : r.scenario_id === null
+                      ? "—"
+                      : `#${r.scenario_id}`);
+                return (
+                  <span
+                    style={{ display: "inline-flex", alignItems: "baseline", gap: 4 }}
+                    title={r.scenario_description ?? undefined}
+                  >
+                    <span>{label}</span>
+                    {r.scenario_id != null ? (
+                      <sub style={{ fontSize: "0.7em", opacity: 0.6, fontFamily: "monospace" }}>
+                        #{r.scenario_id}
+                      </sub>
+                    ) : null}
+                  </span>
+                );
+              },
               filter: {
                 type: "multiselect",
                 getValue: (r) =>
@@ -2278,7 +2349,7 @@ export function SimulationPage() {
             },
           ]}
           searchableText={(r) =>
-            `${r.id} ${r.display_name ?? ""} ${r.scenario_name ?? ""} ${r.input_name ?? ""} ${r.username ?? ""} ${r.status} ${r.queue_position ?? ""}`
+            `${r.id} ${r.display_name ?? ""} ${r.description ?? ""} ${r.scenario_name ?? ""} ${r.input_name ?? ""} ${r.username ?? ""} ${r.status} ${r.queue_position ?? ""}`
           }
         />
       </article>

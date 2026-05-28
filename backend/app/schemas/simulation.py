@@ -35,6 +35,10 @@ class SimulationSubmit(BaseModel):
         max_length=255,
         description="Nombre opcional para esta corrida (resultados y exportación). Si se omite, se usa el nombre del escenario.",
     )
+    description: str | None = Field(
+        default=None,
+        description="Comentario libre del usuario sobre esta corrida.",
+    )
 
 
 class SimulationJobDisplayNamePatch(BaseModel):
@@ -68,9 +72,11 @@ class SimulationJobPublic(BaseModel):
     id: int
     scenario_id: int | None = None
     scenario_name: str | None = None
+    scenario_description: str | None = None
     scenario_tag: ScenarioTagPublic | None = None
     scenario_tags: list[ScenarioTagPublic] = Field(default_factory=list)
     display_name: str | None = None
+    description: str | None = None
     user_id: str
     username: str | None = None
     solver_name: SimulationSolver
