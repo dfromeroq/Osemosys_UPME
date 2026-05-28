@@ -109,6 +109,7 @@ def submit_simulation(
             run_iis_analysis=payload.run_iis_analysis,
             generate_lp=payload.generate_lp,
             display_name=payload.display_name,
+            description=payload.description,
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e

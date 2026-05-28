@@ -152,6 +152,7 @@ class ResultSummaryResponse(BaseModel):
     job_id: int
     scenario_id: int | None = None
     scenario_name: str | None = None
+    scenario_description: str | None = None
     scenario_tag: ScenarioTagPublic | None = None
     scenario_tags: list[ScenarioTagPublic] = []
     display_name: str | None = None

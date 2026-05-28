@@ -183,8 +183,11 @@ export type SimulationRun = {
   id: number;
   scenario_id: number | null;
   scenario_name?: string | null;
+  scenario_description?: string | null;
   /** Alias opcional de la corrida (resultados y exportación). */
   display_name?: string | null;
+  /** Comentario libre que el usuario asoció a la corrida al lanzarla. */
+  description?: string | null;
   scenario_tag?: ScenarioTag | null;
   scenario_tags?: ScenarioTag[];
   user_id: string;
@@ -895,6 +898,7 @@ export type ResultSummaryResponse = {
   job_id: number;
   scenario_id: number | null;
   scenario_name: string | null;
+  scenario_description?: string | null;
   scenario_tag?: ScenarioTag | null;
   scenario_tags?: ScenarioTag[];
   /** Alias opcional definido por el usuario para esta corrida. */
