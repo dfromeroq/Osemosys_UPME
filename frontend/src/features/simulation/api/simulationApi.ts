@@ -39,18 +39,16 @@ export const simulationApi = {
       runIisAnalysis?: boolean;
       generateLp?: boolean;
       display_name?: string | null;
+      description?: string | null;
     },
   ) {
-    // Unifica en un solo `options` los flags opcionales:
-    //   - `runIisAnalysis`: correr análisis de infactibilidad inline.
-    //   - `generateLp`: persistir el modelo a `.lp` antes de resolver.
-    //   - `display_name`: alias visible de la corrida.
     const body: {
       scenario_id: number;
       solver_name: SimulationSolver;
       run_iis_analysis: boolean;
       generate_lp: boolean;
       display_name?: string;
+      description?: string;
     } = {
       scenario_id: scenarioId,
       solver_name: solverName,
@@ -59,6 +57,8 @@ export const simulationApi = {
     };
     const dn = options?.display_name?.trim();
     if (dn) body.display_name = dn.slice(0, 255);
+    const desc = options?.description?.trim();
+    if (desc) body.description = desc;
     const { data } = await httpClient.post<SimulationRun>("/simulations", body);
     return data;
   },

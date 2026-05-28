@@ -3069,6 +3069,7 @@ def get_result_summary(
         job_id=job.id,
         scenario_id=job.scenario_id,
         scenario_name=scenario_name,
+        scenario_description=(scenario.description if scenario else None),
         scenario_tag=scenario_tag,
         scenario_tags=scenario_tags_list,
         display_name=getattr(job, "display_name", None) or None,

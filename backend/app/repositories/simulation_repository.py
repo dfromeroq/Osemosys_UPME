@@ -71,6 +71,7 @@ class SimulationRepository:
         simulation_type: str = "NATIONAL",
         parallel_weight: int = 1,
         display_name: str | None = None,
+        description: str | None = None,
     ) -> SimulationJob:
         """Crea job en estado `QUEUED`.
 
@@ -91,6 +92,7 @@ class SimulationRepository:
             simulation_type=simulation_type,
             parallel_weight=parallel_weight,
             display_name=display_name,
+            description=description,
             status="QUEUED",
             progress=0.0,
             run_iis_analysis=run_iis_analysis,
@@ -157,8 +159,8 @@ class SimulationRepository:
         *,
         job_id: int,
         current_user_id: uuid.UUID | None = None,
-    ) -> tuple[SimulationJob, str | None, str | None] | None:
-        """Obtiene job visible con username y nombre de escenario.
+    ) -> tuple[SimulationJob, str | None, str | None, str | None] | None:
+        """Obtiene job visible con username, nombre y descripción de escenario.
 
         Si ``current_user_id`` se provee, aplica visibilidad: el job es
         accesible solo si es público o si pertenece al usuario actual.
@@ -169,6 +171,7 @@ class SimulationRepository:
                 SimulationJob,
                 User.username.label("username"),
                 scenario_alias.name.label("scenario_name"),
+                scenario_alias.description.label("scenario_description"),
             )
             .join(User, User.id == SimulationJob.user_id)
             .outerjoin(scenario_alias, scenario_alias.id == SimulationJob.scenario_id)
@@ -182,7 +185,7 @@ class SimulationRepository:
             is_public = bool(getattr(job, "is_public", True))
             if not is_public and job.user_id != current_user_id:
                 return None
-        return job, row.username, row.scenario_name
+        return job, row.username, row.scenario_name, row.scenario_description
 
     @staticmethod
     def get_job_by_id(db: Session, *, job_id: int) -> SimulationJob | None:
@@ -226,7 +229,7 @@ class SimulationRepository:
         solver_name: str | None,
         row_offset: int,
         limit: int,
-    ) -> tuple[list[tuple[SimulationJob, str | None, str | None]], int]:
+    ) -> tuple[list[tuple[SimulationJob, str | None, str | None, str | None]], int]:
         """Lista jobs visibles con metadatos de usuario y escenario.
 
         Aplica visibilidad: en scope=global se incluyen los jobs públicos más
@@ -239,6 +242,7 @@ class SimulationRepository:
                 SimulationJob,
                 User.username.label("username"),
                 Scenario.name.label("scenario_name"),
+                Scenario.description.label("scenario_description"),
             )
             .join(User, User.id == SimulationJob.user_id)
             .outerjoin(Scenario, Scenario.id == SimulationJob.scenario_id)
@@ -302,7 +306,7 @@ class SimulationRepository:
             .all()
         )
         del fav_priority  # (solo para docstring de claridad; no se usa)
-        return [(row[0], row.username, row.scenario_name) for row in items], total
+        return [(row[0], row.username, row.scenario_name, row.scenario_description) for row in items], total
 
     # ── Favoritos ──
 

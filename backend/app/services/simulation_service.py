@@ -321,6 +321,7 @@ class SimulationService:
         queue_position: int | None = None,
         username: str | None = None,
         scenario_name: str | None = None,
+        scenario_description: str | None = None,
         scenario_tag: dict | None = None,
         scenario_tags: list[dict] | None = None,
         is_favorite: bool = False,
@@ -333,9 +334,11 @@ class SimulationService:
             "id": job.id,
             "scenario_id": job.scenario_id,
             "scenario_name": effective_scenario_name,
+            "scenario_description": scenario_description,
             "scenario_tag": scenario_tag,
             "scenario_tags": scenario_tags or ([scenario_tag] if scenario_tag else []),
             "display_name": getattr(job, "display_name", None) or None,
+            "description": getattr(job, "description", None) or None,
             "user_id": str(job.user_id),
             "username": username,
             "solver_name": job.solver_name,
@@ -459,6 +462,7 @@ class SimulationService:
         run_iis_analysis: bool = False,
         generate_lp: bool = False,
         display_name: str | None = None,
+        description: str | None = None,
     ) -> dict:
         """Encola una nueva simulacion para un escenario autorizado.
 
@@ -495,6 +499,7 @@ class SimulationService:
             simulation_type=simulation_type,
             parallel_weight=parallel_weight,
             display_name=job_display,
+            description=(description or "").strip() or None,
         )
         # Necesario para obtener `job.id` antes de insertar eventos asociados.
         if hasattr(db, "flush"):
@@ -522,6 +527,7 @@ class SimulationService:
             else None,
             username=current_user.username,
             scenario_name=scenario.name,
+            scenario_description=getattr(scenario, "description", None),
             scenario_tag=scenario_tags_list[0] if scenario_tags_list else None,
             scenario_tags=scenario_tags_list,
         )
@@ -538,6 +544,7 @@ class SimulationService:
         generate_lp: bool = False,
         simulation_type: str = "NATIONAL",
         display_name: str | None = None,
+        description: str | None = None,
     ) -> dict:
         """Encola una simulación cuyo input proviene de un ZIP de CSV.
 
@@ -576,6 +583,7 @@ class SimulationService:
             simulation_type=normalized_type,
             parallel_weight=parallel_weight,
             display_name=job_display,
+            description=(description or "").strip() or None,
         )
         if hasattr(db, "flush"):
             db.flush()
@@ -605,7 +613,7 @@ class SimulationService:
         )
         if not visible:
             raise NotFoundError("Simulacion no encontrada.")
-        job, username, scenario_name = visible
+        job, username, scenario_name, scenario_description = visible
         queue_position = (
             SimulationRepository.queue_position(db, job_id=job.id) if job.status == "QUEUED" else None
         )
@@ -623,6 +631,7 @@ class SimulationService:
             queue_position=queue_position,
             username=username,
             scenario_name=scenario_name,
+            scenario_description=scenario_description,
             scenario_tag=scenario_tags_list[0] if scenario_tags_list else None,
             scenario_tags=scenario_tags_list,
             is_favorite=is_favorite,
@@ -727,7 +736,7 @@ class SimulationService:
             row_offset=row_offset,
             limit=page_size,
         )
-        scenario_ids = {j.scenario_id for j, _, _ in items if j.scenario_id}
+        scenario_ids = {j.scenario_id for j, _, _, _ in items if j.scenario_id}
         all_tags_by_sid = SimulationService._batch_all_scenario_tags_by_scenario_ids(
             db, {int(x) for x in scenario_ids}
         )
@@ -742,6 +751,7 @@ class SimulationService:
                 else None,
                 username=job_username,
                 scenario_name=job_scenario_name,
+                scenario_description=job_scenario_description,
                 scenario_tag=(all_tags_by_sid.get(int(job.scenario_id)) or [None])[0]
                 if job.scenario_id
                 else None,
@@ -750,7 +760,7 @@ class SimulationService:
                 else [],
                 is_favorite=int(job.id) in favorite_ids,
             )
-            for job, job_username, job_scenario_name in items
+            for job, job_username, job_scenario_name, job_scenario_description in items
         ]
         meta = build_meta(page, page_size, total, status)
         return {"data": data, "meta": meta}
@@ -1005,7 +1015,7 @@ class SimulationService:
         visible = SimulationRepository.get_job_visible(db, job_id=job_id)
         if not visible:
             raise NotFoundError("Simulacion no encontrada.")
-        job, _, _ = visible
+        job, _, _, _ = visible
         page, page_size, row_offset = normalize_pagination(offset, cantidad)
         events, total = SimulationRepository.list_events(
             db, job_id=job.id, row_offset=row_offset, limit=page_size
@@ -1030,7 +1040,7 @@ class SimulationService:
         visible = SimulationRepository.get_job_visible(db, job_id=job_id)
         if not visible:
             raise NotFoundError("Simulacion no encontrada.")
-        job, _, _ = visible
+        job, _, _, _ = visible
         if job.status != "SUCCEEDED":
             raise ConflictError("La simulacion aun no ha finalizado correctamente.")
 

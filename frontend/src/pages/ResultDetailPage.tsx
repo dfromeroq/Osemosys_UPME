@@ -1687,6 +1687,9 @@ export function ResultDetailPage() {
                     <th className="w-10 p-4 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">
                       ★
                     </th>
+                    <th className="p-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      ID
+                    </th>
                     <th className="p-4 text-xs font-semibold uppercase tracking-wider text-slate-500 min-w-[160px]">
                       Nombre del resultado
                     </th>
@@ -1734,6 +1737,7 @@ export function ResultDetailPage() {
                         <option value="no">Sin favorito</option>
                       </select>
                     </th>
+                    <th className="p-2" />
                     <th className="p-2">
                       <input
                         type="text"
@@ -1856,6 +1860,9 @@ export function ResultDetailPage() {
                             size={16}
                           />
                         </td>
+                        <td className="p-4 align-middle font-mono text-xs text-slate-400 tabular-nums">
+                          {s.job_id}
+                        </td>
                         <td className="p-4 align-top min-w-[160px] max-w-[280px]">
                           <RunDisplayNameEditor
                             jobId={s.job_id}
@@ -1867,12 +1874,18 @@ export function ResultDetailPage() {
                         <td className="p-4 align-middle">
                           <Link
                             to={`/app/results/${s.job_id}`}
+                            title={s.scenario_description ?? undefined}
                             className={`inline-flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 font-medium hover:text-emerald-400 hover:underline ${
                               isCurrent ? 'text-emerald-400' : 'text-slate-200'
                             }`}
                           >
                             <span className="min-w-0 break-words">
                               {s.scenario_name?.trim() || '—'}
+                              {s.scenario_id != null ? (
+                                <sub className="ml-1 font-mono text-[0.7em] text-slate-500">
+                                  #{s.scenario_id}
+                                </sub>
+                              ) : null}
                             </span>
                             {isCurrent ? (
                               <span className="shrink-0 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-400">

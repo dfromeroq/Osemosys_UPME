@@ -55,6 +55,8 @@ class SimulationJob(Base):
     parallel_weight: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     #: Nombre opcional definido por el usuario para identificar la corrida en resultados/exportación.
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    #: Descripción libre que el usuario añade al lanzar la simulación.
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     input_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     input_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="QUEUED")
