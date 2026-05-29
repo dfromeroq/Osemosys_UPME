@@ -254,6 +254,8 @@ interface CompareChartFacetProps {
   /** Override del eje Y para todos los facets. ``null``/undefined = auto. */
   yAxisMin?: number | null;
   yAxisMax?: number | null;
+  /** Años fijos para las etiquetas del eje X (solo se muestran estos años). */
+  fixedTickYears?: number[];
 }
 
 /** Metadatos en la instancia Chart para exportar sin depender de un array de refs (getSVG / update rompen ese enlace). */
@@ -302,6 +304,7 @@ function FacetChart({
   yAxisMin,
   yAxisMax,
   showLeftTitle = false,
+  fixedTickYears,
 }: {
   facet: FacetData;
   yAxisLabel: string;
@@ -326,6 +329,8 @@ function FacetChart({
   yAxisMax?: number | null;
   /** Si true, el título del escenario se renderiza fuera de Highcharts (a la izquierda). */
   showLeftTitle?: boolean;
+  /** Años fijos para las etiquetas del eje X. */
+  fixedTickYears?: number[];
 }) {
   const chartRef = useRef<Highcharts.Chart | null>(null);
   const legendDblclickStateRef = useRef(createLegendDblclickState());
@@ -402,6 +407,17 @@ function FacetChart({
         tickWidth: 1,
         tickLength: 6,
         minorTickLength: 0,
+        ...(fixedTickYears
+          ? {
+              tickPositioner: function (this: Highcharts.Axis) {
+                const cats = this.categories ?? [];
+                const positions = (fixedTickYears ?? [])
+                  .map((y) => cats.indexOf(String(y)))
+                  .filter((i) => i >= 0);
+                return positions.length > 0 ? positions : [];
+              } as Highcharts.AxisTickPositionerCallbackFunction,
+            }
+          : {}),
         labels: (
           inverted
             ? {
@@ -416,7 +432,7 @@ function FacetChart({
                 y: 16,
                 reserveSpace: true,
                 autoRotation: false,
-                step: xLabelStep,
+                step: fixedTickYears ? 1 : xLabelStep,
                 style: {
                   color: "#94a3b8",
                   fontSize: `${xLabelFontPx}px`,
@@ -604,6 +620,7 @@ function FacetChart({
     viewMode,
     facetCount,
     facetExportInstanceId,
+    fixedTickYears,
   ]);
 
   return (
@@ -658,6 +675,7 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
   compactToolbar = false,
   yAxisMin,
   yAxisMax,
+  fixedTickYears,
 }) => {
   const inverted = barOrientation === "horizontal";
   const n = data.facets.length;
@@ -1117,6 +1135,7 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
                       facetExportInstanceId={facetExportInstanceIdRef.current!}
                       yAxisMin={yAxisMin ?? null}
                       yAxisMax={yAxisMax ?? null}
+                      {...(fixedTickYears !== undefined ? { fixedTickYears } : {})}
                     />
                   </div>
                 </div>
