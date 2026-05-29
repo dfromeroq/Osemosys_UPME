@@ -115,7 +115,7 @@ const CONTAMINANTES_CHART_IDS = new Set(['emisiones_contaminantes']);
 const PORCENTAJE_CHART_IDS = new Set(['factor_planta']);
 
 /** Gráficas que soportan unidad kton (factor por tecnología). */
-const KTON_CHART_IDS = new Set(['oferta_bioenergia', 'cap_h2', 'h2_consumo']);
+const KTON_CHART_IDS = new Set(['oferta_bioenergia', 'cap_h2', 'h2_consumo', 'h2_produccion_verde', 'cap_electrolisis_verde']);
 
 const EMISSION_CHART_IDS = new Set([...GEI_CHART_IDS, ...CONTAMINANTES_CHART_IDS]);
 
