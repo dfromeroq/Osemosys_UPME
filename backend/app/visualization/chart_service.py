@@ -2314,6 +2314,20 @@ def build_comparison_facet_data(
     # años faltantes para el escenario corto. Mantener ejes idénticos hace
     # que las comparaciones visuales sean directas.
     _align_facet_x_axis(facets)
+    # Forzar rango completo 2022-2055 para imp_oil (aunque no haya datos)
+    if tipo == "imp_oil" and facets:
+        full = [str(y) for y in range(2022, 2056)]
+        if not all(c in set(facets[0].categories) for c in full):
+            idx = {c: i for i, c in enumerate(full)}
+            for f in facets:
+                old_cats = set(f.categories)
+                old_idx_map = {c: i for i, c in enumerate(f.categories)}
+                for s in f.series:
+                    s.data = [
+                        s.data[old_idx_map[c]] if c in old_cats and old_idx_map[c] < len(s.data) else None
+                        for c in full
+                    ]
+                f.categories = full
     return CompareChartFacetResponse(
         title=title,
         facets=facets,
