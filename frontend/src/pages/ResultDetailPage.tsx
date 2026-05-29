@@ -2235,6 +2235,9 @@ export function ResultDetailPage() {
                 serverFacetExport={{ jobIds: chartJobIds, selection: chartSelection, scenarioAliases, exogenousData: exogenousData && isComparing ? JSON.stringify(exogenousData) : undefined, exogenousContaminantesData: contaminantesExogenousData && isComparing ? JSON.stringify(contaminantesExogenousData) : undefined }}
                 yAxisMin={yAxisMin}
                 yAxisMax={yAxisMax}
+                {...(chartSelection.tipo === 'imp_oil'
+                  ? { fixedTickYears: [2022, 2025, 2028, 2031, 2034, 2037, 2040, 2043, 2046, 2049, 2052, 2055] }
+                  : {})}
               />
             ) : chartCompareMode === 'by-year' && chartJobIds.length > 1 && displayCompareChartData ? (
               <CompareChart
@@ -2282,9 +2285,9 @@ export function ResultDetailPage() {
                       data={displaySingleChartData}
                       serverExport={{ jobId: currentRunId, selection: chartSelection }}
                       syntheticSeries={syntheticSeries.filter((s) => s.active !== false)}
-                      yAxisMin={yAxisMin}
-                      yAxisMax={yAxisMax}
-                    />
+                yAxisMin={yAxisMin}
+                yAxisMax={yAxisMax}
+              />
                   )
                 : chartSelection.viewMode === 'area'
                   ? (
