@@ -1306,6 +1306,12 @@ CONFIGS = {
         "color_fn": _color_electrolisis,
         "es_capacidad": True,
         "variable_default": "TotalCapacityAnnual",
+        "unidad_factor_por_tecnologia": {
+            "kton": {
+                "UPSALK": 0.12,
+                "UPSPEM": 0.12,
+            }
+        },
     },
     "h2_consumo": {
         "titulo": "Hidrógeno - Consumo - UseByTechnology",
@@ -1339,6 +1345,14 @@ CONFIGS = {
         "agrupar_por": "H2_PRODUCCION",
         "color_fn": _color_h2_verde_azul_gris,
         "variable_default": "ProductionByTechnology",
+        "unidad_factor_por_tecnologia": {
+            "kton": {
+                "UPSALK": 0.12,
+                "UPSPEM": 0.12,
+                "UPSSMR": 0.12,
+                "UPSSMRCCS": 0.12,
+            }
+        },
     },
     "ups_refinacion": {
         "titulo": "Upstream Refinación - ProductionByTechnology",

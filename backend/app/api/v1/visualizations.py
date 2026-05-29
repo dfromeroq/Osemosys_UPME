@@ -380,6 +380,12 @@ def export_comparison_facet_image(
     if hidden_series:
         hidden_set = {s.strip() for s in hidden_series.split(",") if s.strip()}
 
+    # Etiquetas fijas del eje X según el tipo de gráfica
+    _FIXED_LABELS_BY_TIPO: dict[str, set[str]] = {
+        "imp_oil": {"2022", "2025", "2028", "2031", "2034", "2037", "2040", "2043", "2046", "2049", "2052", "2055"},
+    }
+    fixed_labels = _FIXED_LABELS_BY_TIPO.get(tipo)
+
     try:
         img_bytes = chart_service.render_comparison_facet_figure_bytes(
             facet_payload,
@@ -390,6 +396,7 @@ def export_comparison_facet_image(
             series_order=order_list,
             clean=clean,
             hidden_series=hidden_set,
+            fixed_labels=fixed_labels,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -4032,14 +4032,27 @@ def _facet_x_axis_label_step(categories: list[Any]) -> int:
     return max(1, (n + target_visible - 1) // target_visible)
 
 
-def _facet_x_ticklabels_thinned(categories: list[Any], step: int) -> list[str]:
-    """Etiquetas con cadena vacía en índices omitidos; asegura inicio y fin legibles."""
+def _facet_x_ticklabels_thinned(
+    categories: list[Any],
+    step: int,
+    fixed_labels: set[str] | None = None,
+) -> list[str]:
+    """Etiquetas con cadena vacía en índices omitidos; asegura inicio y fin legibles.
+
+    Si se provee *fixed_labels*, solo se etiquetan las categorías que aparezcan
+    en ese conjunto (en vez del muestreo por *step*).
+    """
     n = len(categories)
     if step < 1:
         step = 1
     out: list[str] = [""] * n
-    for i in range(0, n, step):
-        out[i] = str(categories[i])
+    if fixed_labels is not None:
+        for i, cat in enumerate(categories):
+            if str(cat) in fixed_labels:
+                out[i] = str(cat)
+    else:
+        for i in range(0, n, step):
+            out[i] = str(categories[i])
     if n > 1:
         if not out[0]:
             out[0] = str(categories[0])
@@ -4060,6 +4073,7 @@ def render_comparison_facet_figure_bytes(
     series_order: list[str] | None = None,
     clean: bool = False,
     hidden_series: set[str] | None = None,
+    fixed_labels: set[str] | None = None,
 ) -> bytes:
     """Una sola figura: facetas en fila/columna, título global, leyenda inferior (Matplotlib).
 
@@ -4263,8 +4277,11 @@ def render_comparison_facet_figure_bytes(
             line_maxes.append(facet_line_max)
 
         ax.set_xticks(x)
-        x_step = _facet_x_axis_label_step(categories)
-        x_labels = _facet_x_ticklabels_thinned(categories, x_step)
+        if fixed_labels is not None:
+            x_labels = _facet_x_ticklabels_thinned(categories, 1, fixed_labels=fixed_labels)
+        else:
+            x_step = _facet_x_axis_label_step(categories)
+            x_labels = _facet_x_ticklabels_thinned(categories, x_step)
         n_labeled = sum(1 for lb in x_labels if lb)
         x_fs = (
             20
