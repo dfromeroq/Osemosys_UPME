@@ -12,10 +12,77 @@ from __future__ import annotations
 
 import logging
 import os
+from time import perf_counter
 
+import pandas as pd
 from pyomo.environ import AbstractModel, ConcreteModel, DataPortal
 
 logger = logging.getLogger(__name__)
+
+_USE_PANDAS_DATAPORTAL = os.getenv("OSEMOSYS_FAST_DATAPORTAL", "1") != "0"
+
+# Columnas de índice que Pyomo/DataPortal tratan como enteros (paridad con CSV nativo).
+_INT_INDEX_COLS = frozenset({"YEAR", "MODE_OF_OPERATION"})
+
+
+def _csv_has_data(fpath: str) -> bool:
+    """True si el CSV existe y tiene al menos una fila de datos."""
+    if not os.path.exists(fpath):
+        return False
+    try:
+        if os.path.getsize(fpath) <= 2:
+            return False
+    except OSError:
+        return False
+    with open(fpath, encoding="utf-8") as handle:
+        handle.readline()
+        return bool(handle.readline().strip())
+
+
+def _coerce_index_value(col: str, text: str) -> object:
+    """Alinea tipos de índice con los que produce ``DataPortal.load(filename=...)``."""
+    if col in _INT_INDEX_COLS:
+        return int(float(text))
+    return text
+
+
+def _load_param_pandas(
+    data: DataPortal,
+    fpath: str,
+    param_name: str,
+    index: list[str] | str,
+) -> None:
+    index_cols = [index] if isinstance(index, str) else list(index)
+    df = pd.read_csv(fpath, dtype=str, low_memory=False)
+    if df.empty or "VALUE" not in df.columns:
+        return
+
+    param_dict: dict[object, float] = {}
+    for row in df.itertuples(index=False):
+        row_map = dict(zip(df.columns, row))
+        key_parts: list[object] = []
+        for col in index_cols:
+            raw = row_map.get(col)
+            if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+                key_parts = []
+                break
+            text = str(raw).strip()
+            if not text or text.lower() == "nan":
+                key_parts = []
+                break
+            key_parts.append(_coerce_index_value(col, text))
+        if len(key_parts) != len(index_cols):
+            continue
+        key: object = key_parts[0] if len(key_parts) == 1 else tuple(key_parts)
+        raw_val = row_map.get("VALUE")
+        try:
+            param_dict[key] = float(raw_val) if raw_val not in (None, "", "nan") else 0.0
+        except (TypeError, ValueError):
+            param_dict[key] = 0.0
+
+    if not param_dict:
+        return
+    data.data()[param_name] = param_dict
 
 
 def build_instance(
@@ -25,39 +92,38 @@ def build_instance(
     has_storage: bool = False,
     has_udc: bool = True,
 ) -> ConcreteModel:
-    """Carga CSVs via DataPortal y crea instancia concreta.
-
-    Replica la celda 23 del notebook OPT_YA_20260220.
-    - model: AbstractModel devuelto por model_definition.create_abstract_model().
-    - csv_dir: directorio con los CSVs (sets + parámetros) generados por data_processing.
-    - has_storage / has_udc: deben coincidir con los usados al crear el abstract model.
-    """
+    """Carga CSVs via DataPortal y crea instancia concreta."""
     data = DataPortal()
     p = csv_dir
+    load_timings: dict[str, float] = {}
 
     def _load_set(filename: str, set_name: str) -> None:
-        """Carga un set desde CSV si el archivo existe y no está vacío (salta header)."""
         fpath = os.path.join(p, filename)
-        if os.path.exists(fpath):
-            with open(fpath, encoding="utf-8") as f:
-                f.readline()  # header
-                first_data = f.readline().strip()
-            if not first_data:
+        if not _csv_has_data(fpath):
+            if os.path.exists(fpath):
                 logger.debug("Skipping empty set CSV: %s", filename)
-                return
-            data.load(filename=fpath, set=set_name)
+            return
+        t0 = perf_counter()
+        # Sets siempre vía CSV nativo de Pyomo: garantiza tipos idénticos a params.
+        data.load(filename=fpath, set=set_name)
+        load_timings[f"load_set_{set_name}"] = perf_counter() - t0
 
     def _load_param(filename: str, param_name: str, index: list[str] | str) -> None:
-        """Carga un parámetro desde CSV; index es la lista de conjuntos que indexan el parámetro."""
         fpath = os.path.join(p, filename)
-        if os.path.exists(fpath):
-            with open(fpath, encoding="utf-8") as f:
-                f.readline()  # header
-                first_data = f.readline().strip()
-            if not first_data:
+        if not _csv_has_data(fpath):
+            if os.path.exists(fpath):
                 logger.debug("Skipping empty param CSV: %s", filename)
-                return
+            return
+        t0 = perf_counter()
+        try:
+            if _USE_PANDAS_DATAPORTAL:
+                _load_param_pandas(data, fpath, param_name, index)
+            else:
+                data.load(filename=fpath, param=param_name, index=index)
+        except Exception:
+            logger.warning("Fallback DataPortal param load for %s", filename, exc_info=True)
             data.load(filename=fpath, param=param_name, index=index)
+        load_timings[f"load_param_{param_name}"] = perf_counter() - t0
 
     # ==========================
     # CARGA DE SETS (orden compatible con el modelo abstracto)
@@ -81,30 +147,19 @@ def build_instance(
     # CARGA DE PARÁMETROS
     # ==========================
 
-    # Globales
     _load_param("YearSplit.csv", "YearSplit", ["TIMESLICE", "YEAR"])
     _load_param("DiscountRate.csv", "DiscountRate", ["REGION"])
-    # _load_param("DiscountRateIdv.csv", "DiscountRateIdv", ["REGION", "TECHNOLOGY"])
-    # TB-04 (paridad notebook vs app): habilitamos DepreciationMethod para evitar
-    # resolver un LP distinto al notebook cuando el escenario provee este parámetro.
-    # Si el CSV no existe o está vacío, el modelo usa su default (no debe fallar).
     _load_param("DepreciationMethod.csv", "DepreciationMethod", ["REGION"])
     _load_param("CapacityToActivityUnit.csv", "CapacityToActivityUnit", ["REGION", "TECHNOLOGY"])
-    # TB-04 (paridad notebook vs app): este parámetro restringe inversión a unidades discretas.
-    # Sin cargarlo, el solver puede encontrar soluciones más “fraccionarias” y baratas que el notebook.
     _load_param(
         "CapacityOfOneTechnologyUnit.csv", "CapacityOfOneTechnologyUnit",
         ["REGION", "TECHNOLOGY", "YEAR"],
     )
     _load_param("OperationalLife.csv", "OperationalLife", ["REGION", "TECHNOLOGY"])
-
-    # Inversión y capacidad
-    # TB-04 (paridad notebook vs app): límite superior anual de inversión/capacidad nueva.
     _load_param(
         "TotalAnnualMaxCapacityInvestment.csv", "TotalAnnualMaxCapacityInvestment",
         ["REGION", "TECHNOLOGY", "YEAR"],
     )
-    # TB-04 (paridad notebook vs app): límite inferior anual de inversión/capacidad nueva.
     _load_param(
         "TotalAnnualMinCapacityInvestment.csv", "TotalAnnualMinCapacityInvestment",
         ["REGION", "TECHNOLOGY", "YEAR"],
@@ -125,34 +180,26 @@ def build_instance(
         "TotalTechnologyModelPeriodActivityUpperLimit.csv",
         "TotalTechnologyModelPeriodActivityUpperLimit", ["REGION", "TECHNOLOGY"],
     )
-
-    # Performance
     _load_param(
         "CapacityFactor.csv", "CapacityFactor",
         ["REGION", "TECHNOLOGY", "TIMESLICE", "YEAR"],
     )
     _load_param("AvailabilityFactor.csv", "AvailabilityFactor", ["REGION", "TECHNOLOGY", "YEAR"])
     _load_param("ResidualCapacity.csv", "ResidualCapacity", ["REGION", "TECHNOLOGY", "YEAR"])
-
-    # Costos
     _load_param("CapitalCost.csv", "CapitalCost", ["REGION", "TECHNOLOGY", "YEAR"])
     _load_param("FixedCost.csv", "FixedCost", ["REGION", "TECHNOLOGY", "YEAR"])
     _load_param(
         "VariableCost.csv", "VariableCost",
         ["REGION", "TECHNOLOGY", "MODE_OF_OPERATION", "YEAR"],
     )
-
-    # Emisiones
     _load_param(
         "EmissionActivityRatio.csv", "EmissionActivityRatio",
         ["REGION", "TECHNOLOGY", "EMISSION", "MODE_OF_OPERATION", "YEAR"],
     )
-    # TB-04 (paridad notebook vs app): penalidad por emisiones (si existe en el escenario).
     _load_param("EmissionsPenalty.csv", "EmissionsPenalty", ["REGION", "EMISSION", "YEAR"])
     _load_param(
         "ModelPeriodEmissionLimit.csv", "ModelPeriodEmissionLimit", ["REGION", "EMISSION"],
     )
-    # TB-04 (paridad notebook vs app): emisiones exógenas por periodo y por año.
     _load_param(
         "ModelPeriodExogenousEmission.csv", "ModelPeriodExogenousEmission", ["REGION", "EMISSION"],
     )
@@ -163,8 +210,6 @@ def build_instance(
     _load_param(
         "AnnualEmissionLimit.csv", "AnnualEmissionLimit", ["REGION", "EMISSION", "YEAR"],
     )
-
-    # Activity ratios
     _load_param(
         "InputActivityRatio.csv", "InputActivityRatio",
         ["REGION", "TECHNOLOGY", "FUEL", "MODE_OF_OPERATION", "YEAR"],
@@ -173,8 +218,6 @@ def build_instance(
         "OutputActivityRatio.csv", "OutputActivityRatio",
         ["REGION", "TECHNOLOGY", "FUEL", "MODE_OF_OPERATION", "YEAR"],
     )
-
-    # TB-04 (paridad notebook vs app): Reserve Margin y metas RE.
     _load_param("ReserveMarginTagFuel.csv", "ReserveMarginTagFuel", ["REGION", "FUEL", "YEAR"])
     _load_param("RETagTechnology.csv", "RETagTechnology", ["REGION", "TECHNOLOGY", "YEAR"])
     _load_param("RETagFuel.csv", "RETagFuel", ["REGION", "FUEL", "YEAR"])
@@ -184,12 +227,9 @@ def build_instance(
         ["REGION", "TECHNOLOGY", "YEAR"],
     )
     _load_param("ReserveMargin.csv", "ReserveMargin", ["REGION", "YEAR"])
-
-    # Demandas
     _load_param(
         "AccumulatedAnnualDemand.csv", "AccumulatedAnnualDemand", ["REGION", "FUEL", "YEAR"],
     )
-    # TB-04 (paridad notebook vs app): demanda especificada y su perfil por timeslice.
     _load_param(
         "SpecifiedAnnualDemand.csv", "SpecifiedAnnualDemand", ["REGION", "FUEL", "YEAR"],
     )
@@ -197,43 +237,15 @@ def build_instance(
         "SpecifiedDemandProfile.csv", "SpecifiedDemandProfile",
         ["REGION", "FUEL", "TIMESLICE", "YEAR"],
     )
-
-    # Capacidad
     _load_param(
         "TotalAnnualMaxCapacity.csv", "TotalAnnualMaxCapacity",
         ["REGION", "TECHNOLOGY", "YEAR"],
     )
-    # TB-04 (paridad notebook vs app): capacidad mínima anual requerida.
     _load_param(
         "TotalAnnualMinCapacity.csv", "TotalAnnualMinCapacity",
         ["REGION", "TECHNOLOGY", "YEAR"],
     )
 
-    # MUIO (no cargados en notebook OPT_YA_20260220)
-    # _load_param(
-    #     "TechnologyActivityByModeUpperLimit.csv", "TechnologyActivityByModeUpperLimit",
-    #     ["REGION", "TECHNOLOGY", "MODE_OF_OPERATION", "YEAR"],
-    # )
-    # _load_param(
-    #     "TechnologyActivityByModeLowerLimit.csv", "TechnologyActivityByModeLowerLimit",
-    #     ["REGION", "TECHNOLOGY", "MODE_OF_OPERATION", "YEAR"],
-    # )
-    # _load_param(
-    #     "TechnologyActivityIncreaseByModeLimit.csv", "TechnologyActivityIncreaseByModeLimit",
-    #     ["REGION", "TECHNOLOGY", "MODE_OF_OPERATION", "YEAR"],
-    # )
-    # _load_param(
-    #     "TechnologyActivityDecreaseByModeLimit.csv", "TechnologyActivityDecreaseByModeLimit",
-    #     ["REGION", "TECHNOLOGY", "MODE_OF_OPERATION", "YEAR"],
-    # )
-
-    # Disposal / Recovery (no cargados en notebook OPT_YA_20260220)
-    # _load_param("DisposalCostPerCapacity.csv", "DisposalCostPerCapacity", ["REGION", "TECHNOLOGY"])
-    # _load_param(
-    #     "RecoveryValuePerCapacity.csv", "RecoveryValuePerCapacity", ["REGION", "TECHNOLOGY"],
-    # )
-
-    # Storage
     if has_storage:
         _load_param("DaySplit.csv", "DaySplit", ["DAILYTIMEBRACKET", "YEAR"])
         _load_param("Conversionls.csv", "Conversionls", ["TIMESLICE", "SEASON"])
@@ -263,7 +275,6 @@ def build_instance(
             ["REGION", "STORAGE", "YEAR"],
         )
 
-    # UDC
     if has_udc:
         _load_set("UDC.csv", "UDC")
         _load_param(
@@ -281,14 +292,16 @@ def build_instance(
         _load_param("UDCConstant.csv", "UDCConstant", ["REGION", "UDC", "YEAR"])
         _load_param("UDCTag.csv", "UDCTag", ["REGION", "UDC"])
 
-    # ==========================
-    # CREAR INSTANCIA CONCRETA
-    # ==========================
-    # create_instance rellena sets y parámetros con los datos del DataPortal;
-    # los no cargados usan default del AbstractModel.
-
     logger.info("Creando instancia del modelo...")
+    t_create = perf_counter()
     instance = model.create_instance(data, report_timing=True)
+    load_timings["create_instance_pyomo_seconds"] = perf_counter() - t_create
+    if load_timings:
+        top = sorted(load_timings.items(), key=lambda kv: kv[1], reverse=True)[:5]
+        logger.info(
+            "DataPortal timings (top 5): %s",
+            ", ".join(f"{k}={v:.2f}s" for k, v in top),
+        )
     logger.info("Instancia creada exitosamente")
 
     return instance

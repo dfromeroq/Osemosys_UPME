@@ -39,6 +39,19 @@ from app.simulation.core.solver import solve_model
 logger = logging.getLogger(__name__)
 
 
+def _merge_solver_timings(timings: dict[str, float], solver_result: dict) -> None:
+    """Inyecta sub-etapas del solve en ``model_timings`` del job."""
+    st = solver_result.get("solver_timings")
+    if isinstance(st, dict):
+        for key, val in st.items():
+            if isinstance(val, (int, float)):
+                timings[str(key)] = float(val)
+    cfg = solver_result.get("solver_highs_config")
+    if isinstance(cfg, dict):
+        timings["solver_highs_method"] = cfg.get("method")
+        timings["solver_highs_use_direct"] = cfg.get("use_direct")
+
+
 def _maybe_run_constraint_diagnostics(instance) -> None:
     if os.getenv("OSEMOSYS_CONSTRAINT_DIAGNOSTICS", "0") == "1":
         try:
@@ -60,6 +73,7 @@ def run_osemosys_from_db(
     on_solver_finished: Callable[[Any, Any, Any, dict], None] | None = None,
     run_iis_analysis: bool = False,
     job_id: int | None = None,
+    materialize_intermediate: bool = True,
 ) -> dict:
     """Pipeline completo: DB → CSVs temporales → DataPortal → solve → results.
 
@@ -167,6 +181,7 @@ def run_osemosys_from_db(
             on_solver_finished=on_solver_finished,
         )
         timings["solver_seconds"] = perf_counter() - t
+        _merge_solver_timings(timings, solver_result)
 
         # Análisis enriquecido de infactibilidad INLINE solo si el usuario
         # optó por `run_iis_analysis=True` al encolar la simulación. En ese
@@ -233,6 +248,7 @@ def run_osemosys_from_db(
             daytype_id_by_name=proc_result.daytype_id_by_name,
             dailytimebracket_id_by_name=proc_result.dailytimebracket_id_by_name,
             storage_id_by_name=proc_result.storage_id_by_name,
+            materialize_intermediate=materialize_intermediate,
         )
         timings["results_processing_seconds"] = perf_counter() - t
 
@@ -255,6 +271,7 @@ def run_osemosys_from_csv_dir(
     on_solver_finished: Callable[[Any, Any, Any, dict], None] | None = None,
     run_iis_analysis: bool = False,
     job_id: int | None = None,
+    materialize_intermediate: bool = True,
 ) -> dict:
     """Pipeline desde directorio de CSVs: lee sets del directorio y ejecuta solve → results.
 
@@ -371,6 +388,7 @@ def run_osemosys_from_csv_dir(
         on_solver_finished=on_solver_finished,
     )
     timings["solver_seconds"] = perf_counter() - t
+    _merge_solver_timings(timings, solver_result)
 
     # Análisis enriquecido inline solo si el usuario optó por run_iis_analysis.
     if run_iis_analysis:
@@ -429,6 +447,7 @@ def run_osemosys_from_csv_dir(
         daytype_id_by_name=proc_result.daytype_id_by_name,
         dailytimebracket_id_by_name=proc_result.dailytimebracket_id_by_name,
         storage_id_by_name=proc_result.storage_id_by_name,
+        materialize_intermediate=materialize_intermediate,
     )
     timings["results_processing_seconds"] = perf_counter() - t
 
@@ -449,6 +468,7 @@ def run_osemosys_from_excel(
     lp_dir: str | Path | None = None,
     sheet_name: str = "Parameters",
     div: int = 1,
+    materialize_intermediate: bool = True,
 ) -> dict:
     """Pipeline completo desde archivo Excel: Excel → CSVs temporales → solve → results.
 
@@ -555,6 +575,7 @@ def run_osemosys_from_excel(
             instance, solver_name=solver_name, lp_path=lp_path,
         )
         timings["solver_seconds"] = perf_counter() - t
+        _merge_solver_timings(timings, solver_result)
 
         if on_stage:
             on_stage("solver", 85.0)
@@ -580,6 +601,7 @@ def run_osemosys_from_excel(
             daytype_id_by_name=proc_result.daytype_id_by_name,
             dailytimebracket_id_by_name=proc_result.dailytimebracket_id_by_name,
             storage_id_by_name=proc_result.storage_id_by_name,
+            materialize_intermediate=materialize_intermediate,
         )
         timings["results_processing_seconds"] = perf_counter() - t
 
