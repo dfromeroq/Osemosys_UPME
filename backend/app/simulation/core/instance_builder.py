@@ -57,48 +57,28 @@ def _load_param_pandas(
     if df.empty or "VALUE" not in df.columns:
         return
 
-    required_cols = [*index_cols, "VALUE"]
-    missing_cols = [col for col in required_cols if col not in df.columns]
-    if missing_cols:
-        logger.warning(
-            "CSV %s no contiene columnas esperadas %s para %s",
-            fpath,
-            ",".join(missing_cols),
-            param_name,
-        )
-        return
-
-    df = df[required_cols].copy()
-    for col in index_cols:
-        df[col] = df[col].astype(str).str.strip()
-        df = df[df[col].ne("") & df[col].str.lower().ne("nan")]
-    if df.empty:
-        return
-
-    df["VALUE"] = pd.to_numeric(df["VALUE"], errors="coerce")
-    df["VALUE"] = df["VALUE"].fillna(0.0)
-    if df.empty:
-        return
-
-    for col in index_cols:
-        if col in _INT_INDEX_COLS:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-            df = df[df[col].notna()]
-            df[col] = df[col].astype(int)
-        else:
-            df[col] = df[col].astype(str)
-
-    if df.empty:
-        return
-
-    keys_frame = df[index_cols]
-    values = df["VALUE"].astype(float).to_numpy()
-    if len(index_cols) == 1:
-        keys = keys_frame[index_cols[0]].to_numpy()
-    else:
-        keys = [tuple(row) for row in keys_frame.itertuples(index=False, name=None)]
-
-    param_dict = dict(zip(keys, values, strict=False))
+    param_dict: dict[object, float] = {}
+    for row in df.itertuples(index=False):
+        row_map = dict(zip(df.columns, row))
+        key_parts: list[object] = []
+        for col in index_cols:
+            raw = row_map.get(col)
+            if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+                key_parts = []
+                break
+            text = str(raw).strip()
+            if not text or text.lower() == "nan":
+                key_parts = []
+                break
+            key_parts.append(_coerce_index_value(col, text))
+        if len(key_parts) != len(index_cols):
+            continue
+        key: object = key_parts[0] if len(key_parts) == 1 else tuple(key_parts)
+        raw_val = row_map.get("VALUE")
+        try:
+            param_dict[key] = float(raw_val) if raw_val not in (None, "", "nan") else 0.0
+        except (TypeError, ValueError):
+            param_dict[key] = 0.0
 
     if not param_dict:
         return

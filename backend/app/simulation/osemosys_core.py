@@ -74,7 +74,6 @@ def run_osemosys_from_db(
     run_iis_analysis: bool = False,
     job_id: int | None = None,
     materialize_intermediate: bool = True,
-    simulation_type: str | None = None,
 ) -> dict:
     """Pipeline completo: DB → CSVs temporales → DataPortal → solve → results.
 
@@ -137,7 +136,6 @@ def run_osemosys_from_db(
         model = create_abstract_model(
             has_storage=proc_result.has_storage,
             has_udc=proc_result.has_udc,
-            has_muio=False,
         )
         timings["declare_model_seconds"] = perf_counter() - t
 
@@ -176,32 +174,11 @@ def run_osemosys_from_db(
             lp_path = effective_lp_dir / f"{base}.lp"
 
         t = perf_counter()
-        def _on_solver_stage_internal(stage_name: str) -> None:
-            if on_stage is None:
-                return
-            stage_progress_map = {
-                "set_instance_start": 76.0,
-                "write_lp_start": 76.0,
-                "set_instance_done": 78.0,
-                "write_lp_done": 78.0,
-                "read_model_start": 79.0,
-                "read_model_done": 80.0,
-                "run_start": 82.0,
-                "run_done": 86.0,
-                "map_solution_start": 86.5,
-                "map_solution_done": 87.0,
-            }
-            progress = stage_progress_map.get(stage_name)
-            if progress is not None:
-                on_stage(stage_name, progress)
-
         solver_result = solve_model(
             instance,
             solver_name=solver_name,
-            simulation_type=simulation_type,
             lp_path=lp_path,
             on_solver_finished=on_solver_finished,
-            on_solver_stage=_on_solver_stage_internal,
         )
         timings["solver_seconds"] = perf_counter() - t
         _merge_solver_timings(timings, solver_result)
@@ -295,7 +272,6 @@ def run_osemosys_from_csv_dir(
     run_iis_analysis: bool = False,
     job_id: int | None = None,
     materialize_intermediate: bool = True,
-    simulation_type: str | None = None,
 ) -> dict:
     """Pipeline desde directorio de CSVs: lee sets del directorio y ejecuta solve → results.
 
@@ -377,7 +353,6 @@ def run_osemosys_from_csv_dir(
     model = create_abstract_model(
         has_storage=proc_result.has_storage,
         has_udc=proc_result.has_udc,
-        has_muio=False,
     )
     timings["declare_model_seconds"] = perf_counter() - t
 
@@ -406,32 +381,11 @@ def run_osemosys_from_csv_dir(
         lp_path = effective_lp_dir / f"{lp_basename}.lp"
 
     t = perf_counter()
-    def _on_solver_stage_internal(stage_name: str) -> None:
-        if on_stage is None:
-            return
-        stage_progress_map = {
-            "set_instance_start": 76.0,
-            "write_lp_start": 76.0,
-            "set_instance_done": 78.0,
-            "write_lp_done": 78.0,
-            "read_model_start": 79.0,
-            "read_model_done": 80.0,
-            "run_start": 82.0,
-            "run_done": 86.0,
-            "map_solution_start": 86.5,
-            "map_solution_done": 87.0,
-        }
-        progress = stage_progress_map.get(stage_name)
-        if progress is not None:
-            on_stage(stage_name, progress)
-
     solver_result = solve_model(
         instance,
         solver_name=solver_name,
-        simulation_type=simulation_type,
         lp_path=lp_path,
         on_solver_finished=on_solver_finished,
-        on_solver_stage=_on_solver_stage_internal,
     )
     timings["solver_seconds"] = perf_counter() - t
     _merge_solver_timings(timings, solver_result)
@@ -515,7 +469,6 @@ def run_osemosys_from_excel(
     sheet_name: str = "Parameters",
     div: int = 1,
     materialize_intermediate: bool = True,
-    simulation_type: str | None = None,
 ) -> dict:
     """Pipeline completo desde archivo Excel: Excel → CSVs temporales → solve → results.
 
@@ -587,7 +540,6 @@ def run_osemosys_from_excel(
         model = create_abstract_model(
             has_storage=proc_result.has_storage,
             has_udc=proc_result.has_udc,
-            has_muio=False,
         )
         timings["declare_model_seconds"] = perf_counter() - t
 
@@ -619,31 +571,8 @@ def run_osemosys_from_excel(
             lp_path = effective_lp_dir / f"osemosys_excel_{excel_path.stem}.lp"
 
         t = perf_counter()
-        def _on_solver_stage_internal(stage_name: str) -> None:
-            if on_stage is None:
-                return
-            stage_progress_map = {
-                "set_instance_start": 76.0,
-                "write_lp_start": 76.0,
-                "set_instance_done": 78.0,
-                "write_lp_done": 78.0,
-                "read_model_start": 79.0,
-                "read_model_done": 80.0,
-                "run_start": 82.0,
-                "run_done": 86.0,
-                "map_solution_start": 86.5,
-                "map_solution_done": 87.0,
-            }
-            progress = stage_progress_map.get(stage_name)
-            if progress is not None:
-                on_stage(stage_name, progress)
-
         solver_result = solve_model(
-            instance,
-            solver_name=solver_name,
-            simulation_type=simulation_type,
-            lp_path=lp_path,
-            on_solver_stage=_on_solver_stage_internal,
+            instance, solver_name=solver_name, lp_path=lp_path,
         )
         timings["solver_seconds"] = perf_counter() - t
         _merge_solver_timings(timings, solver_result)

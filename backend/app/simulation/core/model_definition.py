@@ -36,7 +36,6 @@ from pyomo.environ import (
 def create_abstract_model(
     has_storage: bool = False,
     has_udc: bool = True,
-    has_muio: bool = False,
 ) -> AbstractModel:
     """Construye el AbstractModel OSeMOSYS completo.
 
@@ -46,8 +45,6 @@ def create_abstract_model(
         Si True, incluye sets/params/vars/constraints de almacenamiento.
     has_udc : bool
         Si True, incluye User-Defined Constraints.
-    has_muio : bool
-        Si True, incluye parámetros y restricciones MUIO (LU1-LU4).
 
     Returns
     -------
@@ -244,33 +241,32 @@ def create_abstract_model(
     #    Parameters — MUIO
     # ====================================================================
 
-    if has_muio:
-        model.InputToNewCapacityRatio = Param(
-            model.REGION, model.TECHNOLOGY, model.FUEL, model.YEAR, within=Reals, default=0,
-        )
-        model.InputToTotalCapacityRatio = Param(
-            model.REGION, model.TECHNOLOGY, model.FUEL, model.YEAR, within=Reals, default=0,
-        )
-        model.TechnologyActivityByModeLowerLimit = Param(
-            model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR,
-            within=Reals, default=0,
-        )
-        model.TechnologyActivityByModeUpperLimit = Param(
-            model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR,
-            within=Reals, default=0,
-        )
-        model.TechnologyActivityDecreaseByModeLimit = Param(
-            model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR,
-            within=Reals, default=0,
-        )
-        model.TechnologyActivityIncreaseByModeLimit = Param(
-            model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR,
-            within=Reals, default=0,
-        )
-        model.EmissionToActivityChangeRatio = Param(
-            model.REGION, model.TECHNOLOGY, model.EMISSION, model.MODE_OF_OPERATION, model.YEAR,
-            within=Reals, default=0,
-        )
+    model.InputToNewCapacityRatio = Param(
+        model.REGION, model.TECHNOLOGY, model.FUEL, model.YEAR, within=Reals, default=0,
+    )
+    model.InputToTotalCapacityRatio = Param(
+        model.REGION, model.TECHNOLOGY, model.FUEL, model.YEAR, within=Reals, default=0,
+    )
+    model.TechnologyActivityByModeLowerLimit = Param(
+        model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR,
+        within=Reals, default=0,
+    )
+    model.TechnologyActivityByModeUpperLimit = Param(
+        model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR,
+        within=Reals, default=0,
+    )
+    model.TechnologyActivityDecreaseByModeLimit = Param(
+        model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR,
+        within=Reals, default=0,
+    )
+    model.TechnologyActivityIncreaseByModeLimit = Param(
+        model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR,
+        within=Reals, default=0,
+    )
+    model.EmissionToActivityChangeRatio = Param(
+        model.REGION, model.TECHNOLOGY, model.EMISSION, model.MODE_OF_OPERATION, model.YEAR,
+        within=Reals, default=0,
+    )
 
     # ====================================================================
     #    Parameters — UDC (User-Defined Constraints)
@@ -875,8 +871,6 @@ def create_abstract_model(
     )
 
     def TotalAnnualMinCapacityConstraint_rule(m, r, t, y):
-        if m.TotalAnnualMinCapacity[r, t, y] == 0:
-            return Constraint.Skip
         return (
             sum(
                 m.NewCapacity[r, t, yy]
@@ -958,8 +952,6 @@ def create_abstract_model(
     )
 
     def TotalAnnualMinNewCapacityConstraint_rule(m, r, t, y):
-        if m.TotalAnnualMinCapacityInvestment[r, t, y] == 0:
-            return Constraint.Skip
         return m.NewCapacity[r, t, y] >= m.TotalAnnualMinCapacityInvestment[r, t, y]
     model.TotalAnnualMinNewCapacityConstraint = Constraint(
         model.REGION, model.TECHNOLOGY, model.YEAR,
@@ -987,8 +979,6 @@ def create_abstract_model(
     )
 
     def TotalAnnualTechnologyActivityLowerLimit_rule(m, r, t, y):
-        if m.TotalTechnologyAnnualActivityLowerLimit[r, t, y] == 0:
-            return Constraint.Skip
         return (
             sum(
                 sum(m.RateOfActivity[r, l, t, mo, y] for mo in m.MODE_OF_OPERATION)
@@ -1203,56 +1193,53 @@ def create_abstract_model(
     #    Constraints — MUIO
     # ####################################################################
 
-    if has_muio:
-        def LU1_rule(m, r, t, mo, y):
-            if m.TechnologyActivityByModeUpperLimit[r, t, mo, y] == 0:
-                return Constraint.Skip
-            return (
-                sum(m.RateOfActivity[r, l, t, mo, y] * m.YearSplit[l, y] for l in m.TIMESLICE)
-                <= m.TechnologyActivityByModeUpperLimit[r, t, mo, y]
-            )
-        model.LU1_TechnologyActivityByModeUL = Constraint(
-            model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR,
-            rule=LU1_rule,
+    def LU1_rule(m, r, t, mo, y):
+        if m.TechnologyActivityByModeUpperLimit[r, t, mo, y] == 0:
+            return Constraint.Skip
+        return (
+            sum(m.RateOfActivity[r, l, t, mo, y] * m.YearSplit[l, y] for l in m.TIMESLICE)
+            <= m.TechnologyActivityByModeUpperLimit[r, t, mo, y]
         )
+    model.LU1_TechnologyActivityByModeUL = Constraint(
+        model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR,
+        rule=LU1_rule,
+    )
 
-        def LU2_rule(m, r, t, mo, y):
-            if m.TechnologyActivityByModeLowerLimit[r, t, mo, y] == 0:
-                return Constraint.Skip
-            return (
-                sum(m.RateOfActivity[r, l, t, mo, y] * m.YearSplit[l, y] for l in m.TIMESLICE)
-                >= m.TechnologyActivityByModeLowerLimit[r, t, mo, y]
-            )
-        model.LU2_TechnologyActivityByModeLL = Constraint(
-            model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR,
-            rule=LU2_rule,
+    def LU2_rule(m, r, t, mo, y):
+        return (
+            sum(m.RateOfActivity[r, l, t, mo, y] * m.YearSplit[l, y] for l in m.TIMESLICE)
+            >= m.TechnologyActivityByModeLowerLimit[r, t, mo, y]
         )
+    model.LU2_TechnologyActivityByModeLL = Constraint(
+        model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR,
+        rule=LU2_rule,
+    )
 
-        def LU3_rule(m, r, t, mo, y, yy):
-            if (y - yy != 1) or (m.TechnologyActivityIncreaseByModeLimit[r, t, mo, yy] == 0):
-                return Constraint.Skip
-            return (
-                sum(m.RateOfActivity[r, l, t, mo, y] * m.YearSplit[l, y] for l in m.TIMESLICE)
-                <= (1 + m.TechnologyActivityIncreaseByModeLimit[r, t, mo, yy])
-                * sum(m.RateOfActivity[r, l, t, mo, yy] * m.YearSplit[l, yy] for l in m.TIMESLICE)
-            )
-        model.LU3_TechnologyActivityIncreaseByMode = Constraint(
-            model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR, model.YEAR,
-            rule=LU3_rule,
+    def LU3_rule(m, r, t, mo, y, yy):
+        if (y - yy != 1) or (m.TechnologyActivityIncreaseByModeLimit[r, t, mo, yy] == 0):
+            return Constraint.Skip
+        return (
+            sum(m.RateOfActivity[r, l, t, mo, y] * m.YearSplit[l, y] for l in m.TIMESLICE)
+            <= (1 + m.TechnologyActivityIncreaseByModeLimit[r, t, mo, yy])
+            * sum(m.RateOfActivity[r, l, t, mo, yy] * m.YearSplit[l, yy] for l in m.TIMESLICE)
         )
+    model.LU3_TechnologyActivityIncreaseByMode = Constraint(
+        model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR, model.YEAR,
+        rule=LU3_rule,
+    )
 
-        def LU4_rule(m, r, t, mo, y, yy):
-            if (y - yy != 1) or (m.TechnologyActivityDecreaseByModeLimit[r, t, mo, yy] == 0):
-                return Constraint.Skip
-            return (
-                sum(m.RateOfActivity[r, l, t, mo, y] * m.YearSplit[l, y] for l in m.TIMESLICE)
-                >= (1 - m.TechnologyActivityDecreaseByModeLimit[r, t, mo, yy])
-                * sum(m.RateOfActivity[r, l, t, mo, yy] * m.YearSplit[l, yy] for l in m.TIMESLICE)
-            )
-        model.LU4_TechnologyActivityDecreaseByMode = Constraint(
-            model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR, model.YEAR,
-            rule=LU4_rule,
+    def LU4_rule(m, r, t, mo, y, yy):
+        if (y - yy != 1) or (m.TechnologyActivityDecreaseByModeLimit[r, t, mo, yy] == 0):
+            return Constraint.Skip
+        return (
+            sum(m.RateOfActivity[r, l, t, mo, y] * m.YearSplit[l, y] for l in m.TIMESLICE)
+            >= (1 - m.TechnologyActivityDecreaseByModeLimit[r, t, mo, yy])
+            * sum(m.RateOfActivity[r, l, t, mo, yy] * m.YearSplit[l, yy] for l in m.TIMESLICE)
         )
+    model.LU4_TechnologyActivityDecreaseByMode = Constraint(
+        model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR, model.YEAR,
+        rule=LU4_rule,
+    )
 
     # ####################################################################
     #    Constraints — UDC (User-Defined Constraints: combinación lineal de capacidad/actividad vs constante)
