@@ -46,6 +46,15 @@ def _fake_settings(**overrides: object) -> SimpleNamespace:
         sim_solver_highs_time_limit=0.0,
         sim_solver_highs_ipm_tol=1e-7,
         sim_solver_highs_primal_tol=1e-7,
+        sim_solver_highs_regional_threads=None,
+        sim_solver_highs_regional_method=None,
+        sim_solver_highs_regional_presolve=None,
+        sim_solver_highs_regional_parallel=None,
+        sim_solver_highs_regional_crossover=None,
+        sim_solver_highs_regional_direct=None,
+        sim_solver_highs_regional_time_limit=None,
+        sim_solver_highs_regional_ipm_tol=None,
+        sim_solver_highs_regional_primal_tol=None,
     )
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -62,6 +71,69 @@ def test_resolve_highs_config_from_env() -> None:
     assert cfg.presolve == "on"
     assert cfg.parallel == "on"
     assert cfg.threads == 8
+
+
+def test_resolve_highs_config_uses_regional_overlay() -> None:
+    cfg = resolve_highs_config(
+        _fake_settings(
+            sim_solver_threads=12,
+            sim_solver_highs_method="choose",
+            sim_solver_highs_direct=False,
+            sim_solver_highs_regional_threads=4,
+            sim_solver_highs_regional_method="simplex",
+            sim_solver_highs_regional_presolve="off",
+            sim_solver_highs_regional_parallel="off",
+            sim_solver_highs_regional_crossover="off",
+            sim_solver_highs_regional_direct=True,
+            sim_solver_highs_regional_time_limit=123.0,
+            sim_solver_highs_regional_ipm_tol=1e-5,
+            sim_solver_highs_regional_primal_tol=1e-6,
+        ),
+        simulation_type="REGIONAL",
+    )
+    assert cfg.threads == 4
+    assert cfg.method == "simplex"
+    assert cfg.presolve == "off"
+    assert cfg.parallel == "off"
+    assert cfg.run_crossover == "off"
+    assert cfg.use_direct is True
+    assert cfg.time_limit == 123.0
+    assert cfg.ipm_optimality_tolerance == 1e-5
+    assert cfg.primal_feasibility_tolerance == 1e-6
+
+
+def test_resolve_highs_config_regional_fallback_to_global_when_empty() -> None:
+    cfg = resolve_highs_config(
+        _fake_settings(
+            sim_solver_threads=9,
+            sim_solver_highs_method="ipm",
+            sim_solver_highs_presolve="choose",
+            sim_solver_highs_parallel="on",
+            sim_solver_highs_crossover="choose",
+            sim_solver_highs_direct=False,
+        ),
+        simulation_type="REGIONAL",
+    )
+    assert cfg.threads == 9
+    assert cfg.method == "ipm"
+    assert cfg.presolve == "choose"
+    assert cfg.parallel == "on"
+    assert cfg.run_crossover == "choose"
+    assert cfg.use_direct is False
+
+
+def test_resolve_highs_config_national_ignores_regional_overlay() -> None:
+    cfg = resolve_highs_config(
+        _fake_settings(
+            sim_solver_threads=8,
+            sim_solver_highs_method="choose",
+            sim_solver_highs_regional_method="simplex",
+            sim_solver_highs_regional_threads=2,
+        ),
+        simulation_type="NATIONAL",
+    )
+    assert cfg.threads == 8
+    assert cfg.method == "choose"
 
 
 def test_apply_highs_options_to_dict() -> None:
@@ -117,7 +189,7 @@ def test_solve_model_sets_highs_threads_and_options_when_appsi(monkeypatch) -> N
     monkeypatch.setattr(
         solver_module,
         "resolve_highs_config",
-        lambda _settings: SolverHighsConfig(
+        lambda _settings, **_kwargs: SolverHighsConfig(
             threads=8,
             method="ipm",
             presolve="on",
@@ -162,7 +234,7 @@ def test_solve_model_routes_to_direct_highspy(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
         solver_module,
         "resolve_highs_config",
-        lambda _settings: SolverHighsConfig(threads=16, use_direct=True),
+        lambda _settings, **_kwargs: SolverHighsConfig(threads=16, use_direct=True),
     )
     monkeypatch.setattr(
         solver_module,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -51,14 +51,50 @@ class Settings(BaseSettings):
     sim_solver_tee: bool = Field(default=False, alias="SIM_SOLVER_TEE")
     sim_solver_keepfiles: bool = Field(default=False, alias="SIM_SOLVER_KEEPFILES")
     sim_solver_threads: int = Field(default=0, alias="SIM_SOLVER_THREADS")
-    sim_solver_highs_method: str = Field(default="ipm", alias="SIM_SOLVER_HIGHS_METHOD")
+    sim_solver_highs_method: str = Field(default="choose", alias="SIM_SOLVER_HIGHS_METHOD")
     sim_solver_highs_presolve: str = Field(default="on", alias="SIM_SOLVER_HIGHS_PRESOLVE")
     sim_solver_highs_parallel: str = Field(default="on", alias="SIM_SOLVER_HIGHS_PARALLEL")
-    sim_solver_highs_crossover: str = Field(default="choose", alias="SIM_SOLVER_HIGHS_CROSSOVER")
-    sim_solver_highs_direct: bool = Field(default=True, alias="SIM_SOLVER_HIGHS_DIRECT")
+    sim_solver_highs_crossover: str = Field(default="on", alias="SIM_SOLVER_HIGHS_CROSSOVER")
+    sim_solver_highs_direct: bool = Field(default=False, alias="SIM_SOLVER_HIGHS_DIRECT")
     sim_solver_highs_time_limit: float = Field(default=0.0, alias="SIM_SOLVER_HIGHS_TIME_LIMIT")
     sim_solver_highs_ipm_tol: float = Field(default=1e-7, alias="SIM_SOLVER_HIGHS_IPM_TOL")
     sim_solver_highs_primal_tol: float = Field(default=1e-7, alias="SIM_SOLVER_HIGHS_PRIMAL_TOL")
+    sim_solver_highs_regional_threads: int | None = Field(
+        default=None,
+        alias="SIM_SOLVER_HIGHS_REGIONAL_THREADS",
+    )
+    sim_solver_highs_regional_method: str | None = Field(
+        default=None,
+        alias="SIM_SOLVER_HIGHS_REGIONAL_METHOD",
+    )
+    sim_solver_highs_regional_presolve: str | None = Field(
+        default=None,
+        alias="SIM_SOLVER_HIGHS_REGIONAL_PRESOLVE",
+    )
+    sim_solver_highs_regional_parallel: str | None = Field(
+        default=None,
+        alias="SIM_SOLVER_HIGHS_REGIONAL_PARALLEL",
+    )
+    sim_solver_highs_regional_crossover: str | None = Field(
+        default=None,
+        alias="SIM_SOLVER_HIGHS_REGIONAL_CROSSOVER",
+    )
+    sim_solver_highs_regional_direct: bool | None = Field(
+        default=None,
+        alias="SIM_SOLVER_HIGHS_REGIONAL_DIRECT",
+    )
+    sim_solver_highs_regional_time_limit: float | None = Field(
+        default=None,
+        alias="SIM_SOLVER_HIGHS_REGIONAL_TIME_LIMIT",
+    )
+    sim_solver_highs_regional_ipm_tol: float | None = Field(
+        default=None,
+        alias="SIM_SOLVER_HIGHS_REGIONAL_IPM_TOL",
+    )
+    sim_solver_highs_regional_primal_tol: float | None = Field(
+        default=None,
+        alias="SIM_SOLVER_HIGHS_REGIONAL_PRIMAL_TOL",
+    )
     simulation_artifacts_dir: str = Field(default="/app/tmp", alias="SIMULATION_ARTIFACTS_DIR")
     docker_socket_path: str = Field(default="/var/run/docker.sock", alias="DOCKER_SOCKET_PATH")
     docker_metrics_services: str = Field(
@@ -81,6 +117,20 @@ class Settings(BaseSettings):
     # Auth
     secret_key: str = Field(default="change-me", alias="SECRET_KEY")
     access_token_expire_minutes: int = Field(default=60, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
+
+    @field_validator(
+        "sim_solver_highs_regional_threads",
+        "sim_solver_highs_regional_direct",
+        "sim_solver_highs_regional_time_limit",
+        "sim_solver_highs_regional_ipm_tol",
+        "sim_solver_highs_regional_primal_tol",
+        mode="before",
+    )
+    @classmethod
+    def _empty_string_to_none(cls, value: object) -> object:
+        if isinstance(value, str) and value.strip() == "":
+            return None
+        return value
 
     def cors_origins_list(self) -> list[str]:
         """Convierte `CORS_ORIGINS` coma-separado a lista normalizada."""

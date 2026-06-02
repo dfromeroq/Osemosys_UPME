@@ -27,11 +27,11 @@ class SolverHighsConfig:
     """Opciones HiGHS efectivas para una corrida."""
 
     threads: int = 0
-    method: str = "ipm"
+    method: str = "choose"
     presolve: str = "on"
     parallel: str = "on"
-    run_crossover: str = "choose"
-    use_direct: bool = True
+    run_crossover: str = "on"
+    use_direct: bool = False
     time_limit: float = 0.0
     ipm_optimality_tolerance: float = 1e-7
     primal_feasibility_tolerance: float = 1e-7
@@ -75,17 +75,54 @@ def _read_db_bool(db, key: str, default: bool) -> bool:
     return raw.lower() in {"1", "true", "yes", "on"}
 
 
-def resolve_highs_config(settings: object) -> SolverHighsConfig:
+def resolve_highs_config(settings: object, *, simulation_type: str | None = None) -> SolverHighsConfig:
     """Combina env vars con overrides de BD (admin UI)."""
     threads = int(getattr(settings, "sim_solver_threads", 0) or 0)
-    method = str(getattr(settings, "sim_solver_highs_method", "ipm") or "ipm")
+    method = str(getattr(settings, "sim_solver_highs_method", "choose") or "choose")
     presolve = str(getattr(settings, "sim_solver_highs_presolve", "on") or "on")
     parallel = str(getattr(settings, "sim_solver_highs_parallel", "on") or "on")
-    run_crossover = str(getattr(settings, "sim_solver_highs_crossover", "choose") or "choose")
-    use_direct = bool(getattr(settings, "sim_solver_highs_direct", True))
+    run_crossover = str(getattr(settings, "sim_solver_highs_crossover", "on") or "on")
+    use_direct = bool(getattr(settings, "sim_solver_highs_direct", False))
     time_limit = float(getattr(settings, "sim_solver_highs_time_limit", 0) or 0)
     ipm_tol = float(getattr(settings, "sim_solver_highs_ipm_tol", 1e-7) or 1e-7)
     primal_tol = float(getattr(settings, "sim_solver_highs_primal_tol", 1e-7) or 1e-7)
+
+    if str(simulation_type or "").strip().upper() == "REGIONAL":
+        regional_threads = getattr(settings, "sim_solver_highs_regional_threads", None)
+        if regional_threads is not None:
+            threads = int(regional_threads)
+
+        regional_method = getattr(settings, "sim_solver_highs_regional_method", None)
+        if regional_method:
+            method = str(regional_method)
+
+        regional_presolve = getattr(settings, "sim_solver_highs_regional_presolve", None)
+        if regional_presolve:
+            presolve = str(regional_presolve)
+
+        regional_parallel = getattr(settings, "sim_solver_highs_regional_parallel", None)
+        if regional_parallel:
+            parallel = str(regional_parallel)
+
+        regional_crossover = getattr(settings, "sim_solver_highs_regional_crossover", None)
+        if regional_crossover:
+            run_crossover = str(regional_crossover)
+
+        regional_direct = getattr(settings, "sim_solver_highs_regional_direct", None)
+        if regional_direct is not None:
+            use_direct = bool(regional_direct)
+
+        regional_time_limit = getattr(settings, "sim_solver_highs_regional_time_limit", None)
+        if regional_time_limit is not None:
+            time_limit = float(regional_time_limit)
+
+        regional_ipm_tol = getattr(settings, "sim_solver_highs_regional_ipm_tol", None)
+        if regional_ipm_tol is not None:
+            ipm_tol = float(regional_ipm_tol)
+
+        regional_primal_tol = getattr(settings, "sim_solver_highs_regional_primal_tol", None)
+        if regional_primal_tol is not None:
+            primal_tol = float(regional_primal_tol)
 
     try:
         from app.db.session import SessionLocal
@@ -119,10 +156,10 @@ def resolve_highs_config(settings: object) -> SolverHighsConfig:
 
     return SolverHighsConfig(
         threads=threads,
-        method=_normalize_choice(method, allowed=VALID_HIGHS_METHODS, default="ipm"),
+        method=_normalize_choice(method, allowed=VALID_HIGHS_METHODS, default="choose"),
         presolve=_normalize_choice(presolve, allowed=VALID_ON_OFF_CHOOSE, default="on"),
         parallel=_normalize_choice(parallel, allowed=VALID_ON_OFF_CHOOSE, default="on"),
-        run_crossover=_normalize_choice(run_crossover, allowed=VALID_ON_OFF_CHOOSE, default="choose"),
+        run_crossover=_normalize_choice(run_crossover, allowed=VALID_ON_OFF_CHOOSE, default="on"),
         use_direct=use_direct,
         time_limit=max(0.0, time_limit),
         ipm_optimality_tolerance=ipm_tol,

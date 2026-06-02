@@ -497,7 +497,19 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
             msg = "Análisis de infactibilidad finalizado."
             evt = "INFO"
         else:
-            msg = f"Bloque {stage_name} ejecutado."
+            stage_messages = {
+                "set_instance_start": "Iniciando carga del modelo al backend del solver.",
+                "set_instance_done": "Carga del modelo al solver completada.",
+                "write_lp_start": "Generando archivo LP para solver directo.",
+                "write_lp_done": "Archivo LP generado.",
+                "read_model_start": "Leyendo LP en el backend del solver.",
+                "read_model_done": "Lectura de LP finalizada.",
+                "run_start": "Ejecutando optimización en solver.",
+                "run_done": "Ejecución principal del solver finalizada.",
+                "map_solution_start": "Mapeando solución del solver al modelo.",
+                "map_solution_done": "Mapeo de solución completado.",
+            }
+            msg = stage_messages.get(stage_name, f"Bloque {stage_name} ejecutado.")
             evt = "STAGE"
         SimulationRepository.add_event(
             db,
@@ -527,6 +539,7 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
         lp_basename=_lp_basename_eff,
         job_id=job_id,
         materialize_intermediate=False,
+        simulation_type=getattr(job, "simulation_type", None),
     )
 
     # Persistimos la ruta del .lp si se generó: habilita descarga vía
@@ -675,7 +688,19 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
             msg = "Análisis de infactibilidad finalizado."
             evt = "INFO"
         else:
-            msg = f"Bloque {stage_name} ejecutado."
+            stage_messages = {
+                "set_instance_start": "Iniciando carga del modelo al backend del solver.",
+                "set_instance_done": "Carga del modelo al solver completada.",
+                "write_lp_start": "Generando archivo LP para solver directo.",
+                "write_lp_done": "Archivo LP generado.",
+                "read_model_start": "Leyendo LP en el backend del solver.",
+                "read_model_done": "Lectura de LP finalizada.",
+                "run_start": "Ejecutando optimización en solver.",
+                "run_done": "Ejecución principal del solver finalizada.",
+                "map_solution_start": "Mapeando solución del solver al modelo.",
+                "map_solution_done": "Mapeo de solución completado.",
+            }
+            msg = stage_messages.get(stage_name, f"Bloque {stage_name} ejecutado.")
             evt = "STAGE"
         SimulationRepository.add_event(
             db,
@@ -701,6 +726,7 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
         lp_basename=_lp_basename_eff,
         job_id=job_id,
         materialize_intermediate=False,
+        simulation_type=getattr(job, "simulation_type", None),
     )
 
     if _gen_lp and _lp_dir_eff:
