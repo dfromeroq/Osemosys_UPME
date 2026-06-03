@@ -149,6 +149,267 @@ CONFIGS_CON_ALIAS_PWR: frozenset[str] = frozenset(
 # ════════════════════════════════════════════════════════════════════════
 
 
+TECNOLOGIAS_GAS_CONSUMO = [
+    "CTRNGS",
+    "DEMAGFNGS",
+    "DEMCONSNGS",
+    "DEMINDNGSBOI",
+    "DEMINDNGSBOICCS",
+    "DEMINDNGSBOI_HIG",
+    "DEMINDNGSBOI_LOW",
+    "DEMINDNGSBOI_MID",
+    "DEMINDNGSFUR",
+    "DEMINDNGSFURCCS",
+    "DEMINDNGSFURCSS",
+    "DEMINDNGSFUR_HIG",
+    "DEMINDNGSFUR_LOW",
+    "DEMINDNGSFUR_MID",
+    "DEMMININGS",
+    "DEMNGSAUT",
+    "DEMRESNGSCKN_HIG",
+    "DEMRESNGSCKN_HIG_RUR",
+    "DEMRESNGSCKN_HIG_URB",
+    "DEMRESNGSCKN_LOW",
+    "DEMRESNGSCKN_LOW_RUR",
+    "DEMRESNGSCKN_LOW_URB",
+    "DEMRESNGSCKN_MID",
+    "DEMRESNGSCKN_MID_RUR",
+    "DEMRESNGSCKN_MID_URB",
+    "DEMRESNGSWHT_FOR_HIG_RUR",
+    "DEMRESNGSWHT_FOR_HIG_URB",
+    "DEMRESNGSWHT_FOR_LOW_RUR",
+    "DEMRESNGSWHT_FOR_LOW_URB",
+    "DEMRESNGSWHT_FOR_MID_RUR",
+    "DEMRESNGSWHT_FOR_MID_URB",
+    "DEMRESNGSWHT_LOW",
+    "DEMRESNGSWHT_NAT_HIG_RUR",
+    "DEMRESNGSWHT_NAT_HIG_URB",
+    "DEMRESNGSWHT_NAT_LOW_RUR",
+    "DEMRESNGSWHT_NAT_LOW_URB",
+    "DEMTERNGSBOI_LOW",
+    "DEMTERNGSCKN_HIG",
+    "DEMTERNGSCKN_LOW",
+    "DEMTRANGSBUS",
+    "DEMTRANGSBUS_ART",
+    "DEMTRANGSBUS_BIA",
+    "DEMTRANGSBUS_IMU",
+    "DEMTRANGSBUS_URB",
+    "DEMTRANGSFWD",
+    "DEMTRANGSLDV",
+    "DEMTRANGSMIC",
+    "DEMTRANGSMOT",
+    "DEMTRANGSSTT",
+    "DEMTRANGSTAX",
+    "DEMTRANGSTCK",
+    "DEMTRANGSTCK_C2P",
+    "DEMTRANGSTCK_CSG",
+    "GRDNGSDST",
+    "GRDNGSTRN",
+    "PWRNGS",
+    "PWRNGSCCS",
+    "PWRNGS_CC",
+    "PWRNGS_CS",
+]
+
+COMBUSTIBLES_GAS_CONSUMO = ["NGS002", "NGS"]
+
+
+def _filtro_gas_consumo(df, **kw):
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_GAS_CONSUMO)]
+    # return df[df["FUEL"].isin(COMBUSTIBLES_GAS_CONSUMO)]
+
+
+TECNOLOGIAS_GAS_PRODUCCION = ["UPSREG", "UPSREG_2", "MINNGS"]
+
+
+def _filtro_gas_produccion(df, **kw):
+    """Tecnologías de producción de gas (UPSREG / MINNGS)."""
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_GAS_PRODUCCION)]
+
+
+TECNOLOGIAS_GAS_FLUJOS = ["IMPLNG", "EXPNGS"]
+
+
+def _filtro_gas_flujos(df, **kw):
+    """Importaciones y exportaciones de gas natural (IMPLNG, EXPNGS)."""
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_GAS_FLUJOS)]
+
+
+TECNOLOGIAS_REFINERIAS = ["UPSREF_BAR", "UPSREF_CAR", "UPSREF_REF"]
+
+
+def _filtro_ref_total(df, **kw):
+    """Tecnologías de refinería (UPSREF)."""
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_REFINERIAS)]
+
+
+TECNOLOGIAS_REFINERIAS_IMPORTACIONES = [
+    "UPSREF_BAR",
+    "UPSREF_CAR",
+    "UPSREF_REF",
+    "IMPDSL",
+    "IMPGSL",
+    "IMPJET",
+    "IMPLPG",
+]
+
+
+def _filtro_ref_import(df, **kw):
+    """Refinerías + importaciones."""
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_REFINERIAS_IMPORTACIONES)]
+
+
+TECNOLOGIAS_REFINERIAS_CARTAGENA = ["UPSREF_CAR"]
+
+
+def _filtro_ref_cartagena(df, **kw):
+    """Refinería de Cartagena (UPSREF_CAR)."""
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_REFINERIAS_CARTAGENA)]
+
+
+TECNOLOGIAS_REFINERIAS_BARRANCABERMEJA = ["UPSREF_BAR"]
+
+
+def _filtro_ref_barrancabermeja(df, **kw):
+    """Refinería de Barrancabermeja (UPSREF_BAR)."""
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_REFINERIAS_BARRANCABERMEJA)]
+
+
+TECNOLOGIAS_REFINERIAS_BAR_CAR = [
+    "UPSREF_BAR",
+    "UPSREF_CAR",
+]
+
+COMBUSTIBLES_REFINERIA_CON_CRUDO = {
+    # DSL
+    "CONSDSL",
+    "COQDSL",
+    "CYRDSL",
+    "DSL",
+    "DSL002",
+    "MINIDSL",
+    # GSL
+    "CONSGSL",
+    "COQGSL",
+    "CYRGSL",
+    "GSL",
+    "GSL002",
+    "MINIGSL",
+    # JET
+    "JET",
+    # LPG
+    "CYRLPG",
+    "LPG",
+    "LPG002",
+    # NGS
+    "CONSNGS",
+    "CYRNGS",
+    "MININGS",
+    "NGS",
+    "NGS000",
+    "NGS002",
+    "NGSAUT",
+    # ELC
+    "AGFELC",
+    "CONSELC",
+    "CYRELC",
+    "ELC",
+    "ELC002",
+    "ELC003",
+    "ELC004",
+    "ELCZNI",
+    "INDOTH_ELC",
+    "MINIELC",
+    "NSEELC",
+    "RESELC_ZNI",
+    # OIL
+    "OIL",
+    "OIL002",
+    "OILPAL",
+    "OIL_1LIV",
+    "OIL_2MID",
+    "OIL_3PES",
+}
+
+COMBUSTIBLES_REFINERIA_SIN_CRUDO = COMBUSTIBLES_REFINERIA_CON_CRUDO - {
+    "OIL_1LIV",
+    "OIL_2MID",
+    "OIL_3PES",
+}
+
+
+def _filtro_ref_ambas(df, sub_filtro=None, **kw):
+    """Refinerías Cartagena + Barrancabermeja."""
+
+    mask_tech = df["TECHNOLOGY"].isin(TECNOLOGIAS_REFINERIAS_BAR_CAR)
+
+    if sub_filtro == "sin_crudo":
+        return df[mask_tech & df["FUEL"].isin(COMBUSTIBLES_REFINERIA_SIN_CRUDO)]
+
+    return df[mask_tech & df["FUEL"].isin(COMBUSTIBLES_REFINERIA_CON_CRUDO)]
+
+
+TECNOLOGIAS_LIQUIDOS_PRODUCCION_IMPORTACION = [
+    "IMPDSL",
+    "IMPGSL",
+    "IMPJET",
+    "IMPLPG",
+    "UPSREF_CAR",
+    "UPSREF_BAR",
+    "EXPDSL",
+    "EXPGSL",
+    "EXPLPG",
+    "EXPJET",
+]
+
+
+def _filtro_liquidos_produccion_importacion(df, **kw):
+    """Líquidos: importaciones (DSL, GSL, JET, LPG) + refinerías (CAR, BAR)."""
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_LIQUIDOS_PRODUCCION_IMPORTACION)]
+
+
+TECNOLOGIAS_EXPORTACION_LIQUIDOS = ["EXPDSL", "EXPGSL", "EXPJET", "EXPLPG"]
+
+
+def _filtro_export_liquidos(df, **kw):
+    """Exportaciones de líquidos (EXPDSL, EXPGSL, EXPJET, EXPLPG)."""
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_EXPORTACION_LIQUIDOS)]
+
+
+TECNOLOGIAS_IMPORTACION_LIQIDOS = ["IMPDSL", "IMPGSL", "IMPJET", "IMPLPG"]
+
+
+def _filtro_import_liquidos(df, **kw):
+    """Importaciones de líquidos (IMPDSL, IMPGSL, IMPJET, IMPLNG, IMPLPG, IMPOIL)."""
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_IMPORTACION_LIQIDOS)]
+
+
+TECNOLOGIAS_IMPORTACION_EXPORTACION_CRUDO = ["IMPOIL", "EXPOIL"]
+
+
+def _filtro_crudo_flujos(df, **kw):
+    """Importaciones y exportaciones de crudo (IMPOIL, EXPOIL)."""
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_IMPORTACION_EXPORTACION_CRUDO)]
+
+
+TECNOLOGIAS_EXPORTACION_CARBON = ["EXPCOA"]
+
+
+def _filtro_exp_carbon(df, **kw):
+    """Exportaciones de carbón (EXPCOA)."""
+    return df[df["TECHNOLOGY"].isin("EXPCOA")]
+
+
+def _filtro_ref_produccion_importaciones(df, **kw):
+    """Refinerías específicas + importaciones de combustibles líquidos refinados."""
+    return df[
+        df["TECHNOLOGY"].str.startswith(
+            ("UPSREF_CAR", "UPSREF_BAR", "IMPDSL", "IMPGSL", "IMPJET", "IMPLPG")
+        )
+    ]
+
+
+###########################################################################################################
 def _filtro_contiene(df, prefijo: str, sub_filtro=None, **kw):
     """Filtro genérico: TECHNOLOGY *contiene* el texto dado."""
     return df[df["TECHNOLOGY"].str.contains(prefijo)]
@@ -181,91 +442,9 @@ def _filtro_pwr_termica(df, **kw):
     return df[df["TECHNOLOGY"].str.startswith(("PWRNGS", "PWRBGS", "PWRCOA"))]
 
 
-def _filtro_gas_consumo(df, **kw):
-    """Tecnologías que usan gas natural (contienen NGS)."""
-    return df[df["TECHNOLOGY"].str.contains("NGS")]
-
-
-def _filtro_gas_produccion(df, **kw):
-    """Tecnologías de producción de gas (UPSREG / MINNGS)."""
-    return df[
-        df["TECHNOLOGY"].str.startswith("UPSREG")
-        | df["TECHNOLOGY"].str.startswith("MINNGS")
-    ]
-
-
-def _filtro_gas_flujos(df, **kw):
-    """Importaciones y exportaciones de gas natural (IMPLNG, EXPNGS)."""
-    return df[df["TECHNOLOGY"].str.startswith(("IMPLNG", "EXPNGS"))]
-
-
-def _filtro_ref_total(df, **kw):
-    """Tecnologías de refinería (UPSREF)."""
-    return df[df["TECHNOLOGY"].str.startswith("UPSREF")]
-
-
-def _filtro_ref_cartagena(df, **kw):
-    """Refinería de Cartagena (UPSREF_CAR)."""
-    return df[df["TECHNOLOGY"].str.startswith("UPSREF_CAR")]
-
-
-def _filtro_ref_barrancabermeja(df, **kw):
-    """Refinería de Barrancabermeja (UPSREF_BAR)."""
-    return df[df["TECHNOLOGY"].str.startswith("UPSREF_BAR")]
-
-
-def _filtro_ref_ambas(df, sub_filtro=None, **kw):
-    """Refinerías Cartagena + Barrancabermeja (UseByTechnology).
-
-    sub_filtro:
-      - None/'con_crudo': FUEL IN (DSL,GSL,JET,LPG,NGS,ELC,OIL,OIL_1LIV,OIL_2MID,OIL_3PES)
-      - 'sin_crudo':     FUEL IN (DSL,GSL,JET,LPG,NGS,ELC,OIL) [excluye OIL_*]
-    """
-    mask_tech = df["TECHNOLOGY"].str.startswith(("UPSREF_CAR", "UPSREF_BAR"))
-
-    if sub_filtro == "sin_crudo":
-        # Solo productos refinados (sin crudos)
-        mask_fuel = df["FUEL"].isin({"DSL", "GSL", "JET", "LPG", "NGS", "ELC", "OIL"})
-        # Excluir crudos (OIL_1LIV, OIL_2MID, OIL_3PES)
-        mask_excluir = ~df["FUEL"].str.startswith("OIL_", na=False)
-        return df[mask_tech & mask_fuel & mask_excluir]
-
-    # Default: con crudo (incluye todos los combustibles)
-    return df[mask_tech]
-
-
-def _filtro_liquidos_produccion_importacion(df, **kw):
-    """Líquidos: importaciones (DSL, GSL, JET, LPG) + refinerías (CAR, BAR)."""
-    return df[df["TECHNOLOGY"].str.startswith(_PREFIJOS_LIQUIDOS_PROD_IMPORT)]
-
-
-def _filtro_export_liquidos(df, **kw):
-    """Exportaciones de líquidos (EXPDSL, EXPGSL, EXPJET, EXPLPG)."""
-    return df[df["TECHNOLOGY"].str.startswith(_PREFIJOS_EXP_LIQUIDOS)]
-
-
-def _filtro_import_liquidos(df, **kw):
-    """Importaciones de líquidos (IMPDSL, IMPGSL, IMPJET, IMPLNG, IMPLPG, IMPOIL)."""
-    return df[df["TECHNOLOGY"].str.startswith(_PREFIJOS_IMP_LIQUIDOS_ALL)]
-
-
-def _filtro_crudo_flujos(df, **kw):
-    """Importaciones y exportaciones de crudo (IMPOIL, EXPOIL)."""
-    return df[df["TECHNOLOGY"].str.startswith(("IMPOIL", "EXPOIL"))]
-
-
 def _filtro_exp_oil(df, **kw):
     """Exportación de petróleo crudo (EXPOIL)."""
     return df[df["TECHNOLOGY"].str.startswith("EXPOIL")]
-
-
-def _filtro_ref_produccion_importaciones(df, **kw):
-    """Refinerías específicas + importaciones de combustibles líquidos refinados."""
-    return df[
-        df["TECHNOLOGY"].str.startswith(
-            ("UPSREF_CAR", "UPSREF_BAR", "IMPDSL", "IMPGSL", "IMPJET", "IMPLPG")
-        )
-    ]
 
 
 def _filtro_demanda_exportaciones_liquidos(df, **kw):
@@ -290,14 +469,6 @@ def _filtro_demanda_exportaciones_liquidos(df, **kw):
     if "FUEL" not in df.columns:
         return df.iloc[0:0]
     return df[df["FUEL"].isin({"DSL", "FOL", "GSL", "JET", "LPG"})]
-
-
-def _filtro_ref_import(df, **kw):
-    """Refinerías + importaciones."""
-    return df[
-        df["TECHNOLOGY"].str.startswith("UPSREF")
-        | df["TECHNOLOGY"].str.startswith(_PREFIJOS_IMP_LIQUIDOS)
-    ]
 
 
 def _filtro_residencial(df, sub_filtro=None, loc=None, **kw):
@@ -550,11 +721,6 @@ def _filtro_solidos_flujos(df, **kw):
         | df["TECHNOLOGY"].str.startswith("IMPCOA")
         | df["TECHNOLOGY"].str.startswith("EXPCOA")
     ]
-
-
-def _filtro_exp_carbon(df, **kw):
-    """Exportaciones de carbón (EXPCOA)."""
-    return df[df["TECHNOLOGY"].str.startswith("EXPCOA")]
 
 
 def _filtro_saf_produccion(df, **kw):
