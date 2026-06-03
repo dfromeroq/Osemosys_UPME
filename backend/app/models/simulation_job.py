@@ -110,6 +110,12 @@ class SimulationJob(Base):
     records_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
     osemosys_param_records: Mapped[int | None] = mapped_column(Integer, nullable=True)
     stage_times_json: Mapped[object | None] = mapped_column(JSON, nullable=True)
+    #: Versión de defaults OSeMOSYS (`model_parameter_default_version`) usada al declarar el modelo.
+    model_defaults_version_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("osemosys.model_parameter_default_version.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     model_timings_json: Mapped[object | None] = mapped_column(JSON, nullable=True)
     inputs_summary_json: Mapped[object | None] = mapped_column(JSON, nullable=True)
     infeasibility_diagnostics_json: Mapped[object | None] = mapped_column(JSON, nullable=True)

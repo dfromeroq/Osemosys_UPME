@@ -32,7 +32,55 @@ from app.models import OsemosysParamValue, OsemosysOutputParamValue, SimulationJ
 from app.repositories.simulation_repository import SimulationRepository
 from app.simulation.core.data_processing import PARAM_INDEX
 from app.simulation.core.results_processing import VARIABLE_INDEX_NAMES
-from app.simulation.osemosys_core import run_osemosys_from_csv_dir, run_osemosys_from_db
+from app.simulation.core.solver import planned_solver_threads
+from app.simulation.osemosys_core import (
+    load_param_defaults_for_simulation,
+    run_osemosys_from_csv_dir,
+    run_osemosys_from_db,
+)
+
+
+def _on_stage_event(
+    db: Session,
+    *,
+    job: SimulationJob,
+    job_id: int,
+    stage_name: str,
+    stage_progress: float,
+) -> None:
+    """Registra progreso de etapa y persiste hilos del solver en ``solver_start``."""
+    job.progress = stage_progress
+    threads_suffix = ""
+    if stage_name == "solver_start":
+        planned = planned_solver_threads(job.solver_name, settings=get_settings())
+        if planned is not None:
+            job.solver_threads_used = planned
+            threads_suffix = f" Hilos del solver: {planned}."
+        elif (job.solver_name or "").lower() == "glpk":
+            threads_suffix = " GLPK usa 1 hilo."
+
+    if stage_name == "infeasibility_analysis_start":
+        msg = (
+            "Modelo infactible detectado. Iniciando análisis de infactibilidad "
+            "(IIS + mapeo a parámetros). Esto puede tomar varios segundos."
+        )
+        evt = "WARN"
+    elif stage_name == "infeasibility_analysis_complete":
+        msg = "Análisis de infactibilidad finalizado."
+        evt = "INFO"
+    else:
+        msg = f"Bloque {stage_name} ejecutado.{threads_suffix}"
+        evt = "STAGE"
+    SimulationRepository.add_event(
+        db,
+        job_id=job_id,
+        event_type=evt,
+        stage=stage_name,
+        message=msg,
+        progress=stage_progress,
+    )
+    db.commit()
+    _check_cancel_requested(db, job_id=job_id)
 
 
 def _safe_slug(text: str | None, *, max_len: int = 60) -> str:
@@ -486,29 +534,13 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
     db.commit()
 
     def _on_stage(stage_name: str, stage_progress: float) -> None:
-        job.progress = stage_progress
-        if stage_name == "infeasibility_analysis_start":
-            msg = (
-                "Modelo infactible detectado. Iniciando análisis de infactibilidad "
-                "(IIS + mapeo a parámetros). Esto puede tomar varios segundos."
-            )
-            evt = "WARN"
-        elif stage_name == "infeasibility_analysis_complete":
-            msg = "Análisis de infactibilidad finalizado."
-            evt = "INFO"
-        else:
-            msg = f"Bloque {stage_name} ejecutado."
-            evt = "STAGE"
-        SimulationRepository.add_event(
+        _on_stage_event(
             db,
+            job=job,
             job_id=job_id,
-            event_type=evt,
-            stage=stage_name,
-            message=msg,
-            progress=stage_progress,
+            stage_name=stage_name,
+            stage_progress=stage_progress,
         )
-        db.commit()
-        _check_cancel_requested(db, job_id=job_id)
 
     _gen_lp = bool(getattr(job, "generate_lp", False))
     _scenario_name = getattr(getattr(job, "scenario", None), "name", None)
@@ -516,6 +548,9 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
     _lp_basename_eff = (
         _lp_basename_for_job(job, scenario_name=_scenario_name) if _gen_lp else None
     )
+    defaults_version_id, defaults_map = load_param_defaults_for_simulation(db)
+    job.model_defaults_version_id = defaults_version_id
+    db.commit()
     solution = run_osemosys_from_db(
         db,
         scenario_id=job.scenario_id,
@@ -527,6 +562,8 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
         lp_basename=_lp_basename_eff,
         job_id=job_id,
         materialize_intermediate=False,
+        param_defaults=defaults_map,
+        model_defaults_version_id=defaults_version_id,
     )
 
     # Persistimos la ruta del .lp si se generó: habilita descarga vía
@@ -664,33 +701,20 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
     db.commit()
 
     def _on_stage(stage_name: str, stage_progress: float) -> None:
-        job.progress = stage_progress
-        if stage_name == "infeasibility_analysis_start":
-            msg = (
-                "Modelo infactible detectado. Iniciando análisis de infactibilidad "
-                "(IIS + mapeo a parámetros). Esto puede tomar varios segundos."
-            )
-            evt = "WARN"
-        elif stage_name == "infeasibility_analysis_complete":
-            msg = "Análisis de infactibilidad finalizado."
-            evt = "INFO"
-        else:
-            msg = f"Bloque {stage_name} ejecutado."
-            evt = "STAGE"
-        SimulationRepository.add_event(
+        _on_stage_event(
             db,
+            job=job,
             job_id=job_id,
-            event_type=evt,
-            stage=stage_name,
-            message=msg,
-            progress=stage_progress,
+            stage_name=stage_name,
+            stage_progress=stage_progress,
         )
-        db.commit()
-        _check_cancel_requested(db, job_id=job_id)
 
     _gen_lp = bool(getattr(job, "generate_lp", False))
     _lp_dir_eff = _lp_dir_for_jobs() if _gen_lp else None
     _lp_basename_eff = _lp_basename_for_job(job) if _gen_lp else "osemosys"
+    defaults_version_id, defaults_map = load_param_defaults_for_simulation(db)
+    job.model_defaults_version_id = defaults_version_id
+    db.commit()
     solution = run_osemosys_from_csv_dir(
         csv_root,
         solver_name=job.solver_name,
@@ -701,6 +725,8 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
         lp_basename=_lp_basename_eff,
         job_id=job_id,
         materialize_intermediate=False,
+        param_defaults=defaults_map,
+        model_defaults_version_id=defaults_version_id,
     )
 
     if _gen_lp and _lp_dir_eff:

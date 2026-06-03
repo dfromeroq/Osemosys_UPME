@@ -51,6 +51,10 @@ class User(Base):
     can_manage_system_settings: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    #: Editar defaults versionados del modelo OSeMOSYS (Pyomo ``Param`` default=).
+    can_manage_model_defaults: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     created_at: Mapped[object] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -85,6 +85,24 @@ function getSolverLabel(solverName: SimulationSolver) {
   }
 }
 
+function formatSolverThreadsForLogs(run: SimulationRun | null | undefined): {
+  value: string;
+  hint: string | null;
+} {
+  if (!run) return { value: "—", hint: null };
+  const threads = run.solver_threads_used;
+  if (threads != null && threads > 0) {
+    return { value: String(threads), hint: null };
+  }
+  if (run.solver_name === "glpk") {
+    return { value: "1", hint: "GLPK es single-thread" };
+  }
+  if (ACTIVE_STATUSES.has(run.status)) {
+    return { value: "—", hint: "Se asignan al preparar el solver" };
+  }
+  return { value: "—", hint: null };
+}
+
 /** Indica si el solver soporta el análisis de infactibilidad enriquecido
  * (IIS + mapeo a parámetros). HiGHS y Gurobi sí; GLPK no. */
 function solverSupportsIIS(solverName: SimulationSolver): boolean {
@@ -2532,6 +2550,25 @@ export function SimulationPage() {
                           {selectedLogsJobActive ? " desde su inicio" : ""}
                         </div>
                       </div>
+                      {(() => {
+                        const threadsDisplay = formatSolverThreadsForLogs(selectedLogsJob);
+                        return (
+                          <div>
+                            <div style={{ fontSize: 12, opacity: 0.7 }}>Hilos del solver</div>
+                            <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                              {threadsDisplay.value}
+                              {selectedLogsJob ? (
+                                <span style={{ fontSize: 12, fontWeight: 500, marginLeft: 6, opacity: 0.75 }}>
+                                  ({getSolverLabel(selectedLogsJob.solver_name)})
+                                </span>
+                              ) : null}
+                            </div>
+                            {threadsDisplay.hint ? (
+                              <div style={{ fontSize: 12, opacity: 0.75 }}>{threadsDisplay.hint}</div>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
                       <div style={{ marginLeft: "auto", fontSize: 12, opacity: 0.7, textAlign: "right" }}>
                         Primer evento: {logsBanner.firstAt.toLocaleTimeString()}
                         <br />

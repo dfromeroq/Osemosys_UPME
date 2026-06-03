@@ -39,6 +39,7 @@ export type User = {
   /** Admin de configuración del sistema — puede modificar runtime settings
    * (ej. hilos del solver) desde el panel admin. */
   can_manage_system_settings?: boolean;
+  can_manage_model_defaults?: boolean;
 };
 
 /** Categoría jerárquica de etiquetas de escenario. */

@@ -45,6 +45,9 @@ export function AppLayout() {
     ...(user?.can_manage_catalogs ? [{ to: paths.catalogs, label: "Catálogos" }] : []),
     ...(user?.can_manage_users ? [{ to: paths.usersAdmin, label: "Usuarios y permisos" }] : []),
     ...(user?.can_manage_system_settings ? [{ to: paths.systemSettingsAdmin, label: "Configuración" }] : []),
+    ...(user?.can_manage_model_defaults
+      ? [{ to: paths.modelParameterDefaults, label: "Defaults del modelo" }]
+      : []),
     { to: paths.simulation, label: "Simulación" },
     { to: paths.results, label: "Resultados" },
     { to: paths.reports, label: "Reportes" },

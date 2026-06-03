@@ -33,9 +33,27 @@ from pyomo.environ import (
 )
 
 
+from collections.abc import Mapping
+
+from app.simulation.core.osemosys_defaults import OSEMOSYS_PARAM_DEFAULTS
+
+
+def _resolve_defaults(param_defaults: Mapping[str, float] | None) -> dict[str, float]:
+    merged = dict(OSEMOSYS_PARAM_DEFAULTS)
+    if param_defaults:
+        merged.update(param_defaults)
+    return merged
+
+
+def _d(key: str, defaults: dict[str, float]) -> float:
+    return float(defaults.get(key, OSEMOSYS_PARAM_DEFAULTS.get(key, 0.0)))
+
+
 def create_abstract_model(
+    *,
     has_storage: bool = False,
     has_udc: bool = True,
+    param_defaults: Mapping[str, float] | None = None,
 ) -> AbstractModel:
     """Construye el AbstractModel OSeMOSYS completo.
 
@@ -50,6 +68,8 @@ def create_abstract_model(
     -------
     AbstractModel listo para ``model.create_instance(data)``.
     """
+    defaults = _resolve_defaults(param_defaults)
+
     model = AbstractModel()
 
     # ====================================================================
@@ -80,7 +100,7 @@ def create_abstract_model(
     # ====================================================================
 
     model.YearSplit = Param(model.TIMESLICE, model.YEAR)
-    model.DiscountRate = Param(model.REGION, default=0.05)
+    model.DiscountRate = Param(model.REGION, default=_d("discountrate", defaults))
 
     def DiscountRateIdv_init(m, r, t):
         return m.DiscountRate[r]
@@ -88,7 +108,7 @@ def create_abstract_model(
         model.REGION, model.TECHNOLOGY,
         within=NonNegativeReals, initialize=DiscountRateIdv_init, mutable=True,
     )
-    model.OperationalLife = Param(model.REGION, model.TECHNOLOGY, default=1)
+    model.OperationalLife = Param(model.REGION, model.TECHNOLOGY, default=_d("operationallife", defaults))
 
     def CapitalRecoveryFactor_rule(m, r, t):
         dr = m.DiscountRateIdv[r, t]
@@ -108,16 +128,16 @@ def create_abstract_model(
         initialize=PvAnnuity_rule, within=Reals, mutable=True,
     )
 
-    model.DepreciationMethod = Param(model.REGION, default=1)
+    model.DepreciationMethod = Param(model.REGION, default=_d("depreciationmethod", defaults))
 
     # ====================================================================
     #    Parameters — Demands
     # ====================================================================
 
-    model.AccumulatedAnnualDemand = Param(model.REGION, model.FUEL, model.YEAR, default=0)
-    model.SpecifiedAnnualDemand = Param(model.REGION, model.FUEL, model.YEAR, default=0)
+    model.AccumulatedAnnualDemand = Param(model.REGION, model.FUEL, model.YEAR, default=_d("accumulatedannualdemand", defaults))
+    model.SpecifiedAnnualDemand = Param(model.REGION, model.FUEL, model.YEAR, default=_d("specifiedannualdemand", defaults))
     model.SpecifiedDemandProfile = Param(
-        model.REGION, model.FUEL, model.TIMESLICE, model.YEAR, default=0,
+        model.REGION, model.FUEL, model.TIMESLICE, model.YEAR, default=_d("specifieddemandprofile", defaults),
     )
 
     def Demand_init(m, r, l, f, y):
@@ -126,51 +146,51 @@ def create_abstract_model(
         return 0.0
     model.Demand = Param(
         model.REGION, model.TIMESLICE, model.FUEL, model.YEAR,
-        initialize=Demand_init, default=0.0,
+        initialize=Demand_init, default=_d("demand", defaults),
     )
 
     # ====================================================================
     #    Parameters — Performance
     # ====================================================================
 
-    model.CapacityToActivityUnit = Param(model.REGION, model.TECHNOLOGY, default=1)
+    model.CapacityToActivityUnit = Param(model.REGION, model.TECHNOLOGY, default=_d("capacitytoactivityunit", defaults))
     model.CapacityFactor = Param(
-        model.REGION, model.TECHNOLOGY, model.TIMESLICE, model.YEAR, default=1,
+        model.REGION, model.TECHNOLOGY, model.TIMESLICE, model.YEAR, default=_d("capacityfactor", defaults),
     )
-    model.AvailabilityFactor = Param(model.REGION, model.TECHNOLOGY, model.YEAR, default=1)
-    model.ResidualCapacity = Param(model.REGION, model.TECHNOLOGY, model.YEAR, default=0)
+    model.AvailabilityFactor = Param(model.REGION, model.TECHNOLOGY, model.YEAR, default=_d("availabilityfactor", defaults))
+    model.ResidualCapacity = Param(model.REGION, model.TECHNOLOGY, model.YEAR, default=_d("residualcapacity", defaults))
     model.InputActivityRatio = Param(
         model.REGION, model.TECHNOLOGY, model.FUEL, model.MODE_OF_OPERATION, model.YEAR,
-        default=0,
+        default=_d("inputactivityratio", defaults),
     )
     model.OutputActivityRatio = Param(
         model.REGION, model.TECHNOLOGY, model.FUEL, model.MODE_OF_OPERATION, model.YEAR,
-        default=0,
+        default=_d("outputactivityratio", defaults),
     )
 
     # ====================================================================
     #    Parameters — Technology Costs
     # ====================================================================
 
-    model.CapitalCost = Param(model.REGION, model.TECHNOLOGY, model.YEAR, default=0.000001)
+    model.CapitalCost = Param(model.REGION, model.TECHNOLOGY, model.YEAR, default=_d("capitalcost", defaults))
     model.VariableCost = Param(
         model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR,
-        default=0.000001,
+        default=_d("variablecost", defaults),
     )
-    model.FixedCost = Param(model.REGION, model.TECHNOLOGY, model.YEAR, default=0)
+    model.FixedCost = Param(model.REGION, model.TECHNOLOGY, model.YEAR, default=_d("fixedcost", defaults))
 
     # ====================================================================
     #    Parameters — Capacity Constraints
     # ====================================================================
 
     model.CapacityOfOneTechnologyUnit = Param(
-        model.REGION, model.TECHNOLOGY, model.YEAR, default=0,
+        model.REGION, model.TECHNOLOGY, model.YEAR, default=_d("capacityofonetechnologyunit", defaults),
     )
     model.TotalAnnualMaxCapacity = Param(
-        model.REGION, model.TECHNOLOGY, model.YEAR, default=9999999,
+        model.REGION, model.TECHNOLOGY, model.YEAR, default=_d("totalannualmaxcapacity", defaults),
     )
     model.TotalAnnualMinCapacity = Param(
-        model.REGION, model.TECHNOLOGY, model.YEAR, default=0,
+        model.REGION, model.TECHNOLOGY, model.YEAR, default=_d("totalannualmincapacity", defaults),
     )
 
     # ====================================================================
@@ -178,10 +198,10 @@ def create_abstract_model(
     # ====================================================================
 
     model.TotalAnnualMaxCapacityInvestment = Param(
-        model.REGION, model.TECHNOLOGY, model.YEAR, default=9999999,
+        model.REGION, model.TECHNOLOGY, model.YEAR, default=_d("totalannualmaxcapacityinvestment", defaults),
     )
     model.TotalAnnualMinCapacityInvestment = Param(
-        model.REGION, model.TECHNOLOGY, model.YEAR, default=0,
+        model.REGION, model.TECHNOLOGY, model.YEAR, default=_d("totalannualmincapacityinvestment", defaults),
     )
 
     # ====================================================================
@@ -189,16 +209,16 @@ def create_abstract_model(
     # ====================================================================
 
     model.TotalTechnologyAnnualActivityUpperLimit = Param(
-        model.REGION, model.TECHNOLOGY, model.YEAR, default=9999999,
+        model.REGION, model.TECHNOLOGY, model.YEAR, default=_d("totaltechnologyannualactivityupperlimit", defaults),
     )
     model.TotalTechnologyAnnualActivityLowerLimit = Param(
-        model.REGION, model.TECHNOLOGY, model.YEAR, default=0,
+        model.REGION, model.TECHNOLOGY, model.YEAR, default=_d("totaltechnologyannualactivitylowerlimit", defaults),
     )
     model.TotalTechnologyModelPeriodActivityUpperLimit = Param(
-        model.REGION, model.TECHNOLOGY, default=9999999,
+        model.REGION, model.TECHNOLOGY, default=_d("totaltechnologymodelperiodactivityupperlimit", defaults),
     )
     model.TotalTechnologyModelPeriodActivityLowerLimit = Param(
-        model.REGION, model.TECHNOLOGY, default=0,
+        model.REGION, model.TECHNOLOGY, default=_d("totaltechnologymodelperiodactivitylowerlimit", defaults),
     )
 
     # ====================================================================
@@ -206,18 +226,18 @@ def create_abstract_model(
     # ====================================================================
 
     model.ReserveMarginTagTechnology = Param(
-        model.REGION, model.TECHNOLOGY, model.YEAR, default=0,
+        model.REGION, model.TECHNOLOGY, model.YEAR, default=_d("reservemargintagtechnology", defaults),
     )
-    model.ReserveMarginTagFuel = Param(model.REGION, model.FUEL, model.YEAR, default=0)
-    model.ReserveMargin = Param(model.REGION, model.YEAR, default=1)
+    model.ReserveMarginTagFuel = Param(model.REGION, model.FUEL, model.YEAR, default=_d("reservemargintagfuel", defaults))
+    model.ReserveMargin = Param(model.REGION, model.YEAR, default=_d("reservemargin", defaults))
 
     # ====================================================================
     #    Parameters — RE Generation Target
     # ====================================================================
 
-    model.RETagTechnology = Param(model.REGION, model.TECHNOLOGY, model.YEAR, default=0)
-    model.RETagFuel = Param(model.REGION, model.FUEL, model.YEAR, default=0)
-    model.REMinProductionTarget = Param(model.REGION, model.YEAR, default=0)
+    model.RETagTechnology = Param(model.REGION, model.TECHNOLOGY, model.YEAR, default=_d("retagtechnology", defaults))
+    model.RETagFuel = Param(model.REGION, model.FUEL, model.YEAR, default=_d("retagfuel", defaults))
+    model.REMinProductionTarget = Param(model.REGION, model.YEAR, default=_d("reminproductiontarget", defaults))
 
     # ====================================================================
     #    Parameters — Emissions & Penalties
@@ -225,47 +245,47 @@ def create_abstract_model(
 
     model.EmissionActivityRatio = Param(
         model.REGION, model.TECHNOLOGY, model.EMISSION, model.MODE_OF_OPERATION, model.YEAR,
-        default=0,
+        default=_d("emissionactivityratio", defaults),
     )
-    model.EmissionsPenalty = Param(model.REGION, model.EMISSION, model.YEAR, default=0)
+    model.EmissionsPenalty = Param(model.REGION, model.EMISSION, model.YEAR, default=_d("emissionspenalty", defaults))
     model.AnnualExogenousEmission = Param(
-        model.REGION, model.EMISSION, model.YEAR, default=0,
+        model.REGION, model.EMISSION, model.YEAR, default=_d("annualexogenousemission", defaults),
     )
     model.AnnualEmissionLimit = Param(
-        model.REGION, model.EMISSION, model.YEAR, default=9999999,
+        model.REGION, model.EMISSION, model.YEAR, default=_d("annualemissionlimit", defaults),
     )
-    model.ModelPeriodExogenousEmission = Param(model.REGION, model.EMISSION, default=0)
-    model.ModelPeriodEmissionLimit = Param(model.REGION, model.EMISSION, default=9999999)
+    model.ModelPeriodExogenousEmission = Param(model.REGION, model.EMISSION, default=_d("modelperiodexogenousemission", defaults))
+    model.ModelPeriodEmissionLimit = Param(model.REGION, model.EMISSION, default=_d("modelperiodemissionlimit", defaults))
 
     # ====================================================================
     #    Parameters — MUIO
     # ====================================================================
 
     model.InputToNewCapacityRatio = Param(
-        model.REGION, model.TECHNOLOGY, model.FUEL, model.YEAR, within=Reals, default=0,
+        model.REGION, model.TECHNOLOGY, model.FUEL, model.YEAR, within=Reals, default=_d("inputtonewcapacityratio", defaults),
     )
     model.InputToTotalCapacityRatio = Param(
-        model.REGION, model.TECHNOLOGY, model.FUEL, model.YEAR, within=Reals, default=0,
+        model.REGION, model.TECHNOLOGY, model.FUEL, model.YEAR, within=Reals, default=_d("inputtototalcapacityratio", defaults),
     )
     model.TechnologyActivityByModeLowerLimit = Param(
         model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR,
-        within=Reals, default=0,
+        within=Reals, default=_d("technologyactivitybymodelowerlimit", defaults),
     )
     model.TechnologyActivityByModeUpperLimit = Param(
         model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR,
-        within=Reals, default=0,
+        within=Reals, default=_d("technologyactivitybymodeupperlimit", defaults),
     )
     model.TechnologyActivityDecreaseByModeLimit = Param(
         model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR,
-        within=Reals, default=0,
+        within=Reals, default=_d("technologyactivitydecreasebymodelimit", defaults),
     )
     model.TechnologyActivityIncreaseByModeLimit = Param(
         model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR,
-        within=Reals, default=0,
+        within=Reals, default=_d("technologyactivityincreasebymodelimit", defaults),
     )
     model.EmissionToActivityChangeRatio = Param(
         model.REGION, model.TECHNOLOGY, model.EMISSION, model.MODE_OF_OPERATION, model.YEAR,
-        within=Reals, default=0,
+        within=Reals, default=_d("emissiontoactivitychangeratio", defaults),
     )
 
     # ====================================================================
@@ -275,55 +295,55 @@ def create_abstract_model(
     if has_udc:
         model.UDCMultiplierTotalCapacity = Param(
             model.REGION, model.TECHNOLOGY, model.UDC, model.YEAR,
-            within=Reals, default=0,
+            within=Reals, default=_d("udcmultipliertotalcapacity", defaults),
         )
         model.UDCMultiplierNewCapacity = Param(
             model.REGION, model.TECHNOLOGY, model.UDC, model.YEAR,
-            within=Reals, default=0,
+            within=Reals, default=_d("udcmultipliernewcapacity", defaults),
         )
         model.UDCMultiplierActivity = Param(
             model.REGION, model.TECHNOLOGY, model.UDC, model.YEAR,
-            within=Reals, default=0,
+            within=Reals, default=_d("udcmultiplieractivity", defaults),
         )
         model.UDCConstant = Param(
-            model.REGION, model.UDC, model.YEAR, within=Reals, default=0,
+            model.REGION, model.UDC, model.YEAR, within=Reals, default=_d("udcconstant", defaults),
         )
-        model.UDCTag = Param(model.REGION, model.UDC, within=Reals, default=2)
+        model.UDCTag = Param(model.REGION, model.UDC, within=Reals, default=_d("udctag", defaults))
 
     # ====================================================================
     #    Parameters — Storage
     # ====================================================================
 
     if has_storage:
-        model.DaySplit = Param(model.DAILYTIMEBRACKET, model.YEAR, default=0.00137)
-        model.Conversionls = Param(model.TIMESLICE, model.SEASON, default=0)
-        model.Conversionld = Param(model.TIMESLICE, model.DAYTYPE, default=0)
-        model.Conversionlh = Param(model.TIMESLICE, model.DAILYTIMEBRACKET, default=0)
-        model.DaysInDayType = Param(model.SEASON, model.DAYTYPE, model.YEAR, default=7)
+        model.DaySplit = Param(model.DAILYTIMEBRACKET, model.YEAR, default=_d("daysplit", defaults))
+        model.Conversionls = Param(model.TIMESLICE, model.SEASON, default=_d("conversionls", defaults))
+        model.Conversionld = Param(model.TIMESLICE, model.DAYTYPE, default=_d("conversionld", defaults))
+        model.Conversionlh = Param(model.TIMESLICE, model.DAILYTIMEBRACKET, default=_d("conversionlh", defaults))
+        model.DaysInDayType = Param(model.SEASON, model.DAYTYPE, model.YEAR, default=_d("daysindaytype", defaults))
         model.TechnologyToStorage = Param(
-            model.REGION, model.TECHNOLOGY, model.STORAGE, model.MODE_OF_OPERATION, default=0,
+            model.REGION, model.TECHNOLOGY, model.STORAGE, model.MODE_OF_OPERATION, default=_d("technologytostorage", defaults),
         )
         model.TechnologyFromStorage = Param(
-            model.REGION, model.TECHNOLOGY, model.STORAGE, model.MODE_OF_OPERATION, default=0,
+            model.REGION, model.TECHNOLOGY, model.STORAGE, model.MODE_OF_OPERATION, default=_d("technologyfromstorage", defaults),
         )
-        model.StorageLevelStart = Param(model.REGION, model.STORAGE, default=0.0000001)
-        model.StorageMaxChargeRate = Param(model.REGION, model.STORAGE, default=9999999)
-        model.StorageMaxDischargeRate = Param(model.REGION, model.STORAGE, default=9999999)
-        model.MinStorageCharge = Param(model.REGION, model.STORAGE, model.YEAR, default=0)
-        model.OperationalLifeStorage = Param(model.REGION, model.STORAGE, default=0)
+        model.StorageLevelStart = Param(model.REGION, model.STORAGE, default=_d("storagelevelstart", defaults))
+        model.StorageMaxChargeRate = Param(model.REGION, model.STORAGE, default=_d("storagemaxchargerate", defaults))
+        model.StorageMaxDischargeRate = Param(model.REGION, model.STORAGE, default=_d("storagemaxdischargerate", defaults))
+        model.MinStorageCharge = Param(model.REGION, model.STORAGE, model.YEAR, default=_d("minstoragecharge", defaults))
+        model.OperationalLifeStorage = Param(model.REGION, model.STORAGE, default=_d("operationallifestorage", defaults))
         model.CapitalCostStorage = Param(
-            model.REGION, model.STORAGE, model.YEAR, default=0,
+            model.REGION, model.STORAGE, model.YEAR, default=_d("capitalcoststorage", defaults),
         )
         model.ResidualStorageCapacity = Param(
-            model.REGION, model.STORAGE, model.YEAR, default=0,
+            model.REGION, model.STORAGE, model.YEAR, default=_d("residualstoragecapacity", defaults),
         )
 
     # ====================================================================
     #    Parameters — Disposal / Recovery (Max B/C)
     # ====================================================================
 
-    model.DisposalCostPerCapacity = Param(model.REGION, model.TECHNOLOGY, default=0.0)
-    model.RecoveryValuePerCapacity = Param(model.REGION, model.TECHNOLOGY, default=0.0)
+    model.DisposalCostPerCapacity = Param(model.REGION, model.TECHNOLOGY, default=_d("disposalcostpercapacity", defaults))
+    model.RecoveryValuePerCapacity = Param(model.REGION, model.TECHNOLOGY, default=_d("recoveryvaluepercapacity", defaults))
 
     # ====================================================================
     #    Variables — Capacity

@@ -29,6 +29,7 @@ class _FakeInstance:
 def test_normalize_solver_status_display_maps_infeasible_to_spanish() -> None:
     assert solver_module.normalize_solver_status_display("infeasible") == "infactible"
     assert solver_module.normalize_solver_status_display("optimal") == "optimal"
+    assert solver_module.normalize_solver_status_display("unknown") == "desconocido"
 
 
 def test_solve_model_uses_settings_for_tee_and_keepfiles(monkeypatch) -> None:
@@ -63,34 +64,191 @@ def test_solve_model_uses_settings_for_tee_and_keepfiles(monkeypatch) -> None:
     assert fake_solver.last_kwargs["load_solutions"] is False
 
 
-def test_solve_model_sets_highs_threads_when_configured(monkeypatch) -> None:
-    fake_solver = _FakeSolver(status="optimal")
-    fake_solver.highs_options = {}
+class _FakeHighs:
+    def __init__(self) -> None:
+        self.options: dict[str, object] = {}
+
+    def setOptionValue(self, key: str, value: object) -> None:
+        self.options[key] = value
+
+
+def test_apply_highspy_options_sets_threads(monkeypatch) -> None:
+    h = _FakeHighs()
+    settings = SimpleNamespace(sim_solver_threads=8)
+    monkeypatch.setattr(solver_module, "_resolve_solver_threads", lambda _s: 8)
+
+    threads_used = solver_module._apply_highspy_options(h, settings=settings)
+
+    assert threads_used == 8
+    assert h.options["threads"] == 8
+    assert h.options["solver"] == "ipm"
+    assert h.options["presolve"] == "on"
+    assert h.options["parallel"] == "on"
+    assert h.options["run_crossover"] == "choose"
+
+
+def test_planned_solver_threads_highs_uses_cpu_count_when_zero(monkeypatch) -> None:
+    monkeypatch.setattr(solver_module, "_resolve_solver_threads", lambda _s: 0)
+    monkeypatch.setattr(solver_module.os, "cpu_count", lambda: 12)
+
+    assert solver_module.planned_solver_threads("highs", settings=object()) == 12
+
+
+def test_planned_solver_threads_glpk_returns_none() -> None:
+    assert solver_module.planned_solver_threads("glpk", settings=object()) is None
+
+
+def test_apply_highspy_options_uses_cpu_count_when_threads_zero(monkeypatch) -> None:
+    h = _FakeHighs()
+    settings = SimpleNamespace(sim_solver_threads=0)
+    monkeypatch.setattr(solver_module, "_resolve_solver_threads", lambda _s: 0)
+    monkeypatch.setattr(solver_module.os, "cpu_count", lambda: 16)
+
+    threads_used = solver_module._apply_highspy_options(h, settings=settings)
+
+    assert threads_used == 16
+    assert h.options["threads"] == 16
+
+
+def test_solve_model_highs_routes_to_highspy_lp(monkeypatch) -> None:
+    highspy_calls: list[str] = []
+
+    def _fake_highspy_lp(instance, lp_path, *, settings):  # noqa: ARG001
+        highspy_calls.append(str(lp_path))
+        return {
+            "solver_name": "highs",
+            "solver_status": "optimal",
+            "objective_value": 99.0,
+            "solver_threads_used": 4,
+            "reserve_margin_dual": None,
+            "infeasibility_diagnostics": None,
+            "solver_backend": "highspy_lp",
+            "read_model_seconds": 0.1,
+            "highs_run_seconds": 0.2,
+            "map_solution_seconds": 0.3,
+        }
+
+    def _fail_solver_factory(_name: str):
+        raise AssertionError("SolverFactory no debe usarse cuando solver_name=highs")
+
+    monkeypatch.setattr(solver_module, "_highs_available", lambda: True)
     monkeypatch.setattr(
         solver_module,
         "get_settings",
         lambda: SimpleNamespace(
             sim_solver_tee=False,
             sim_solver_keepfiles=False,
-            sim_solver_threads=8,
+            sim_solver_threads=4,
         ),
     )
-    monkeypatch.setattr(
-        solver_module,
-        "get_solver_availability",
-        lambda: {"glpk": False, "highs": True},
-    )
-    monkeypatch.setattr(
-        solver_module.pyo,
-        "SolverFactory",
-        lambda _factory_name: fake_solver,
-    )
-    monkeypatch.setattr(solver_module.pyo, "value", lambda _obj: 0.0)
+    monkeypatch.setattr(solver_module, "write_lp_file", lambda _inst, path: path)
+    monkeypatch.setattr(solver_module, "_solve_with_highspy_lp", _fake_highspy_lp)
+    monkeypatch.setattr(solver_module.pyo, "SolverFactory", _fail_solver_factory)
 
     result = solver_module.solve_model(_FakeInstance(), solver_name="highs")
 
+    assert len(highspy_calls) == 1
     assert result["solver_status"] == "optimal"
-    assert fake_solver.highs_options["threads"] == 8
+    assert result["objective_value"] == 99.0
+    assert result["solver_backend"] == "highspy_lp"
+    assert "write_lp_seconds" in result
+
+
+def test_solve_with_highspy_lp_infeasible_runs_appsi_diagnostics(monkeypatch, tmp_path) -> None:
+    lp_path = tmp_path / "model.lp"
+    lp_path.write_text("stub lp", encoding="utf-8")
+
+    class _FakeHighsEngine:
+        def setOptionValue(self, *_args, **_kwargs) -> None:
+            pass
+
+        def readModel(self, _path: str) -> None:
+            pass
+
+        def run(self) -> None:
+            pass
+
+        def getModelStatus(self) -> str:
+            return "kInfeasible"
+
+    appsi_calls: list[int] = []
+    diag_calls: list[int] = []
+
+    fake_highspy_mod = SimpleNamespace(Highs=_FakeHighsEngine)
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "highspy",
+        fake_highspy_mod,
+    )
+    monkeypatch.setattr(solver_module, "_highs_status_to_raw", lambda _s: "infeasible")
+    monkeypatch.setattr(
+        solver_module,
+        "_appsi_highs_solve_for_diagnostics",
+        lambda *_a, **_k: appsi_calls.append(1),
+    )
+    monkeypatch.setattr(
+        solver_module,
+        "_run_infeasibility_diagnostics",
+        lambda _inst: (
+            diag_calls.append(1)
+            or {"constraint_violations": [], "var_bound_conflicts": []}
+        ),
+    )
+    monkeypatch.setattr(solver_module, "_resolve_solver_threads", lambda _s: 0)
+
+    result = solver_module._solve_with_highspy_lp(
+        _FakeInstance(),
+        lp_path,
+        settings=SimpleNamespace(sim_solver_threads=0, sim_solver_keepfiles=False),
+    )
+
+    assert result["solver_status"] == "infactible"
+    assert appsi_calls == [1]
+    assert diag_calls == [1]
+    assert result["infeasibility_diagnostics"] is not None
+
+
+def test_solve_with_highspy_lp_unknown_feasible_strict_does_not_map(
+    monkeypatch, tmp_path,
+) -> None:
+    lp_path = tmp_path / "model.lp"
+    lp_path.write_text("stub lp", encoding="utf-8")
+
+    class _FakeInfo:
+        primal_solution_status = 2
+
+    class _FakeHighsEngine:
+        def setOptionValue(self, *_args, **_kwargs) -> None:
+            pass
+
+        def readModel(self, _path: str) -> None:
+            pass
+
+        def run(self) -> None:
+            pass
+
+        def getModelStatus(self) -> str:
+            return "kUnknown"
+
+        def getInfo(self) -> _FakeInfo:
+            return _FakeInfo()
+
+    fake_highspy_mod = SimpleNamespace(
+        Highs=_FakeHighsEngine,
+        kSolutionStatusFeasible=2,
+    )
+    monkeypatch.setitem(__import__("sys").modules, "highspy", fake_highspy_mod)
+    monkeypatch.setattr(solver_module, "_highs_status_to_raw", lambda _s: "unknown")
+    monkeypatch.setattr(solver_module, "_resolve_solver_threads", lambda _s: 4)
+
+    result = solver_module._solve_with_highspy_lp(
+        _FakeInstance(),
+        lp_path,
+        settings=SimpleNamespace(sim_solver_threads=4, sim_solver_keepfiles=False),
+    )
+
+    assert result["objective_value"] == 0.0
+    assert result["solver_status"] == "desconocido"
 
 
 def test_solve_model_does_not_set_glpk_threads(monkeypatch) -> None:

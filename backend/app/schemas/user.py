@@ -18,6 +18,7 @@ class UserPublic(BaseModel):
     can_manage_scenarios: bool = False
     is_admin_reports: bool = False
     can_manage_system_settings: bool = False
+    can_manage_model_defaults: bool = False
 
 
 class UserCreate(BaseModel):
@@ -33,6 +34,7 @@ class UserCreate(BaseModel):
     can_manage_scenarios: bool = False
     is_admin_reports: bool = False
     can_manage_system_settings: bool = False
+    can_manage_model_defaults: bool = False
 
 
 class UserCatalogPermissionUpdate(BaseModel):
@@ -57,6 +59,7 @@ class UserPermissionsUpdate(BaseModel):
     can_manage_scenarios: bool = False
     is_admin_reports: bool = False
     can_manage_system_settings: bool = False
+    can_manage_model_defaults: bool = False
 
 
 class UserPasswordResetPayload(BaseModel):

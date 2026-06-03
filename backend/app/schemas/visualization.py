@@ -173,3 +173,4 @@ class ResultSummaryResponse(BaseModel):
     is_infeasible_result: bool = False
     #: Username del dueño (para mostrar en tablas comparativas).
     owner_username: str | None = None
+    model_defaults_version_id: int | None = None
