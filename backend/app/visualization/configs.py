@@ -400,13 +400,633 @@ def _filtro_exp_carbon(df, **kw):
     return df[df["TECHNOLOGY"].isin("EXPCOA")]
 
 
+TECNOLOGIAS_REFINERIAS_IMPORTACIONES_LIQUIDOS = [
+    "UPSREF_BAR",
+    "UPSREF_CAR",
+    "IMPDSL",
+    "IMPGSL",
+    "IMPJET",
+    "IMPLPG",
+]
+
+
 def _filtro_ref_produccion_importaciones(df, **kw):
     """Refinerías específicas + importaciones de combustibles líquidos refinados."""
-    return df[
-        df["TECHNOLOGY"].str.startswith(
-            ("UPSREF_CAR", "UPSREF_BAR", "IMPDSL", "IMPGSL", "IMPJET", "IMPLPG")
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_REFINERIAS_IMPORTACIONES_LIQUIDOS)]
+
+
+TECNOLOGIAS_RESIDENCIAL = []
+
+
+TECNOLOGIAS_RESIDENCIALES = [
+    "DEMRESBGSCKN_MID_RUR",
+    "DEMRESELCAIR_HIG",
+    "DEMRESELCAIR_LOW",
+    "DEMRESELCAIR_PAR_HIG_RUR",
+    "DEMRESELCAIR_PAR_LOW_RUR",
+    "DEMRESELCAIR_PAR_LOW_URB",
+    "DEMRESELCAIR_PAR_MID_RUR",
+    "DEMRESELCAIR_PAR_MID_URB",
+    "DEMRESELCAIR_POR_HIG_RUR",
+    "DEMRESELCAIR_POR_HIG_URB",
+    "DEMRESELCAIR_POR_LOW_RUR",
+    "DEMRESELCAIR_POR_LOW_URB",
+    "DEMRESELCAIR_POR_MID_RUR",
+    "DEMRESELCAIR_POR_MID_URB",
+    "DEMRESELCAIR_SPL_HIG_RUR",
+    "DEMRESELCAIR_SPL_HIG_URB",
+    "DEMRESELCAIR_SPL_LOW_RUR",
+    "DEMRESELCAIR_SPL_LOW_URB",
+    "DEMRESELCAIR_SPL_MID_RUR",
+    "DEMRESELCAIR_SPL_MID_URB",
+    "DEMRESELCCKN_HIG",
+    "DEMRESELCCKN_HIG_RUR",
+    "DEMRESELCCKN_HIG_URB",
+    "DEMRESELCCKN_LOW",
+    "DEMRESELCCKN_LOW_RUR",
+    "DEMRESELCCKN_LOW_URB",
+    "DEMRESELCCKN_MID",
+    "DEMRESELCCKN_MID_RUR",
+    "DEMRESELCCKN_MID_URB",
+    "DEMRESELCFAN_HIG",
+    "DEMRESELCFAN_HIG_RUR",
+    "DEMRESELCFAN_HIG_URB",
+    "DEMRESELCFAN_LOW",
+    "DEMRESELCFAN_LOW_RUR",
+    "DEMRESELCFAN_LOW_URB",
+    "DEMRESELCFAN_MID",
+    "DEMRESELCFAN_MID_RUR",
+    "DEMRESELCFAN_MID_URB",
+    "DEMRESELCILU_HIG",
+    "DEMRESELCILU_HIG_RUR",
+    "DEMRESELCILU_HIG_URB",
+    "DEMRESELCILU_INC",
+    "DEMRESELCILU_INC_RUR",
+    "DEMRESELCILU_INC_URB",
+    "DEMRESELCILU_LFC",
+    "DEMRESELCILU_LFC_RUR",
+    "DEMRESELCILU_LFC_URB",
+    "DEMRESELCILU_LOW",
+    "DEMRESELCILU_LOW_RUR",
+    "DEMRESELCILU_LOW_URB",
+    "DEMRESELCILU_MID",
+    "DEMRESELCILU_MID_RUR",
+    "DEMRESELCILU_MID_URB",
+    "DEMRESELCOTH_HIG_RUR",
+    "DEMRESELCOTH_HIG_URB",
+    "DEMRESELCOTH_LOW",
+    "DEMRESELCOTH_LOW_RUR",
+    "DEMRESELCOTH_LOW_URB",
+    "DEMRESELCOTH_MID_RUR",
+    "DEMRESELCOTH_MID_URB",
+    "DEMRESELCREF_HIG",
+    "DEMRESELCREF_HIG_RUR",
+    "DEMRESELCREF_HIG_URB",
+    "DEMRESELCREF_LOW",
+    "DEMRESELCREF_LOW_RUR",
+    "DEMRESELCREF_LOW_URB",
+    "DEMRESELCREF_MID",
+    "DEMRESELCREF_MID_RUR",
+    "DEMRESELCREF_MID_URB",
+    "DEMRESELCTV_CRT",
+    "DEMRESELCTV_CRT_RUR",
+    "DEMRESELCTV_CRT_URB",
+    "DEMRESELCTV_HIG_RUR",
+    "DEMRESELCTV_HIG_URB",
+    "DEMRESELCTV_LOW",
+    "DEMRESELCTV_LOW_RUR",
+    "DEMRESELCTV_LOW_URB",
+    "DEMRESELCTV_MID",
+    "DEMRESELCTV_MID_RUR",
+    "DEMRESELCTV_MID_URB",
+    "DEMRESELCWHT_DUC_HIG_RUR",
+    "DEMRESELCWHT_DUC_HIG_URB",
+    "DEMRESELCWHT_DUC_LOW",
+    "DEMRESELCWHT_DUC_LOW_RUR",
+    "DEMRESELCWHT_DUC_LOW_URB",
+    "DEMRESELCWHT_DUC_MID",
+    "DEMRESELCWHT_DUC_MID_RUR",
+    "DEMRESELCWHT_DUC_MID_URB",
+    "DEMRESELCWHT_PAS_HIG_RUR",
+    "DEMRESELCWHT_PAS_HIG_URB",
+    "DEMRESELCWHT_PAS_LOW",
+    "DEMRESELCWHT_PAS_LOW_RUR",
+    "DEMRESELCWHT_PAS_LOW_URB",
+    "DEMRESELCWHT_PAS_MID",
+    "DEMRESELCWHT_PAS_MID_RUR",
+    "DEMRESELCWHT_PAS_MID_URB",
+    "DEMRESELCWHT_TAN_HIG_RUR",
+    "DEMRESELCWHT_TAN_HIG_URB",
+    "DEMRESELCWHT_TAN_LOW",
+    "DEMRESELCWHT_TAN_LOW_RUR",
+    "DEMRESELCWHT_TAN_LOW_URB",
+    "DEMRESELCWHT_TAN_MID",
+    "DEMRESELCWHT_TAN_MID_RUR",
+    "DEMRESELCWHT_TAN_MID_URB",
+    "DEMRESELCWSH_HIG",
+    "DEMRESELCWSH_HIG_RUR",
+    "DEMRESELCWSH_HIG_URB",
+    "DEMRESELCWSH_LOW",
+    "DEMRESELCWSH_LOW_RUR",
+    "DEMRESELCWSH_LOW_URB",
+    "DEMRESELCWSH_MID",
+    "DEMRESELCWSH_MID_RUR",
+    "DEMRESELCWSH_MID_URB",
+    "DEMRESLPGCKN_HIG_RUR",
+    "DEMRESLPGCKN_HIG_URB",
+    "DEMRESLPGCKN_LOW",
+    "DEMRESLPGCKN_LOW_RUR",
+    "DEMRESLPGCKN_LOW_URB",
+    "DEMRESLPGCKN_MID_RUR",
+    "DEMRESLPGCKN_MID_URB",
+    "DEMRESNGSCKN_HIG",
+    "DEMRESNGSCKN_HIG_RUR",
+    "DEMRESNGSCKN_HIG_URB",
+    "DEMRESNGSCKN_LOW",
+    "DEMRESNGSCKN_LOW_RUR",
+    "DEMRESNGSCKN_LOW_URB",
+    "DEMRESNGSCKN_MID",
+    "DEMRESNGSCKN_MID_RUR",
+    "DEMRESNGSCKN_MID_URB",
+    "DEMRESNGSWHT_FOR_HIG_RUR",
+    "DEMRESNGSWHT_FOR_HIG_URB",
+    "DEMRESNGSWHT_FOR_LOW_RUR",
+    "DEMRESNGSWHT_FOR_LOW_URB",
+    "DEMRESNGSWHT_FOR_MID_RUR",
+    "DEMRESNGSWHT_FOR_MID_URB",
+    "DEMRESNGSWHT_LOW",
+    "DEMRESNGSWHT_NAT_HIG_RUR",
+    "DEMRESNGSWHT_NAT_HIG_URB",
+    "DEMRESNGSWHT_NAT_LOW_RUR",
+    "DEMRESNGSWHT_NAT_LOW_URB",
+    "DEMRESWOOCKN_HIG_RUR",
+    "DEMRESWOOCKN_HIG_URB",
+    "DEMRESWOOCKN_LOW",
+    "DEMRESWOOCKN_LOW_RUR",
+    "DEMRESWOOCKN_LOW_URB",
+    "DEMRESWOOCKN_MID",
+    "DEMRESWOOCKN_MID_RUR",
+    "DEMRESWOOCKN_MID_URB",
+    "DEMRESZNIBGSCKN_MID",
+    "DEMRESZNIELCCKN_LOW",
+    "DEMRESZNIELC_LOW",
+    "DEMRESZNILPGCKN_LOW",
+    "DEMRESZNILPGCKN_MID",
+    "DEMRESZNIWOOCKN_LOW",
+    "DEMRES_MEDPVA_URB",
+]
+
+
+TEC_RES_URB = [t for t in TECNOLOGIAS_RESIDENCIALES if t.endswith("_URB")]
+TEC_RES_RUR = [t for t in TECNOLOGIAS_RESIDENCIALES if t.endswith("_RUR")]
+TEC_RES_ZNI = [t for t in TECNOLOGIAS_RESIDENCIALES if t.endswith("_ZNI")]
+
+
+def _filtro_residencial(df, sub_filtro=None, loc=None, **kw):
+
+    mask = df["TECHNOLOGY"].isin(TECNOLOGIAS_RESIDENCIALES)
+
+    if sub_filtro:
+        mask &= df["TECHNOLOGY"].isin(
+            [t for t in TECNOLOGIAS_RESIDENCIALES if sub_filtro in t]
         )
-    ]
+
+    if loc == "URB":
+        mask &= df["TECHNOLOGY"].isin(TEC_RES_URB)
+
+    elif loc == "RUR":
+        mask &= df["TECHNOLOGY"].isin(TEC_RES_RUR)
+
+    elif loc == "ZNI":
+        mask &= df["TECHNOLOGY"].isin(TEC_RES_ZNI)
+
+    return df[mask]
+
+
+TECNOLOGIAS_INDUSTRIALES = [
+    "DEMINDAUTBOI",
+    "DEMINDAUTFUR",
+    "DEMINDBAGBOI",
+    "DEMINDBAGBOI_HIG",
+    "DEMINDBAGBOI_LOW",
+    "DEMINDBAGBOI_MID",
+    "DEMINDBAGFUR",
+    "DEMINDBAGFURCCS",
+    "DEMINDBAGFUR_HIG",
+    "DEMINDBAGFUR_LOW",
+    "DEMINDBAGFUR_MID",
+    "DEMINDBGSBOI_HIG",
+    "DEMINDBGSBOI_LOW",
+    "DEMINDBGSBOI_MID",
+    "DEMINDBGSFUR_HIG",
+    "DEMINDBGSFUR_LOW",
+    "DEMINDBGSFUR_MID",
+    "DEMINDCOABOI",
+    "DEMINDCOABOICCS",
+    "DEMINDCOABOI_HIG",
+    "DEMINDCOABOI_LOW",
+    "DEMINDCOABOI_MID",
+    "DEMINDCOAFUR",
+    "DEMINDCOAFURCCS",
+    "DEMINDCOAFUR_HIG",
+    "DEMINDCOAFUR_LOW",
+    "DEMINDCOAFUR_MID",
+    "DEMINDCOAOTH_LOW",
+    "DEMINDDSLBOI_HIG",
+    "DEMINDDSLBOI_LOW",
+    "DEMINDDSLBOI_MID",
+    "DEMINDDSLFUR_HIG",
+    "DEMINDDSLFUR_LOW",
+    "DEMINDDSLFUR_MID",
+    "DEMINDELCAIR_HIG",
+    "DEMINDELCAIR_LOW",
+    "DEMINDELCAIR_MID",
+    "DEMINDELCBOI",
+    "DEMINDELCBOI_HIG",
+    "DEMINDELCBOI_LOW",
+    "DEMINDELCBOI_MID",
+    "DEMINDELCFUR",
+    "DEMINDELCFUR_HIG",
+    "DEMINDELCFUR_LOW",
+    "DEMINDELCFUR_MID",
+    "DEMINDELCILU_HIG",
+    "DEMINDELCILU_LOW",
+    "DEMINDELCILU_MID",
+    "DEMINDELCMPW",
+    "DEMINDELCMPW_HIG",
+    "DEMINDELCMPW_LOW",
+    "DEMINDELCMPW_MID",
+    "DEMINDELCOTH_HIG",
+    "DEMINDELCOTH_LOW",
+    "DEMINDELCOTH_MID",
+    "DEMINDELCREF_HIG",
+    "DEMINDELCREF_LOW",
+    "DEMINDELCREF_MID",
+    "DEMINDFOLOTH_LOW",
+    "DEMINDHDGBOI",
+    "DEMINDHDGBOI_HIG",
+    "DEMINDHDGBOI_LOW",
+    "DEMINDHDGFUR",
+    "DEMINDLPGBOI_HIG",
+    "DEMINDLPGBOI_LOW",
+    "DEMINDLPGBOI_MID",
+    "DEMINDLPGFUR_HIG",
+    "DEMINDLPGFUR_LOW",
+    "DEMINDLPGFUR_MID",
+    "DEMINDNGSBOI",
+    "DEMINDNGSBOICCS",
+    "DEMINDNGSBOI_HIG",
+    "DEMINDNGSBOI_LOW",
+    "DEMINDNGSBOI_MID",
+    "DEMINDNGSFUR",
+    "DEMINDNGSFURCCS",
+    "DEMINDNGSFURCSS",
+    "DEMINDNGSFUR_HIG",
+    "DEMINDNGSFUR_LOW",
+    "DEMINDNGSFUR_MID",
+    "DEMINDWASBOI_HIG",
+    "DEMINDWASBOI_LOW",
+    "DEMINDWASBOI_MID",
+    "DEMINDWASFUR_HIG",
+    "DEMINDWASFUR_LOW",
+    "DEMINDWASFUR_MID",
+]
+
+
+def _filtro_industrial(df, sub_filtro=None, **kw):
+
+    mask = df["TECHNOLOGY"].isin(TECNOLOGIAS_INDUSTRIALES)
+
+    if sub_filtro:
+        mask &= df["TECHNOLOGY"].isin(
+            [t for t in TECNOLOGIAS_INDUSTRIALES if sub_filtro in t]
+        )
+
+    return df[mask]
+
+
+TECNOLOGIAS_TRANSPORTE = [
+    "DEMTRADSLBOT",
+    "DEMTRADSLBUS",
+    "DEMTRADSLBUS_ART",
+    "DEMTRADSLBUS_BIA",
+    "DEMTRADSLBUS_IMU",
+    "DEMTRADSLBUS_URB",
+    "DEMTRADSLFWD",
+    "DEMTRADSLLDV",
+    "DEMTRADSLMIC",
+    "DEMTRADSLMOT",
+    "DEMTRADSLSHP",
+    "DEMTRADSLSTT",
+    "DEMTRADSLTAX",
+    "DEMTRADSLTCK",
+    "DEMTRADSLTCK_C2P",
+    "DEMTRADSLTCK_CSG",
+    "DEMTRAELCBOT",
+    "DEMTRAELCBUS",
+    "DEMTRAELCBUS_ART",
+    "DEMTRAELCBUS_BIA",
+    "DEMTRAELCBUS_IMU",
+    "DEMTRAELCBUS_URB",
+    "DEMTRAELCFWD",
+    "DEMTRAELCLDV",
+    "DEMTRAELCMET",
+    "DEMTRAELCMIC",
+    "DEMTRAELCMOT",
+    "DEMTRAELCSTT",
+    "DEMTRAELCTAX",
+    "DEMTRAELCTCK",
+    "DEMTRAELCTCK_C2P",
+    "DEMTRAELCTCK_CSG",
+    "DEMTRAFOLSHP",
+    "DEMTRAGSLBOT",
+    "DEMTRAGSLBUS",
+    "DEMTRAGSLBUS_ART",
+    "DEMTRAGSLBUS_IMU",
+    "DEMTRAGSLFWD",
+    "DEMTRAGSLLDV",
+    "DEMTRAGSLMIC",
+    "DEMTRAGSLMOT",
+    "DEMTRAGSLSTT",
+    "DEMTRAGSLTAX",
+    "DEMTRAGSLTCK",
+    "DEMTRAGSLTCK_C2P",
+    "DEMTRAHDGBUS",
+    "DEMTRAHDGBUS_IMU",
+    "DEMTRAHDGBUS_URB",
+    "DEMTRAHDGFWD",
+    "DEMTRAHDGLDV",
+    "DEMTRAHDGMIC",
+    "DEMTRAHDGMOT",
+    "DEMTRAHDGSTT",
+    "DEMTRAHDGTAX",
+    "DEMTRAHDGTCK",
+    "DEMTRAHDGTCK_CSG",
+    "DEMTRAHEVFWD",
+    "DEMTRAHEVLDV",
+    "DEMTRAHYBFWD",
+    "DEMTRAHYBLDV",
+    "DEMTRAHYBTAX",
+    "DEMTRAHYBTCK",
+    "DEMTRAJETAIR",
+    "DEMTRAJETAVI",
+    "DEMTRAJETSAFAVI",
+    "DEMTRANGSBUS",
+    "DEMTRANGSBUS_ART",
+    "DEMTRANGSBUS_BIA",
+    "DEMTRANGSBUS_IMU",
+    "DEMTRANGSBUS_URB",
+    "DEMTRANGSFWD",
+    "DEMTRANGSLDV",
+    "DEMTRANGSMIC",
+    "DEMTRANGSMOT",
+    "DEMTRANGSSTT",
+    "DEMTRANGSTAX",
+    "DEMTRANGSTCK",
+    "DEMTRANGSTCK_C2P",
+    "DEMTRANGSTCK_CSG",
+    "DEMTRAPHEVFWD",
+    "DEMTRAPHEVLDV",
+    "DEMTRAPHEVTAX",
+]
+
+TECNOLOGIAS_TRANSPORTE_CARRETERA = [
+    "DEMTRADSLBUS",
+    "DEMTRADSLBUS_ART",
+    "DEMTRADSLBUS_BIA",
+    "DEMTRADSLBUS_IMU",
+    "DEMTRADSLBUS_URB",
+    "DEMTRADSLFWD",
+    "DEMTRADSLLDV",
+    "DEMTRADSLMIC",
+    "DEMTRADSLMOT",
+    "DEMTRADSLSTT",
+    "DEMTRADSLTAX",
+    "DEMTRADSLTCK",
+    "DEMTRADSLTCK_C2P",
+    "DEMTRADSLTCK_CSG",
+    "DEMTRAELCBUS",
+    "DEMTRAELCBUS_ART",
+    "DEMTRAELCBUS_BIA",
+    "DEMTRAELCBUS_IMU",
+    "DEMTRAELCBUS_URB",
+    "DEMTRAELCFWD",
+    "DEMTRAELCLDV",
+    "DEMTRAELCMIC",
+    "DEMTRAELCMOT",
+    "DEMTRAELCSTT",
+    "DEMTRAELCTAX",
+    "DEMTRAELCTCK",
+    "DEMTRAELCTCK_C2P",
+    "DEMTRAELCTCK_CSG",
+    "DEMTRAGSLBUS",
+    "DEMTRAGSLBUS_ART",
+    "DEMTRAGSLBUS_IMU",
+    "DEMTRAGSLFWD",
+    "DEMTRAGSLLDV",
+    "DEMTRAGSLMIC",
+    "DEMTRAGSLMOT",
+    "DEMTRAGSLSTT",
+    "DEMTRAGSLTAX",
+    "DEMTRAGSLTCK",
+    "DEMTRAGSLTCK_C2P",
+    "DEMTRAHDGBUS",
+    "DEMTRAHDGBUS_IMU",
+    "DEMTRAHDGBUS_URB",
+    "DEMTRAHDGFWD",
+    "DEMTRAHDGLDV",
+    "DEMTRAHDGMIC",
+    "DEMTRAHDGMOT",
+    "DEMTRAHDGSTT",
+    "DEMTRAHDGTAX",
+    "DEMTRAHDGTCK",
+    "DEMTRAHDGTCK_CSG",
+    "DEMTRANGSBUS",
+    "DEMTRANGSBUS_ART",
+    "DEMTRANGSBUS_BIA",
+    "DEMTRANGSBUS_IMU",
+    "DEMTRANGSBUS_URB",
+    "DEMTRANGSFWD",
+    "DEMTRANGSLDV",
+    "DEMTRANGSMIC",
+    "DEMTRANGSMOT",
+    "DEMTRANGSSTT",
+    "DEMTRANGSTAX",
+    "DEMTRANGSTCK",
+    "DEMTRANGSTCK_C2P",
+    "DEMTRANGSTCK_CSG",
+    "DEMTRAPHEVLDV",
+]
+
+
+def _filtro_transporte(df, sub_filtro=None, **kw):
+
+    mask = df["TECHNOLOGY"].isin(TECNOLOGIAS_TRANSPORTE)
+
+    if sub_filtro == "CARRETERA":
+        mask &= df["TECHNOLOGY"].isin(TECNOLOGIAS_TRANSPORTE_CARRETERA)
+
+    elif sub_filtro:
+        mask &= df["TECHNOLOGY"].isin(
+            [t for t in TECNOLOGIAS_TRANSPORTE if sub_filtro in t]
+        )
+
+    return df[mask]
+
+
+TECNOLOGIAS_TRANSPORTE_POR_MODO = [
+    # ROAD (carretera)
+    "DEMTRADSLBUS",
+    "DEMTRADSLBUS_ART",
+    "DEMTRADSLBUS_BIA",
+    "DEMTRADSLBUS_IMU",
+    "DEMTRADSLBUS_URB",
+    "DEMTRADSLFWD",
+    "DEMTRADSLLDV",
+    "DEMTRADSLMIC",
+    "DEMTRADSLMOT",
+    "DEMTRADSLSTT",
+    "DEMTRADSLTAX",
+    "DEMTRADSLTCK",
+    "DEMTRADSLTCK_C2P",
+    "DEMTRADSLTCK_CSG",
+    "DEMTRAELCBUS",
+    "DEMTRAELCBUS_ART",
+    "DEMTRAELCBUS_BIA",
+    "DEMTRAELCBUS_IMU",
+    "DEMTRAELCBUS_URB",
+    "DEMTRAELCFWD",
+    "DEMTRAELCLDV",
+    "DEMTRAELCMET",
+    "DEMTRAELCMIC",
+    "DEMTRAELCMOT",
+    "DEMTRAELCSTT",
+    "DEMTRAELCTAX",
+    "DEMTRAELCTCK",
+    "DEMTRAELCTCK_C2P",
+    "DEMTRAELCTCK_CSG",
+    "DEMTRAGSLBUS",
+    "DEMTRAGSLBUS_ART",
+    "DEMTRAGSLBUS_IMU",
+    "DEMTRAGSLFWD",
+    "DEMTRAGSLLDV",
+    "DEMTRAGSLMIC",
+    "DEMTRAGSLMOT",
+    "DEMTRAGSLSTT",
+    "DEMTRAGSLTAX",
+    "DEMTRAGSLTCK",
+    "DEMTRAGSLTCK_C2P",
+    "DEMTRAHDGBUS",
+    "DEMTRAHDGBUS_IMU",
+    "DEMTRAHDGBUS_URB",
+    "DEMTRAHDGFWD",
+    "DEMTRAHDGLDV",
+    "DEMTRAHDGMIC",
+    "DEMTRAHDGMOT",
+    "DEMTRAHDGSTT",
+    "DEMTRAHDGTAX",
+    "DEMTRAHDGTCK",
+    "DEMTRAHDGTCK_CSG",
+    "DEMTRANGSBUS",
+    "DEMTRANGSBUS_ART",
+    "DEMTRANGSBUS_BIA",
+    "DEMTRANGSBUS_IMU",
+    "DEMTRANGSBUS_URB",
+    "DEMTRANGSFWD",
+    "DEMTRANGSLDV",
+    "DEMTRANGSMIC",
+    "DEMTRANGSMOT",
+    "DEMTRANGSSTT",
+    "DEMTRANGSTAX",
+    "DEMTRANGSTCK",
+    "DEMTRANGSTCK_C2P",
+    "DEMTRANGSTCK_CSG",
+    # OTROS MODOS
+    "DEMTRAHEVFWD",
+    "DEMTRAHEVLDV",
+    "DEMTRAHYBFWD",
+    "DEMTRAHYBLDV",
+    "DEMTRAHYBTAX",
+    "DEMTRAHYBTCK",
+    # AVIACIÓN
+    "DEMTRAJETAIR",
+    "DEMTRAJETAVI",
+    "DEMTRAJETSAFAVI",
+    # FERROCARRIL / METRO
+    "DEMTRAELCMET",
+    # MARÍTIMO
+    "DEMTRAFOLSHP",
+]
+
+
+def _filtro_transporte_por_modo(df, **kw):
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_TRANSPORTE)]
+
+
+TECNOLOGIAS_TERCIARIO = [
+    "DEMTERBGSCKN_HIG",
+    "DEMTERBGSCKN_LOW",
+    "DEMTERBGSCKN_MID",
+    "DEMTERELCACL_HIG",
+    "DEMTERELCACL_LOW",
+    "DEMTERELCACL_MID",
+    "DEMTERELCAIR_CEN_HIG",
+    "DEMTERELCAIR_CEN_LOW",
+    "DEMTERELCAIR_CEN_MID",
+    "DEMTERELCAIR_HIG",
+    "DEMTERELCAIR_LOW",
+    "DEMTERELCAIR_SPL_HIG",
+    "DEMTERELCAIR_SPL_LOW",
+    "DEMTERELCAIR_SPL_MID",
+    "DEMTERELCBOI",
+    "DEMTERELCCKN_HIG",
+    "DEMTERELCCKN_LOW",
+    "DEMTERELCCKN_MID",
+    "DEMTERELCDATA",
+    "DEMTERELCFAN_HIG",
+    "DEMTERELCFAN_LOW",
+    "DEMTERELCFAN_MID",
+    "DEMTERELCILU_CIA",
+    "DEMTERELCILU_HAL",
+    "DEMTERELCILU_HIG",
+    "DEMTERELCILU_LFC",
+    "DEMTERELCILU_LOW",
+    "DEMTERELCILU_MID",
+    "DEMTERELCILU_VAP",
+    "DEMTERELCMPW_HIG",
+    "DEMTERELCMPW_LOW",
+    "DEMTERELCMPW_MID",
+    "DEMTERELCOTH",
+    "DEMTERELCOTH_HIG",
+    "DEMTERELCOTH_LOW",
+    "DEMTERELCOTH_MID",
+    "DEMTERELCREF_AUC_HIG",
+    "DEMTERELCREF_AUC_LOW",
+    "DEMTERELCREF_AUC_MID",
+    "DEMTERELCREF_CEN_HIG",
+    "DEMTERELCREF_CEN_LOW",
+    "DEMTERELCREF_CEN_MID",
+    "DEMTERELCREF_HIG",
+    "DEMTERELCREF_LOW",
+    "DEMTERHDGCKN",
+    "DEMTERLGPCKN_LOW",
+    "DEMTERLPGCKN_HIG",
+    "DEMTERLPGCKN_MID",
+    "DEMTERNGSBOI_LOW",
+    "DEMTERNGSCKN_HIG",
+    "DEMTERNGSCKN_LOW",
+]
+
+
+def _filtro_terciario(df, sub_filtro=None, **kw):
+    mask = df["TECHNOLOGY"].isin(TECNOLOGIAS_TERCIARIO)
+
+    if sub_filtro:
+        mask &= df["TECHNOLOGY"].isin(
+            [t for t in TECNOLOGIAS_TERCIARIO if sub_filtro in t]
+        )
+
+    return df[mask]
 
 
 ###########################################################################################################
@@ -471,67 +1091,12 @@ def _filtro_demanda_exportaciones_liquidos(df, **kw):
     return df[df["FUEL"].isin({"DSL", "FOL", "GSL", "JET", "LPG"})]
 
 
-def _filtro_residencial(df, sub_filtro=None, loc=None, **kw):
-    """
-    Filtro para tecnologías residenciales con lógica URB/RUR/ZNI.
-
-    sub_filtro : str | None  → ej. 'CKN', 'WHT', 'AIR'
-    loc        : str | None  → 'URB', 'RUR', 'ZNI'
-    """
-    mask = df["TECHNOLOGY"].str.startswith("DEMRES")
-
-    if sub_filtro:
-        mask &= df["TECHNOLOGY"].str.contains(sub_filtro)
-
-    if loc == "URB":
-        mask &= ~df["TECHNOLOGY"].str.contains("RUR")
-        mask &= ~df["TECHNOLOGY"].str.contains("ZNI")
-    elif loc == "RUR":
-        mask &= df["TECHNOLOGY"].str.contains("RUR")
-        mask &= ~df["TECHNOLOGY"].str.contains("ZNI")
-    elif loc == "ZNI":
-        mask &= ~df["TECHNOLOGY"].str.contains("RUR")
-        mask &= df["TECHNOLOGY"].str.contains("ZNI")
-
-    return df[mask]
-
-
 def _filtro_prefijo_con_sub(df, prefijo: str, sub_filtro=None, **kw):
     """Filtro genérico: startswith(prefijo) + contains(sub_filtro)."""
     mask = df["TECHNOLOGY"].str.startswith(prefijo)
     if sub_filtro:
         mask &= df["TECHNOLOGY"].str.contains(sub_filtro)
     return df[mask]
-
-
-def _filtro_industrial(df, sub_filtro=None, **kw):
-    return _filtro_prefijo_con_sub(df, "DEMIND", sub_filtro)
-
-
-def _filtro_transporte(df, sub_filtro=None, **kw):
-    mask = df["TECHNOLOGY"].str.startswith("DEMTRA")
-    if sub_filtro == "CARRETERA":
-        road_mask = df["TECHNOLOGY"].str.contains(_ROAD_TRANSPORT_PATTERN, regex=True)
-        mask &= road_mask
-    elif sub_filtro:
-        mask &= df["TECHNOLOGY"].str.contains(sub_filtro)
-    return df[mask]
-
-
-def _filtro_transporte_por_modo(df, **kw):
-    mask = df["TECHNOLOGY"].str.startswith("DEMTRA")
-    road_mask = df["TECHNOLOGY"].str.contains(_ROAD_TRANSPORT_PATTERN, regex=True)
-    avi_mask = df["TECHNOLOGY"].str.contains("AVI")
-    bot_mask = df["TECHNOLOGY"].str.contains("BOT") | df["TECHNOLOGY"].str.contains(
-        "SHP"
-    )
-    met_mask = df["TECHNOLOGY"].str.contains("MET")
-    mask &= road_mask | avi_mask | bot_mask | met_mask
-    return df[mask]
-
-
-def _filtro_terciario(df, sub_filtro=None, **kw):
-    return _filtro_prefijo_con_sub(df, "DEMTER", sub_filtro)
 
 
 def _filtro_otros(df, sub_filtro=None, **kw):
