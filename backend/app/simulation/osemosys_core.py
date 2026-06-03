@@ -60,6 +60,7 @@ def run_osemosys_from_db(
     on_solver_finished: Callable[[Any, Any, Any, dict], None] | None = None,
     run_iis_analysis: bool = False,
     job_id: int | None = None,
+    materialize_intermediate: bool = True,
 ) -> dict:
     """Pipeline completo: DB → CSVs temporales → DataPortal → solve → results.
 
@@ -233,6 +234,7 @@ def run_osemosys_from_db(
             daytype_id_by_name=proc_result.daytype_id_by_name,
             dailytimebracket_id_by_name=proc_result.dailytimebracket_id_by_name,
             storage_id_by_name=proc_result.storage_id_by_name,
+            materialize_intermediate=materialize_intermediate,
         )
         timings["results_processing_seconds"] = perf_counter() - t
 
@@ -255,6 +257,7 @@ def run_osemosys_from_csv_dir(
     on_solver_finished: Callable[[Any, Any, Any, dict], None] | None = None,
     run_iis_analysis: bool = False,
     job_id: int | None = None,
+    materialize_intermediate: bool = True,
 ) -> dict:
     """Pipeline desde directorio de CSVs: lee sets del directorio y ejecuta solve → results.
 
@@ -429,6 +432,7 @@ def run_osemosys_from_csv_dir(
         daytype_id_by_name=proc_result.daytype_id_by_name,
         dailytimebracket_id_by_name=proc_result.dailytimebracket_id_by_name,
         storage_id_by_name=proc_result.storage_id_by_name,
+        materialize_intermediate=materialize_intermediate,
     )
     timings["results_processing_seconds"] = perf_counter() - t
 
@@ -449,6 +453,7 @@ def run_osemosys_from_excel(
     lp_dir: str | Path | None = None,
     sheet_name: str = "Parameters",
     div: int = 1,
+    materialize_intermediate: bool = True,
 ) -> dict:
     """Pipeline completo desde archivo Excel: Excel → CSVs temporales → solve → results.
 
@@ -580,6 +585,7 @@ def run_osemosys_from_excel(
             daytype_id_by_name=proc_result.daytype_id_by_name,
             dailytimebracket_id_by_name=proc_result.dailytimebracket_id_by_name,
             storage_id_by_name=proc_result.storage_id_by_name,
+            materialize_intermediate=materialize_intermediate,
         )
         timings["results_processing_seconds"] = perf_counter() - t
 

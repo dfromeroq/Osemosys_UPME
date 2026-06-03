@@ -224,8 +224,19 @@ def _build_output_rows(
         r["value"] = float(row.get("annual_emissions", 0.0))
         rows.append(r)
 
+    _append_intermediate_output_rows(rows, solution=solution, job_id=job_id, lookups=lookups)
 
-    # Mapeo de nombre de dimensión del registry → columna de OsemosysOutputParamValue.
+    return rows
+
+
+def _append_intermediate_output_rows(
+    rows: list[dict],
+    *,
+    solution: dict[str, Any],
+    job_id: int,
+    lookups: dict[str, dict[str, int]],
+) -> None:
+    """Añade filas de variables intermedias desde dict o iterador streaming."""
     _DIM_TO_ID_COL = {
         "REGION": "id_region",
         "TECHNOLOGY": "id_technology",
@@ -244,36 +255,43 @@ def _build_output_rows(
         "EMISSION": "emission_name",
     }
 
-    for var_name, entries in solution.get("intermediate_variables", {}).items():
-        index_names = VARIABLE_INDEX_NAMES.get(var_name, ())
-        for entry in entries:
-            idx = entry.get("index") or []
-            row = _empty_row_template(job_id, var_name)
-            row["value"] = float(entry.get("value", 0.0))
-            row["index_json"] = idx
-            if index_names and len(idx) == len(index_names):
-                for dim, raw_val in zip(index_names, idx):
-                    if raw_val is None:
-                        continue
-                    if dim == "YEAR":
-                        try:
-                            row["year"] = int(raw_val)
-                        except (TypeError, ValueError):
-                            pass
-                        continue
-                    name = str(raw_val) if raw_val != "" else None
-                    id_col = _DIM_TO_ID_COL.get(dim)
-                    if id_col and name is not None:
-                        lk = lookups.get(dim, {})
-                        found = lk.get(name)
-                        if found is not None:
-                            row[id_col] = int(found)
-                    name_col = _DIM_TO_NAME_COL.get(dim)
-                    if name_col and name is not None:
-                        row[name_col] = name
-            rows.append(row)
+    stream = solution.get("_intermediate_entry_iter")
+    if stream is not None:
+        entry_pairs = stream
+    else:
+        entry_pairs = (
+            (var_name, entry)
+            for var_name, entries in solution.get("intermediate_variables", {}).items()
+            for entry in entries
+        )
 
-    return rows
+    for var_name, entry in entry_pairs:
+        idx = entry.get("index") or []
+        row = _empty_row_template(job_id, var_name)
+        row["value"] = float(entry.get("value", 0.0))
+        row["index_json"] = idx
+        index_names = VARIABLE_INDEX_NAMES.get(var_name, ())
+        if index_names and len(idx) == len(index_names):
+            for dim, raw_val in zip(index_names, idx):
+                if raw_val is None:
+                    continue
+                if dim == "YEAR":
+                    try:
+                        row["year"] = int(raw_val)
+                    except (TypeError, ValueError):
+                        pass
+                    continue
+                name = str(raw_val) if raw_val != "" else None
+                id_col = _DIM_TO_ID_COL.get(dim)
+                if id_col and name is not None:
+                    lk = lookups.get(dim, {})
+                    found = lk.get(name)
+                    if found is not None:
+                        row[id_col] = int(found)
+                name_col = _DIM_TO_NAME_COL.get(dim)
+                if name_col and name is not None:
+                    row[name_col] = name
+        rows.append(row)
 
 
 def _persist_infeasibility_event(
@@ -508,6 +526,7 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
         lp_dir=str(_lp_dir_eff) if _lp_dir_eff else None,
         lp_basename=_lp_basename_eff,
         job_id=job_id,
+        materialize_intermediate=False,
     )
 
     # Persistimos la ruta del .lp si se generó: habilita descarga vía
@@ -681,6 +700,7 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
         lp_dir=str(_lp_dir_eff) if _lp_dir_eff else None,
         lp_basename=_lp_basename_eff,
         job_id=job_id,
+        materialize_intermediate=False,
     )
 
     if _gen_lp and _lp_dir_eff:
