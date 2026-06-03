@@ -1029,15 +1029,64 @@ def _filtro_terciario(df, sub_filtro=None, **kw):
     return df[mask]
 
 
-###########################################################################################################
-def _filtro_contiene(df, prefijo: str, sub_filtro=None, **kw):
-    """Filtro genérico: TECHNOLOGY *contiene* el texto dado."""
-    return df[df["TECHNOLOGY"].str.contains(prefijo)]
+TECNOLOGIAS_PWR = [
+    "PWRAFR",
+    "PWRAFRCCS",
+    "PWRBGS",
+    "PWRCOA",
+    "PWRCOACCS",
+    "PWRCOG",
+    "PWRCOGBAG",
+    "PWRCOGCOF",
+    "PWRCOGHUS",
+    "PWRCOGMAZ",
+    "PWRCOGRAQ",
+    "PWRCOGRCE",
+    "PWRCSP",
+    "PWRDAM",
+    "PWRDSL",
+    "PWRDST",
+    "PWRFOIL",
+    "PWRGEO",
+    "PWRHYDDAM",
+    "PWRHYDROR",
+    "PWRHYDROR_NDC",
+    "PWRJET",
+    "PWRLPG",
+    "PWRNGS",
+    "PWRNGSCCS",
+    "PWRNGS_CC",
+    "PWRNGS_CS",
+    "PWRNUC",
+    "PWROFIXW",
+    "PWROFLOW",
+    "PWRONW",
+    "PWRROR",
+    "PWRSOL",
+    "PWRSOLBAT",
+    "PWRSOLRTP",
+    "PWRSOLRTP_IND",
+    "PWRSOLRTP_ZNI",
+    "PWRSOLUGE",
+    "PWRSOLUGE_BAT",
+    "PWRSOLUPE",
+    "PWRSTD",
+    "PWRWAS",
+    "PWRWAS002",
+    "PWRWASAGR",
+    "PWRWNDOFS_FIX",
+    "PWRWNDOFS_FLO",
+    "PWRWNDONS",
+    "PWRWOO",
+    "PWRWOOCCS",
+]
 
 
 def _filtro_pwr(df, **kw):
-    """Tecnologías de generación eléctrica (PWR*)."""
-    return df[df["TECHNOLOGY"].str.startswith("PWR")]
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_PWR)]
+
+
+TECNOLOGIAS_PWR_LIQUIDOS = ["PWRDSL", "PWRFOL", "PWRGSL", "PWRJET", "PWRLPG"]
 
 
 def _filtro_pwr_liquidos(df, **kw):
@@ -1046,11 +1095,18 @@ def _filtro_pwr_liquidos(df, **kw):
     Filtra por prefijo de TECHNOLOGY porque el campo FUEL en ProductionByTechnology
     contiene el combustible de salida (ELC), no el de entrada.
     """
-    return df[
-        df["TECHNOLOGY"].str.startswith(
-            ("PWRDSL", "PWRFOL", "PWRGSL", "PWRJET", "PWRLPG")
-        )
-    ]
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_PWR_LIQUIDOS)]
+
+
+TECNOLOGIAS_PWR_TERMICAS = [
+    "PWRNGS",
+    "PWRNGSCCS",
+    "PWRNGS_CC",
+    "PWRNGS_CS",
+    "PWRBGS",
+    "PWRCOA",
+    "PWRCOACCS",
+]
 
 
 def _filtro_pwr_termica(df, **kw):
@@ -1059,7 +1115,147 @@ def _filtro_pwr_termica(df, **kw):
     Filtra por prefijo de TECHNOLOGY porque el campo FUEL en ProductionByTechnology
     contiene el combustible de salida (ELC), no el de entrada.
     """
-    return df[df["TECHNOLOGY"].str.startswith(("PWRNGS", "PWRBGS", "PWRCOA"))]
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_PWR_TERMICAS)]
+
+
+TECNOLOGIAS_CONSTRUCCION = [
+    "DEMCONSDSL",
+    "DEMCONSELC",
+    "DEMCONSGSL",
+    "DEMCONSNGS",
+]
+
+
+def _filtro_construccion(df, sub_filtro=None, **kw):
+    mask = df["TECHNOLOGY"].isin(TECNOLOGIAS_CONSTRUCCION)
+
+    if sub_filtro:
+        mask &= df["TECHNOLOGY"].isin(
+            [t for t in TECNOLOGIAS_CONSTRUCCION if sub_filtro in t]
+        )
+
+    return df[mask]
+
+
+TECNOLOGIAS_AGROFORESTAL = [
+    "DEMAGFDSL",
+    "DEMAGFELC",
+    "DEMAGFGSL",
+    "DEMAGFNGS",
+    "DEMAGFTER",
+    "DEMAGFWOO",
+]
+
+
+def _filtro_agroforestal(df, sub_filtro=None, **kw):
+    mask = df["TECHNOLOGY"].isin(TECNOLOGIAS_AGROFORESTAL)
+
+    if sub_filtro:
+        mask &= df["TECHNOLOGY"].isin(
+            [t for t in TECNOLOGIAS_AGROFORESTAL if sub_filtro in t]
+        )
+
+    return df[mask]
+
+
+TECNOLOGIAS_MINERIA = [
+    "DEMMINIDSL",
+    "DEMMINIELC",
+    "DEMMINIGSL",
+    "DEMMININGS",
+]
+
+
+def _filtro_mineria(df, sub_filtro=None, **kw):
+    mask = df["TECHNOLOGY"].isin(TECNOLOGIAS_MINERIA)
+
+    if sub_filtro:
+        mask &= df["TECHNOLOGY"].isin(
+            [t for t in TECNOLOGIAS_MINERIA if sub_filtro in t]
+        )
+
+    return df[mask]
+
+
+TECNOLOGIAS_COQUERIAS = [
+    "DEMCOQDSL",
+    "DEMCOQGSL",
+]
+
+
+def _filtro_coquerias(df, sub_filtro=None, **kw):
+    mask = df["TECHNOLOGY"].isin(TECNOLOGIAS_COQUERIAS)
+
+    if sub_filtro:
+        mask &= df["TECHNOLOGY"].isin(
+            [t for t in TECNOLOGIAS_COQUERIAS if sub_filtro in t]
+        )
+
+    return df[mask]
+
+
+TECNOLOGIAS_IMPORTACION_SOLIDOS = ["MINCOA", "IMPCOA"]
+
+
+def _filtro_solidos_import(df, **kw):
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_IMPORTACION_SOLIDOS)]
+
+
+TECNOLOGIAS_IMPORTACION_EXPORTACION_SOLIDOS = ["MINCOA", "IMPCOA", "EXPCOA"]
+
+
+def _filtro_solidos_flujos(df, **kw):
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_IMPORTACION_EXPORTACION_SOLIDOS)]
+
+
+TECNOLOGIAS_EXTRACCION_SOLIDOS = ["MINCOA"]
+
+
+def _filtro_solidos_extraccion(df, **kw):
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_EXTRACCION_SOLIDOS)]
+
+
+TECNOLOGIAS_EXTRACCION_MINERIA = [
+    "MINBAG",
+    "MINOPL",
+    "MINWAS",
+    "MINWAS_ORG",
+    "MINAFR",
+    "MINSGC",
+    "MINWOO",
+    "MINCOA",
+]
+
+
+def _filtro_extraccion_min(df, **kw):
+    """Tecnologías de extracción: bagazo, petróleo, residuos, biocombustibles, carbón."""
+    return df[df["TECHNOLOGY"].isin((TECNOLOGIAS_EXTRACCION_MINERIA))]
+
+
+TECNOLOGIAS_PRODUCCION_SAF = ["UPSSAF", "UPSBJS", "UPSATJ"]
+
+
+def _filtro_saf_produccion(df, **kw):
+    return df[df["TECHNOLOGY"].isin((TECNOLOGIAS_PRODUCCION_SAF))]
+
+
+_H2_EXCLUIR = {"UPSHDGRST", "DEMTRAHDGTAX"}
+
+
+def _filtro_h2(df, **kw):
+    """Tecnologías que producen/consumen hidrógeno (FUEL=HDG/HDG002),
+    excluyendo estaciones de despacho/distribución."""
+    if "FUEL" not in df.columns:
+        return df.iloc[0:0]
+    mask_fuel = (df["FUEL"] == "HDG") | (df["FUEL"] == "HDG002")
+    mask_excluir = ~df["TECHNOLOGY"].isin(_H2_EXCLUIR)
+    return df[mask_fuel & mask_excluir]
+
+
+###########################################################################################################
+def _filtro_contiene(df, prefijo: str, sub_filtro=None, **kw):
+    """Filtro genérico: TECHNOLOGY *contiene* el texto dado."""
+    return df[df["TECHNOLOGY"].str.contains(prefijo)]
 
 
 def _filtro_exp_oil(df, **kw):
@@ -1091,34 +1287,18 @@ def _filtro_demanda_exportaciones_liquidos(df, **kw):
     return df[df["FUEL"].isin({"DSL", "FOL", "GSL", "JET", "LPG"})]
 
 
-def _filtro_prefijo_con_sub(df, prefijo: str, sub_filtro=None, **kw):
-    """Filtro genérico: startswith(prefijo) + contains(sub_filtro)."""
-    mask = df["TECHNOLOGY"].str.startswith(prefijo)
-    if sub_filtro:
-        mask &= df["TECHNOLOGY"].str.contains(sub_filtro)
-    return df[mask]
-
-
 def _filtro_otros(df, sub_filtro=None, **kw):
     if sub_filtro:
         return df[df["TECHNOLOGY"].str.startswith(sub_filtro)]
     return df.iloc[0:0]
 
 
-def _filtro_construccion(df, sub_filtro=None, **kw):
-    return _filtro_prefijo_con_sub(df, "DEMCON", sub_filtro)
-
-
-def _filtro_agroforestal(df, sub_filtro=None, **kw):
-    return _filtro_prefijo_con_sub(df, "DEMAGF", sub_filtro)
-
-
-def _filtro_mineria(df, sub_filtro=None, **kw):
-    return _filtro_prefijo_con_sub(df, "DEMMIN", sub_filtro)
-
-
-def _filtro_coquerias(df, sub_filtro=None, **kw):
-    return _filtro_prefijo_con_sub(df, "DEMCOQ", sub_filtro)
+def _filtro_prefijo_con_sub(df, prefijo: str, sub_filtro=None, **kw):
+    """Filtro genérico: startswith(prefijo) + contains(sub_filtro)."""
+    mask = df["TECHNOLOGY"].str.startswith(prefijo)
+    if sub_filtro:
+        mask &= df["TECHNOLOGY"].str.contains(sub_filtro)
+    return df[mask]
 
 
 def _filtro_demanda_por_combustible(df, sub_filtro=None, **kw):
@@ -1144,10 +1324,6 @@ def _filtro_demanda_por_combustible(df, sub_filtro=None, **kw):
     return df
 
 
-def _filtro_solidos_extraccion(df, **kw):
-    return df[df["TECHNOLOGY"].str.startswith("MINCOA")]
-
-
 def _filtro_oferta_bioenergia(df, **kw):
     """Oferta bioenergía: residuos sólidos, palma, orgánica, caña, madera."""
     return df[
@@ -1158,19 +1334,6 @@ def _filtro_oferta_bioenergia(df, **kw):
         | df["TECHNOLOGY"].str.startswith("MINWOO")
         | df["TECHNOLOGY"].str.startswith("MINBAG")
     ]
-
-
-_H2_EXCLUIR = {"UPSHDGRST", "DEMTRAHDGTAX"}
-
-
-def _filtro_h2(df, **kw):
-    """Tecnologías que producen/consumen hidrógeno (FUEL=HDG/HDG002),
-    excluyendo estaciones de despacho/distribución."""
-    if "FUEL" not in df.columns:
-        return df.iloc[0:0]
-    mask_fuel = (df["FUEL"] == "HDG") | (df["FUEL"] == "HDG002")
-    mask_excluir = ~df["TECHNOLOGY"].isin(_H2_EXCLUIR)
-    return df[mask_fuel & mask_excluir]
 
 
 def _filtro_ups_refinacion(df, **kw):
@@ -1273,29 +1436,6 @@ def _filtro_min_carbon(df, **kw):
     return df[df["TECHNOLOGY"].str.startswith("MINCOA")]
 
 
-def _filtro_solidos_import(df, **kw):
-    return df[
-        df["TECHNOLOGY"].str.startswith("MINCOA")
-        | df["TECHNOLOGY"].str.startswith("IMPCOA")
-    ]
-
-
-def _filtro_solidos_flujos(df, **kw):
-    return df[
-        df["TECHNOLOGY"].str.startswith("MINCOA")
-        | df["TECHNOLOGY"].str.startswith("IMPCOA")
-        | df["TECHNOLOGY"].str.startswith("EXPCOA")
-    ]
-
-
-def _filtro_saf_produccion(df, **kw):
-    return df[
-        df["TECHNOLOGY"].str.startswith("UPSSAF")
-        | df["TECHNOLOGY"].str.startswith("UPSBJS")
-        | df["TECHNOLOGY"].str.startswith("UPSATJ")
-    ]
-
-
 def _filtro_por_fuel_set(df, fuel_set: set, **kw):
     if "FUEL" not in df.columns:
         return df.iloc[0:0]
@@ -1353,24 +1493,6 @@ def _filtro_gei(df, **kw):
 
 def _filtro_contaminantes(df, **kw):
     return _filtro_por_fuel_set(df, _CONTAMINANTES)
-
-
-def _filtro_extraccion_min(df, **kw):
-    """Tecnologías de extracción: bagazo, petróleo, residuos, biocombustibles, carbón."""
-    return df[
-        df["TECHNOLOGY"].str.startswith(
-            (
-                "MINBAG",
-                "MINOPL",
-                "MINWAS",
-                "MINWAS_ORG",
-                "MINAFR",
-                "MINSGC",
-                "MINWOO",
-                "MINCOA",
-            )
-        )
-    ]
 
 
 # ════════════════════════════════════════════════════════════════════════
