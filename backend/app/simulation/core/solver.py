@@ -7,14 +7,21 @@ Replica las celdas 27-28 del notebook OPT_YA_20260220:
 
 Uso: recibe la instancia concreta de instance_builder.build_instance();
      devuelve dict con solver_name, solver_status, objective_value.
+
+Nota de rendimiento (2026-05):
+  appsi_highs transfiere el modelo a HiGHS row-by-row desde Python (~290 s para
+  777 k filas). La ruta LP-directa escribe un archivo LP (etiquetas numéricas) y
+  lo carga con highspy.readModel() en C puro, eliminando ese overhead.
 """
 
 from __future__ import annotations
 
 import logging
 import re
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 import pyomo.environ as pyo
@@ -84,22 +91,176 @@ def get_solver_availability() -> dict[str, bool]:
 def write_lp_file(
     instance: pyo.ConcreteModel,
     lp_path: str | Path,
+    *,
+    symbolic: bool = True,
 ) -> Path:
-    """Genera archivo LP con etiquetas simbólicas para debugging.
+    """Genera archivo LP para debugging o descarga.
 
     Replica la celda 27 del notebook OPT_YA_20260220.
-    symbolic_solver_labels=True hace que los nombres de restricciones/variables sean legibles.
+    symbolic=True → nombres legibles; symbolic=False → etiquetas x1/x2/... (más rápido).
     """
     lp_path = Path(lp_path)
     lp_path.parent.mkdir(parents=True, exist_ok=True)
-    logger.info("Generando archivo LP: %s", lp_path)
+    logger.info("Generando archivo LP (symbolic=%s): %s", symbolic, lp_path)
+    t0 = perf_counter()
     instance.write(
         filename=str(lp_path),
-        io_options={"symbolic_solver_labels": True},
+        io_options={"symbolic_solver_labels": symbolic},
     )
     file_size_mb = lp_path.stat().st_size / (1024 * 1024)
-    logger.info("Archivo LP generado (%.2f MB): %s", file_size_mb, lp_path)
+    logger.info(
+        "Archivo LP generado en %.1fs (%.2f MB): %s",
+        perf_counter() - t0, file_size_mb, lp_path,
+    )
     return lp_path
+
+
+def _solve_highs_via_lp(
+    instance: pyo.ConcreteModel,
+    *,
+    threads: int = 0,
+    tee: bool = False,
+) -> tuple[str, float, int | None]:
+    """Resuelve via LP file + highspy.readModel() evitando el overhead row-by-row de appsi.
+
+    Flujo:
+      1. Escribe LP con etiquetas numéricas (etiquetas simbólicas son ~30% más lentas).
+      2. Carga el LP en HiGHS vía C puro (h.readModel).
+      3. Resuelve (h.run).
+      4. Carga solución de vuelta a variables Pyomo por posición (mismo orden que
+         component_data_objects usa al iterar Vars).
+      5. Carga duals al Suffix ``instance.dual`` por posición de fila; si el conteo
+         de filas HiGHS ≠ conteo de constraints activos Pyomo, se omite la carga dual.
+
+    Retorna (raw_status, objective_value, threads_used).
+    """
+    try:
+        import highspy  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError("highspy no disponible para ruta LP directa") from exc
+
+    tmp = Path(tempfile.mktemp(suffix=".lp"))
+    tmp.parent.mkdir(parents=True, exist_ok=True)
+
+    # ── 1. Escribir LP (etiquetas simbólicas) ───────────────────────────────
+    # symbolic=True necesario para que h.getLp().col_names_ contenga nombres
+    # reales; con numeric ("x1","x2",...) no es posible el mapeo por nombre.
+    t_write = perf_counter()
+    instance.write(str(tmp), io_options={"symbolic_solver_labels": True})
+    lp_size_mb = tmp.stat().st_size / (1024 * 1024)
+    logger.info(
+        "LP write (symbolic labels): %.1fs  %.1f MB",
+        perf_counter() - t_write, lp_size_mb,
+    )
+
+    # ── 2. Cargar y resolver en HiGHS ───────────────────────────────────────
+    h = highspy.Highs()
+    if not tee:
+        h.setOptionValue("output_flag", False)
+    else:
+        h.setOptionValue("log_to_console", True)
+    if threads > 0:
+        h.setOptionValue("threads", threads)
+
+    t_read = perf_counter()
+    h.readModel(str(tmp))
+    logger.info("HiGHS readModel: %.1fs", perf_counter() - t_read)
+
+    t_run = perf_counter()
+    h.run()
+    logger.info("HiGHS run: %.1fs", perf_counter() - t_run)
+
+    # ── 3. Estado y objetivo ─────────────────────────────────────────────────
+    model_status = h.getModelStatus()
+    is_optimal = (model_status == highspy.HighsModelStatus.kOptimal)
+    is_infeasible = model_status in (
+        highspy.HighsModelStatus.kInfeasible,
+        highspy.HighsModelStatus.kUnboundedOrInfeasible,
+    )
+
+    obj_val = 0.0
+    if is_optimal:
+        _ok, obj_val = h.getInfoValue("objective_function_value")
+        obj_val = float(obj_val)
+
+    # ── 4. Cargar solución en variables Pyomo (mapeo por nombre) ────────────
+    if is_optimal:
+        t_load = perf_counter()
+        from app.simulation.core.infeasibility_analysis import _canon_name
+
+        sol = h.getSolution()
+        col_values = sol.col_value
+        lp_col_names = list(h.getLp().col_names_)
+
+        # El LP writer ordena variables por primera aparición en constraints;
+        # component_data_objects(Var) las devuelve en orden de declaración.
+        # Usar _canon_name (alphanum lowercase) garantiza match sin importar
+        # el formato exacto del LP writer (brackets, underscores, parens).
+        pyomo_by_canon: dict[str, object] = {
+            _canon_name(v.name): v
+            for v in instance.component_data_objects(pyo.Var, active=True)
+        }
+
+        n_loaded = n_missing = 0
+        for lp_name, val in zip(lp_col_names, col_values):
+            var_data = pyomo_by_canon.get(_canon_name(lp_name))
+            if var_data is not None:
+                var_data.set_value(float(val))
+                n_loaded += 1
+            else:
+                n_missing += 1
+
+        if n_missing:
+            logger.warning(
+                "Vars sin match por nombre: %d/%d — solución incompleta",
+                n_missing, len(lp_col_names),
+            )
+        logger.info(
+            "Solución cargada (name-based): %d vars en %.1fs",
+            n_loaded, perf_counter() - t_load,
+        )
+
+        # ── 5. Cargar duals al Suffix instance.dual ─────────────────────────
+        dual_suffix = getattr(instance, "dual", None)
+        if dual_suffix is not None:
+            row_duals = sol.row_dual
+            n_highs_rows = h.getNumRow()
+            active_cons = list(
+                instance.component_data_objects(pyo.Constraint, active=True)
+            )
+            n_pyomo_cons = len(active_cons)
+
+            if n_highs_rows == n_pyomo_cons:
+                for i, con in enumerate(active_cons):
+                    dual_suffix[con] = float(row_duals[i])
+                logger.info("Duals cargados (%d filas)", n_highs_rows)
+            else:
+                logger.info(
+                    "Duals omitidos: HiGHS rows=%d ≠ Pyomo constraints=%d",
+                    n_highs_rows, n_pyomo_cons,
+                )
+
+    try:
+        tmp.unlink()
+    except OSError:
+        pass
+
+    # threads_used
+    _ok, effective_threads = h.getOptionValue("threads")
+    if _ok == highspy.HighsStatus.kOk and effective_threads:
+        threads_used: int | None = int(effective_threads)
+    else:
+        threads_used = threads if threads > 0 else None
+
+    raw_status: str
+    if is_optimal:
+        raw_status = "optimal"
+    elif is_infeasible:
+        raw_status = "infeasible"
+    else:
+        raw_status = str(model_status).lower().replace("highs model status.", "")
+
+    return raw_status, obj_val, threads_used
 
 
 def _release_solver(solver: object) -> None:
@@ -432,27 +593,25 @@ def solve_model(
     lp_path: str | Path | None = None,
     on_solver_finished: Callable[[pyo.ConcreteModel, Any, Any, dict], None] | None = None,
 ) -> dict:
-    """Resuelve el modelo usando Pyomo SolverFactory.
+    """Resuelve el modelo usando Pyomo SolverFactory (GLPK/Gurobi) o LP-directo (HiGHS).
 
     Replica las celdas 27-28 del notebook OPT_YA_20260220.
-    - Si lp_path no es None, escribe el .lp antes de resolver.
-    - Prueba primero el solver solicitado; si no está disponible, prueba el otro (highs/glpk).
-    - Si el status es infactible, ejecuta _run_infeasibility_diagnostics.
-    - Retorna dict con solver_name, solver_status, objective_value y,
-      si infactible, infeasibility_diagnostics.
+
+    Para HiGHS usa ``_solve_highs_via_lp``: escribe LP numérico y llama
+    ``highspy.readModel`` (C puro), evitando el overhead Python→C row-by-row de
+    ``appsi_highs`` (~290 s para modelos con 777 k filas).
+
+    Si lp_path no es None, escribe un LP simbólico (legible) **después** del solve;
+    esto desacopla el archivo de descarga del camino crítico de resolución.
 
     Parameters
     ----------
     on_solver_finished :
         Hook opcional invocado justo antes de retornar, con la firma
-        ``(instance, solver, results, solution_dict)``. Pensado para scripts
-        locales que quieren acceder a la instancia Pyomo y al solver (ej. para
-        correr un análisis de IIS). El pipeline productivo nunca lo usa.
+        ``(instance, solver_or_highs, results_or_none, solution_dict)``.
+        Pensado para scripts locales; el pipeline productivo nunca lo usa.
     """
     settings = get_settings()
-    if lp_path is not None:
-        write_lp_file(instance, lp_path)
-
     solver_availability = get_solver_availability()
 
     # Orden de intento: el solicitado primero, luego el resto.
@@ -463,38 +622,51 @@ def solve_model(
     )
 
     for candidate in fallback_order:
-        factory_name = SOLVER_FACTORIES.get(candidate)
-        if not factory_name or not solver_availability.get(candidate, False):
+        if not solver_availability.get(candidate, False):
             continue
 
-        logger.info("Resolviendo con %s (SolverFactory('%s'))...", candidate, factory_name)
-        solver = pyo.SolverFactory(factory_name)
-        threads_used = _apply_solver_runtime_options(
-            solver, candidate=candidate, settings=settings
-        )
-        results = solver.solve(
-            instance,
-            tee=settings.sim_solver_tee,
-            keepfiles=settings.sim_solver_keepfiles,
-            load_solutions=False,
-        )
+        logger.info("Resolviendo con solver '%s'...", candidate)
 
-        raw_status = str(results.solver.termination_condition)
+        # ── Ruta LP-directa para HiGHS ──────────────────────────────────────
+        if candidate == "highs":
+            solver_threads = _resolve_solver_threads(settings)
+            raw_status, obj, threads_used = _solve_highs_via_lp(
+                instance,
+                threads=solver_threads,
+                tee=settings.sim_solver_tee,
+            )
+            solver_obj = None  # no hay objeto SolverFactory en esta ruta
+            results_obj = None
+
+        # ── Ruta legacy Pyomo SolverFactory (GLPK, Gurobi) ─────────────────
+        else:
+            factory_name = SOLVER_FACTORIES.get(candidate)
+            if not factory_name:
+                continue
+            solver_obj = pyo.SolverFactory(factory_name)
+            threads_used = _apply_solver_runtime_options(
+                solver_obj, candidate=candidate, settings=settings
+            )
+            results_obj = solver_obj.solve(
+                instance,
+                tee=settings.sim_solver_tee,
+                keepfiles=settings.sim_solver_keepfiles,
+                load_solutions=False,
+            )
+            raw_status = str(results_obj.solver.termination_condition)
+            obj = 0.0
+            if "optimal" in raw_status.lower():
+                instance.solutions.load_from(results_obj)
+                try:
+                    obj = float(pyo.value(instance.OBJ))
+                except Exception:
+                    pass
+
+        # ── Resultado común ──────────────────────────────────────────────────
         status_display = normalize_solver_status_display(raw_status)
-        obj = 0.0
-        if "optimal" in raw_status.lower():
-            instance.solutions.load_from(results)
-            try:
-                obj = float(pyo.value(instance.OBJ))
-            except Exception:
-                pass
-
         logger.info(
             "Solver %s terminó: status=%s (raw=%s), objective=%.4f",
-            candidate,
-            status_display,
-            raw_status,
-            obj,
+            candidate, status_display, raw_status, obj,
         )
 
         diagnostics: dict | None = None
@@ -516,15 +688,20 @@ def solve_model(
 
         if on_solver_finished is not None:
             try:
-                on_solver_finished(instance, solver, results, solution_dict)
+                on_solver_finished(instance, solver_obj, results_obj, solution_dict)
             except Exception:  # pragma: no cover - el hook es best-effort
                 logger.exception("on_solver_finished falló; se ignora y se continúa.")
 
-        # Libera la licencia del solver tan pronto se termina. Crítico para
-        # Gurobi con licencia Single-Use: si el objeto solver queda vivo (por
-        # referencias en post-procesamiento), el environment de gurobipy
-        # mantiene la sesión tomada y bloquea cualquier otro solve.
-        _release_solver(solver)
+        # Libera la licencia del solver (crítico para Gurobi Single-Use).
+        if solver_obj is not None:
+            _release_solver(solver_obj)
+
+        # Genera LP simbólico para descarga DESPUÉS del solve (no bloquea el camino crítico).
+        if lp_path is not None:
+            try:
+                write_lp_file(instance, lp_path, symbolic=True)
+            except Exception:
+                logger.warning("No se pudo escribir LP simbólico en %s", lp_path, exc_info=True)
 
         return solution_dict
 
