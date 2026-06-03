@@ -13,7 +13,7 @@ import shutil
 import uuid
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 import zipfile
@@ -69,7 +69,10 @@ from app.services.csv_scenario_import_service import (
     find_csv_root,
 )
 from app.core.config import get_settings
-from app.services.scenario_export_service import export_scenario_raw_to_excel, export_scenario_to_excel
+from app.services.scenario_export_service import (
+    export_scenario_raw_to_excel_file,
+    export_scenario_to_excel_file,
+)
 from app.services.scenario_service import ScenarioService
 
 router = APIRouter(prefix="/scenarios")
@@ -746,15 +749,34 @@ def export_scenario_excel(
         else f"{safe_name}_Parameters_SAND.xlsx"
     )
 
-    content = (
-        export_scenario_raw_to_excel(db, scenario_id=scenario_id, scenario_name=scenario_name)
-        if normalized_format == "raw"
-        else export_scenario_to_excel(db, scenario_id=scenario_id, scenario_name=scenario_name)
-    )
-    return StreamingResponse(
-        BytesIO(content),
+    import os
+    import tempfile
+
+    fd, tmp_path = tempfile.mkstemp(suffix=".xlsx", prefix="scenario_export_")
+    os.close(fd)
+    try:
+        if normalized_format == "raw":
+            export_scenario_raw_to_excel_file(
+                db, scenario_id=scenario_id, scenario_name=scenario_name, output_path=tmp_path
+            )
+        else:
+            export_scenario_to_excel_file(
+                db, scenario_id=scenario_id, scenario_name=scenario_name, output_path=tmp_path
+            )
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+    from starlette.background import BackgroundTask
+
+    return FileResponse(
+        path=tmp_path,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        filename=filename,
+        background=BackgroundTask(lambda: os.path.exists(tmp_path) and os.unlink(tmp_path)),
     )
 
 
