@@ -6,12 +6,15 @@ Estructura idéntica a la plantilla SAND oficial: Parameter, dimensiones
 REGION2), Time indipendent variables, y columnas por año (2022–2055 fijo).
 Permite descargar, editar en Excel y volver a subir manteniendo el contrato
 con el importador.
+
+Implementación: usa openpyxl en modo `write_only` y escribe a un path en disco
+para mantener bajo el uso de memoria y reducir el tiempo de generación —
+necesario para escenarios grandes que de otro modo timeoutean en el proxy.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
-from io import BytesIO
 
 from openpyxl import Workbook
 from sqlalchemy.orm import Session
@@ -95,94 +98,65 @@ def _sand_key(row) -> tuple:
     )
 
 
-def export_scenario_to_excel(db: Session, *, scenario_id: int, scenario_name: str) -> bytes:
-    """
-    Genera un Excel con una hoja "Parameters" en formato SAND a partir de
-    osemosys_param_value del escenario dado.
-
-    - Cabeceras: SAND_DIMENSION_HEADERS + Time indipendent variables + 2022..2055.
-    - Parámetros con año: valor en la columna del año correspondiente.
-    - Parámetros sin año: valor en columna "Time indipendent variables".
-    - Se omiten parámetros que usan SEASON/DAYTYPE/DAILYTIMEBRACKET/UDC.
-    """
+def export_scenario_to_excel_file(
+    db: Session, *, scenario_id: int, scenario_name: str, output_path: str
+) -> None:
+    """Escribe el Excel SAND directamente a `output_path` (modo write_only)."""
     result_proxy = db.execute(_resolved_query(), {"scenario_id": scenario_id})
 
     grouped: dict[tuple, dict[int | None, float]] = defaultdict(dict)
-
     for row in result_proxy.yield_per(50_000):
         pname = row[_ROW_PARAM]
         if not _param_is_sand_compatible(pname):
             continue
-
         value = float(row[_ROW_VALUE])
         year_raw = row[_ROW_YEAR]
         year_val: int | None = int(year_raw) if year_raw is not None else None
-
         grouped[_sand_key(row)][year_val] = value
 
-    wb = Workbook()
-    ws = wb.active
-    if ws is None:
-        raise RuntimeError("Workbook has no active sheet")
-    ws.title = "Parameters"
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet(title="Parameters")
 
     headers = list(SAND_DIMENSION_HEADERS) + [TIME_INDEPENDENT_HEADER] + [str(y) for y in SAND_YEARS]
-    for col, h in enumerate(headers, start=1):
-        ws.cell(row=1, column=col, value=h)
+    ws.append(headers)
 
-    n_dims = len(SAND_DIMENSION_HEADERS)  # incluye "Parameter"
-    col_time_indep = n_dims + 1
-    first_year_col = n_dims + 2
+    n_year_cols = len(SAND_YEARS)
+    for key, year_to_val in sorted(grouped.items(), key=lambda x: x[0]):
+        row_out: list = [v or None for v in key]
+        row_out.append(year_to_val.get(None))
+        row_out.extend(year_to_val.get(yr) for yr in SAND_YEARS)
+        # Sanity: longitud total = dims + time-indep + years
+        assert len(row_out) == len(SAND_DIMENSION_HEADERS) + 1 + n_year_cols
+        ws.append(row_out)
 
-    row_data_list = sorted(grouped.items(), key=lambda x: x[0])
-
-    for excel_row, (key, year_to_val) in enumerate(row_data_list, start=2):
-        for c, v in enumerate(key, start=1):
-            ws.cell(row=excel_row, column=c, value=(v or None))
-
-        ti = year_to_val.get(None)
-        if ti is not None:
-            ws.cell(row=excel_row, column=col_time_indep, value=ti)
-        for i, yr in enumerate(SAND_YEARS):
-            val = year_to_val.get(yr)
-            if val is not None:
-                ws.cell(row=excel_row, column=first_year_col + i, value=val)
-
-    out = BytesIO()
-    wb.save(out)
-    return out.getvalue()
+    wb.save(output_path)
 
 
-def export_scenario_raw_to_excel(db: Session, *, scenario_id: int, scenario_name: str) -> bytes:
-    """Genera un Excel RAW (1 fila por registro) de `osemosys_param_value`.
-
-    A diferencia del formato SAND, no agrupa por dimensiones y no filtra por PARAM_INDEX.
-    El orden de las columnas de dimensión coincide con SAND para facilitar comparaciones.
-    """
+def export_scenario_raw_to_excel_file(
+    db: Session, *, scenario_id: int, scenario_name: str, output_path: str
+) -> None:
+    """Escribe el Excel RAW (1 fila por registro) directamente a `output_path`."""
     result_proxy = db.execute(_resolved_query(), {"scenario_id": scenario_id})
 
-    wb = Workbook()
-    ws = wb.active
-    if ws is None:
-        raise RuntimeError("Workbook has no active sheet")
-    ws.title = "RawParameters"
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet(title="RawParameters")
+    ws.append(RAW_HEADERS)
 
-    for col, h in enumerate(RAW_HEADERS, start=1):
-        ws.cell(row=1, column=col, value=h)
+    for row in result_proxy.yield_per(50_000):
+        ws.append(
+            [
+                _row_to_str(row[_ROW_PARAM]) or None,
+                _row_to_str(row[_ROW_REGION]) or None,
+                _row_to_str(row[_ROW_TECH]) or None,
+                _row_to_str(row[_ROW_EMISSION]) or None,
+                normalize_mode_of_operation_scalar(row[_ROW_MODE]) or None,
+                _row_to_str(row[_ROW_FUEL]) or None,
+                _row_to_str(row[_ROW_TIMESLICE]) or None,
+                _row_to_str(row[_ROW_STORAGE]) or None,
+                None,  # REGION2
+                int(row[_ROW_YEAR]) if row[_ROW_YEAR] is not None else None,
+                float(row[_ROW_VALUE]) if row[_ROW_VALUE] is not None else None,
+            ]
+        )
 
-    for excel_row, row in enumerate(result_proxy.yield_per(50_000), start=2):
-        ws.cell(row=excel_row, column=1, value=_row_to_str(row[_ROW_PARAM]) or None)
-        ws.cell(row=excel_row, column=2, value=_row_to_str(row[_ROW_REGION]) or None)
-        ws.cell(row=excel_row, column=3, value=_row_to_str(row[_ROW_TECH]) or None)
-        ws.cell(row=excel_row, column=4, value=_row_to_str(row[_ROW_EMISSION]) or None)
-        ws.cell(row=excel_row, column=5, value=normalize_mode_of_operation_scalar(row[_ROW_MODE]) or None)
-        ws.cell(row=excel_row, column=6, value=_row_to_str(row[_ROW_FUEL]) or None)
-        ws.cell(row=excel_row, column=7, value=_row_to_str(row[_ROW_TIMESLICE]) or None)
-        ws.cell(row=excel_row, column=8, value=_row_to_str(row[_ROW_STORAGE]) or None)
-        ws.cell(row=excel_row, column=9, value=None)  # REGION2
-        ws.cell(row=excel_row, column=10, value=int(row[_ROW_YEAR]) if row[_ROW_YEAR] is not None else None)
-        ws.cell(row=excel_row, column=11, value=float(row[_ROW_VALUE]) if row[_ROW_VALUE] is not None else None)
-
-    out = BytesIO()
-    wb.save(out)
-    return out.getvalue()
+    wb.save(output_path)
