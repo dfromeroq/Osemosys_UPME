@@ -71,9 +71,10 @@ export function CatalogsPage() {
 
   useEffect(() => {
     if (requestedTab && allowedTabs.includes(requestedTab)) return;
-    if (allowedTabs.length === 0) return;
+    const firstTab = allowedTabs[0];
+    if (!firstTab) return;
     const next = new URLSearchParams(searchParams);
-    next.set("tab", allowedTabs[0]);
+    next.set("tab", firstTab);
     setSearchParams(next, { replace: true });
   }, [allowedTabs, requestedTab, searchParams, setSearchParams]);
 
