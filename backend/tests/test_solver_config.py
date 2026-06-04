@@ -71,6 +71,17 @@ def test_resolve_highs_config_from_env() -> None:
     assert cfg.threads == 8
 
 
+def test_resolve_highs_config_rejects_invalid_hipo_parallel_type() -> None:
+    cfg = resolve_highs_config(
+        _fake_settings(
+            sim_solver_highs_method="hipo",
+            sim_solver_highs_hipo_parallel_type="invalid",
+        )
+    )
+    assert cfg.method == "hipo"
+    assert cfg.hipo_parallel_type == ""
+
+
 def test_apply_highs_options_to_dict() -> None:
     opts: dict[str, object] = {}
     cfg = SolverHighsConfig(threads=4, method="ipm", presolve="on", parallel="on")
@@ -214,6 +225,23 @@ def test_solve_model_routes_to_direct_highspy(monkeypatch, tmp_path) -> None:
     assert calls.get("direct") is True
     assert result["objective_value"] == 123.0
     assert result["solver_timings"]["solver_backend"] == "direct_highspy"
+
+
+def test_solve_model_fails_when_requested_solver_is_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(solver_module, "get_settings", lambda: _fake_settings())
+    monkeypatch.setattr(
+        solver_module,
+        "get_solver_availability",
+        lambda: {"glpk": True, "highs": False, "gurobi": True},
+    )
+
+    try:
+        solver_module.solve_model(_FakeInstance(), solver_name="highs")
+    except RuntimeError as exc:
+        assert "Solver 'highs' no disponible" in str(exc)
+        assert "SolverFactory('appsi_highs')" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("Expected RuntimeError when highs is unavailable")
 
 
 def test_solve_model_does_not_set_glpk_threads(monkeypatch) -> None:

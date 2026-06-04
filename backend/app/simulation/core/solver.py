@@ -673,6 +673,13 @@ def solve_model(
 
     solver_availability = get_solver_availability()
 
+    if solver_name in SOLVER_FACTORIES and not solver_availability.get(solver_name, False):
+        factory_name = SOLVER_FACTORIES[solver_name]
+        raise RuntimeError(
+            f"Solver '{solver_name}' no disponible en el worker "
+            f"(Pyomo SolverFactory('{factory_name}'))."
+        )
+
     fallback_order = (
         [solver_name, *[n for n in SOLVER_FACTORIES if n != solver_name]]
         if solver_name in SOLVER_FACTORIES

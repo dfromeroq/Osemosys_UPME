@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 HighsMethod = Literal["choose", "simplex", "ipm", "ipx", "hipo"]
 OnOffChoose = Literal["off", "on", "choose"]
+HipoParallelType = Literal["", "tree", "node", "both"]
 
 
 class SolverSettingsPublic(BaseModel):
@@ -21,7 +22,7 @@ class SolverSettingsPublic(BaseModel):
     highs_method: HighsMethod = "ipm"
     highs_presolve: OnOffChoose = "on"
     highs_parallel: OnOffChoose = "on"
-    highs_hipo_parallel_type: str = ""
+    highs_hipo_parallel_type: HipoParallelType = ""
     highs_run_crossover: OnOffChoose = "choose"
     highs_use_direct: bool = True
     highs_time_limit: float = Field(default=0.0, ge=0.0)
@@ -38,7 +39,7 @@ class SolverSettingsUpdate(BaseModel):
     highs_method: HighsMethod | None = None
     highs_presolve: OnOffChoose | None = None
     highs_parallel: OnOffChoose | None = None
-    highs_hipo_parallel_type: str | None = None
+    highs_hipo_parallel_type: HipoParallelType | None = None
     highs_run_crossover: OnOffChoose | None = None
     highs_use_direct: bool | None = None
     highs_time_limit: float | None = Field(default=None, ge=0.0)

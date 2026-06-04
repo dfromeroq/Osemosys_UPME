@@ -21,6 +21,7 @@ SOLVER_HIGHS_PRIMAL_TOL_KEY = "solver.highs.primal_feasibility_tolerance"
 
 VALID_HIGHS_METHODS = frozenset({"choose", "simplex", "ipm", "ipx", "hipo"})
 VALID_ON_OFF_CHOOSE = frozenset({"off", "on", "choose"})
+VALID_HIPO_PARALLEL_TYPES = frozenset({"", "tree", "node", "both"})
 
 
 @dataclass(frozen=True)
@@ -133,7 +134,11 @@ def resolve_highs_config(settings: object) -> SolverHighsConfig:
         method=_normalize_choice(method, allowed=VALID_HIGHS_METHODS, default="ipm"),
         presolve=_normalize_choice(presolve, allowed=VALID_ON_OFF_CHOOSE, default="on"),
         parallel=_normalize_choice(parallel, allowed=VALID_ON_OFF_CHOOSE, default="on"),
-        hipo_parallel_type=hipo_parallel_type.strip().lower(),
+        hipo_parallel_type=_normalize_choice(
+            hipo_parallel_type,
+            allowed=VALID_HIPO_PARALLEL_TYPES,
+            default="",
+        ),
         run_crossover=_normalize_choice(run_crossover, allowed=VALID_ON_OFF_CHOOSE, default="choose"),
         use_direct=use_direct,
         time_limit=max(0.0, time_limit),
