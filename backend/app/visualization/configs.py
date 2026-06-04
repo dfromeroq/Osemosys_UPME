@@ -382,7 +382,39 @@ TECNOLOGIAS_EXPORTACION_CARBON = ["EXPCOA"]
 
 def _filtro_exp_carbon(df, **kw):
     """Exportaciones de carbón (EXPCOA)."""
-    return df[df["TECHNOLOGY"].isin("EXPCOA")]
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_EXPORTACION_CARBON)]
+
+
+TECNOLOGIAS_RECURSOS_CRUDO = ["MINOIL", "MINOIL_1LIV", "MINOIL_2MID", "MINOIL_3PES"]
+
+
+def _filtro_recursos_crudo(df, **kw):
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_RECURSOS_CRUDO)]
+
+
+TECNOLOGIAS_RECURSOS_GAS = ["MINNGS"]
+
+
+def _filtro_recursos_gas(df, **kw):
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_RECURSOS_GAS)]
+
+
+TECNOLOGIAS_RECURSOS_CARBON = ["MINCOA", "EXPCOA"]
+
+
+def _filtro_recursos_carbon(df, **kw):
+    """Carbón: tecnologías MINCOA/EXPCOA o combustible COA (excl. EXPCOA)."""
+    if "TECHNOLOGY" not in df.columns:
+        return df.iloc[0:0]
+
+    mask = df["TECHNOLOGY"].isin(TECNOLOGIAS_RECURSOS_CARBON)
+
+    if "FUEL" in df.columns:
+        mask_coa = df["FUEL"] == "COA"
+        mask_no_export = ~df["TECHNOLOGY"].isin(TECNOLOGIAS_EXPORTACION_CARBON)
+        mask = mask | (mask_coa & mask_no_export)
+
+    return df[mask]
 
 
 TECNOLOGIAS_REFINERIAS_IMPORTACIONES_LIQUIDOS = [
@@ -2480,7 +2512,7 @@ CONFIGS = {
         "figura": "Recursos y reservas vs Demanda (Crudo)",
         "filename": "Recursos_Reservas_vs_Demanda_Crudo",
         "print": "RECURSOS Y RESERVAS VS DEMANDA (CRUDO)",
-        "filtro": None,
+        "filtro": _filtro_recursos_crudo,
         "msg_sin_datos": "Sin datos de extracción de petróleo (MINOIL)",
         "agrupar_por": "TECNOLOGIA",
         "color_fn": None,
@@ -2491,7 +2523,7 @@ CONFIGS = {
         "figura": "Recursos y reservas vs Demanda (Gas Natural)",
         "filename": "Recursos_Reservas_vs_Demanda_Gas",
         "print": "RECURSOS Y RESERVAS VS DEMANDA (GAS NATURAL)",
-        "filtro": None,
+        "filtro": _filtro_recursos_gas,
         "msg_sin_datos": "Sin datos de extracción de gas natural (MINNGS)",
         "agrupar_por": "TECNOLOGIA",
         "color_fn": None,
@@ -2502,7 +2534,7 @@ CONFIGS = {
         "figura": "Recursos y reservas vs Demanda (Carbón)",
         "filename": "Recursos_Reservas_vs_Demanda_Carbon",
         "print": "RECURSOS Y RESERVAS VS DEMANDA (CARBÓN)",
-        "filtro": None,
+        "filtro": _filtro_recursos_carbon,
         "msg_sin_datos": "Sin datos de carbón (COA/EXPCOA/MINCOA)",
         "agrupar_por": "TECNOLOGIA",
         "color_fn": None,

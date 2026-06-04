@@ -88,6 +88,10 @@ from app.visualization.configs import (
     PWR_TECH_ALIASES,
     TITULOS_VARIABLES_CAPACIDAD,
     NOMBRES_COMBUSTIBLES,
+    TECNOLOGIAS_EXPORTACION_CARBON,
+    _filtro_recursos_crudo,
+    _filtro_recursos_gas,
+    _filtro_recursos_carbon,
     _map_electrolisis_verde,
     _map_h2_verde_azul_gris,
     _map_h2_consumo_grupo,
@@ -1109,17 +1113,14 @@ def _build_recursos_production_total(
         if df_use.empty:
             return None
         df_use = _apply_regional_transform(db, job_id, df_use)
-        df_coa = df_use[df_use["FUEL"] == "COA"].copy()
-        df_domestic = df_coa[~df_coa["TECHNOLOGY"].str.startswith("EXPCOA")]
-        domestic = df_domestic.groupby("YEAR")["VALUE"].sum().to_dict()
+        df_use = _filtro_recursos_carbon(df_use)
+        domestic = df_use[df_use["FUEL"] == "COA"].groupby("YEAR")["VALUE"].sum().to_dict()
 
         df_prod = _load_variable_data(db, job_id, "ProductionByTechnology")
         if not df_prod.empty:
             df_prod = _apply_regional_transform(db, job_id, df_prod)
-            df_export = df_prod[
-                df_prod["TECHNOLOGY"].str.startswith("EXPCOA")
-            ].copy()
-            export = df_export.groupby("YEAR")["VALUE"].sum().to_dict()
+            df_prod = _filtro_recursos_carbon(df_prod)
+            export = df_prod[df_prod["TECHNOLOGY"].isin(TECNOLOGIAS_EXPORTACION_CARBON)].groupby("YEAR")["VALUE"].sum().to_dict()
         else:
             export = {}
 
@@ -1149,7 +1150,7 @@ def _build_recursos_vs_demanda_gas_df(
         return None
 
     df = _apply_regional_transform(db, job_id, df)
-    df_gas = df[df["TECHNOLOGY"].str.startswith("MINNGS")].copy()
+    df_gas = _filtro_recursos_gas(df)
     if df_gas.empty:
         return None
 
@@ -1283,20 +1284,20 @@ def build_recursos_vs_demanda_carbon_data(
             categories=[], series=[], title=title, yAxisLabel=un
         )
     df_use = _apply_regional_transform(db, job_id, df_use)
-    df_coa = df_use[df_use["FUEL"] == "COA"].copy()
-    df_domestic = df_coa[~df_coa["TECHNOLOGY"].str.startswith("EXPCOA")]
+    df_use = _filtro_recursos_carbon(df_use)
     domestic_by_year = (
-        df_domestic.groupby("YEAR")["VALUE"].sum().to_dict()
+        df_use[df_use["FUEL"] == "COA"].groupby("YEAR")["VALUE"].sum().to_dict()
     )
 
     # 2. Exportaciones: ProductionByTechnology(EXPCOA)
     df_prod = _load_variable_data(db, job_id, "ProductionByTechnology")
     if not df_prod.empty:
         df_prod = _apply_regional_transform(db, job_id, df_prod)
-        df_export = df_prod[
-            df_prod["TECHNOLOGY"].str.startswith("EXPCOA")
-        ].copy()
-        export_by_year = df_export.groupby("YEAR")["VALUE"].sum().to_dict()
+        df_prod = _filtro_recursos_carbon(df_prod)
+        export_by_year = (
+            df_prod[df_prod["TECHNOLOGY"].isin(TECNOLOGIAS_EXPORTACION_CARBON)]
+            .groupby("YEAR")["VALUE"].sum().to_dict()
+        )
     else:
         export_by_year = {}
 
@@ -1393,7 +1394,7 @@ def build_recursos_vs_demanda_data(
     df = _apply_regional_transform(db, job_id, df)
 
     # Filtrar solo tecnologías MINOIL
-    df_minoil = df[df["TECHNOLOGY"].str.startswith("MINOIL")].copy()
+    df_minoil = _filtro_recursos_crudo(df)
     if df_minoil.empty:
         return ChartDataResponse(
             categories=[], series=[], title=title, yAxisLabel=un
