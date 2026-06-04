@@ -351,6 +351,76 @@ def test_submit_creates_queued_job_even_when_user_has_many_active(monkeypatch: p
     assert payload["status"] == "QUEUED"
 
 
+def test_cancel_running_job_revokes_and_terminates_celery_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current_user = SimpleNamespace(id=uuid.uuid4(), username="seed")
+    job = _build_job(current_user.id)
+    job.status = "RUNNING"
+    job.progress = 45.0
+    job.celery_task_id = "running-task"
+    db = DummyDbSession()
+    events: list[dict[str, object]] = []
+    revoke_calls: list[dict[str, object]] = []
+    dispatch_calls = 0
+
+    monkeypatch.setattr(
+        simulation_service_module.SimulationRepository,
+        "get_job_for_user",
+        lambda _db, *, job_id, user_id: job,
+    )
+    monkeypatch.setattr(
+        simulation_service_module.SimulationRepository,
+        "add_event",
+        lambda _db, **kwargs: events.append(kwargs),
+    )
+
+    class _Control:
+        @staticmethod
+        def revoke(task_id: str, *, terminate: bool, signal: str) -> None:
+            revoke_calls.append(
+                {"task_id": task_id, "terminate": terminate, "signal": signal}
+            )
+
+    monkeypatch.setattr(
+        simulation_service_module.celery_app,
+        "control",
+        _Control(),
+    )
+
+    def _dispatch(_db):
+        nonlocal dispatch_calls
+        dispatch_calls += 1
+
+    monkeypatch.setattr(
+        SimulationService,
+        "_dispatch_queued_jobs",
+        staticmethod(_dispatch),
+    )
+    monkeypatch.setattr(
+        SimulationService,
+        "_batch_scenario_tags_by_scenario_ids",
+        staticmethod(lambda _db, _ids: {}),
+    )
+    monkeypatch.setattr(
+        SimulationService,
+        "_to_public",
+        staticmethod(lambda job_, *, scenario_tag=None: {"id": job_.id, "status": job_.status}),
+    )
+
+    payload = SimulationService.cancel(db, current_user=current_user, job_id=job.id)
+
+    assert payload["status"] == "CANCELLED"
+    assert job.status == "CANCELLED"
+    assert job.cancel_requested is True
+    assert job.finished_at is not None
+    assert revoke_calls == [
+        {"task_id": "running-task", "terminate": True, "signal": "SIGTERM"}
+    ]
+    assert dispatch_calls == 1
+    assert events[0]["stage"] == "cancel"
+
+
 def test_dispatch_queued_jobs_respects_user_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     db = DummyDbSession()
     user_a = uuid.uuid4()
