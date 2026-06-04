@@ -14,7 +14,8 @@ def test_create_abstract_model_accepts_param_defaults_override() -> None:
         has_udc=False,
         param_defaults={"discountrate": 0.99},
     )
-    assert model.DiscountRate.default == 0.99
+    # Pyomo 6.x: default es método, no atributo escalar.
+    assert model.DiscountRate.default() == 0.99
 
 
 def test_get_param_default_uses_context() -> None:
