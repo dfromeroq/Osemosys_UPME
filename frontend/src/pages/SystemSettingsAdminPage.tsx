@@ -44,6 +44,7 @@ function settingsToDraft(s: SolverSettings): SolverSettingsUpdate {
     highs_method: s.highs_method,
     highs_presolve: s.highs_presolve,
     highs_parallel: s.highs_parallel,
+    highs_hipo_parallel_type: s.highs_hipo_parallel_type,
     highs_run_crossover: s.highs_run_crossover,
     highs_use_direct: s.highs_use_direct,
     highs_time_limit: s.highs_time_limit,
@@ -207,6 +208,15 @@ export function SystemSettingsAdminPage() {
                     ))}
                   </select>
                 </label>
+
+                <TextField
+                  label="HiPO parallel type"
+                  value={draft.highs_hipo_parallel_type}
+                  onChange={(e) =>
+                    patchDraft({ highs_hipo_parallel_type: e.target.value.trim() })
+                  }
+                  disabled={saving || draft.highs_method !== "hipo"}
+                />
 
                 <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <span>Crossover (IPM→básica)</span>

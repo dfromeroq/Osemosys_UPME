@@ -11,6 +11,7 @@ export type SolverSettings = {
   highs_method: HighsMethod;
   highs_presolve: OnOffChoose;
   highs_parallel: OnOffChoose;
+  highs_hipo_parallel_type: string;
   highs_run_crossover: OnOffChoose;
   highs_use_direct: boolean;
   highs_time_limit: number;

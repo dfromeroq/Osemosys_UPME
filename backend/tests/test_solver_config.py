@@ -41,6 +41,7 @@ def _fake_settings(**overrides: object) -> SimpleNamespace:
         sim_solver_highs_method="ipm",
         sim_solver_highs_presolve="on",
         sim_solver_highs_parallel="on",
+        sim_solver_highs_hipo_parallel_type="",
         sim_solver_highs_crossover="choose",
         sim_solver_highs_direct=False,
         sim_solver_highs_time_limit=0.0,
@@ -57,10 +58,16 @@ def test_normalize_solver_status_display_maps_infeasible_to_spanish() -> None:
 
 
 def test_resolve_highs_config_from_env() -> None:
-    cfg = resolve_highs_config(_fake_settings(sim_solver_highs_method="hipo"))
+    cfg = resolve_highs_config(
+        _fake_settings(
+            sim_solver_highs_method="hipo",
+            sim_solver_highs_hipo_parallel_type="both",
+        )
+    )
     assert cfg.method == "hipo"
     assert cfg.presolve == "on"
     assert cfg.parallel == "on"
+    assert cfg.hipo_parallel_type == "both"
     assert cfg.threads == 8
 
 
@@ -73,6 +80,38 @@ def test_apply_highs_options_to_dict() -> None:
     assert opts["presolve"] == "on"
     assert opts["parallel"] == "on"
     assert opts["log_to_console"] is False
+
+
+def test_apply_highs_options_to_dict_includes_hipo_parallel_type() -> None:
+    opts: dict[str, object] = {}
+    cfg = SolverHighsConfig(
+        threads=4,
+        method="hipo",
+        presolve="on",
+        parallel="on",
+        hipo_parallel_type="both",
+    )
+    apply_highs_options_to_model(opts, cfg)
+
+    assert opts["solver"] == "hipo"
+    assert opts["hipo_parallel_type"] == "both"
+
+
+def test_apply_highs_options_raises_when_hipo_is_rejected() -> None:
+    class _RejectingHighs:
+        def setOptionValue(self, key, value):  # noqa: ANN001, N802
+            if key == "solver" and value == "hipo":
+                return "HighsStatus.kError"
+            return "HighsStatus.kOk"
+
+    cfg = SolverHighsConfig(method="hipo")
+
+    try:
+        apply_highs_options_to_model(_RejectingHighs(), cfg)
+    except ValueError as exc:
+        assert "solver=hipo" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("Expected ValueError when HiGHS rejects hipo")
 
 
 def test_pyomo_lp_name_roundtrip() -> None:

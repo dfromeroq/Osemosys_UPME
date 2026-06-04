@@ -19,6 +19,7 @@ class SolverSettingsPublic(BaseModel):
     highs_method: HighsMethod = "ipm"
     highs_presolve: OnOffChoose = "on"
     highs_parallel: OnOffChoose = "on"
+    highs_hipo_parallel_type: str = ""
     highs_run_crossover: OnOffChoose = "choose"
     highs_use_direct: bool = True
     highs_time_limit: float = Field(default=0.0, ge=0.0)
@@ -35,6 +36,7 @@ class SolverSettingsUpdate(BaseModel):
     highs_method: HighsMethod = "ipm"
     highs_presolve: OnOffChoose = "on"
     highs_parallel: OnOffChoose = "on"
+    highs_hipo_parallel_type: str = ""
     highs_run_crossover: OnOffChoose = "choose"
     highs_use_direct: bool = True
     highs_time_limit: float = Field(default=0.0, ge=0.0)

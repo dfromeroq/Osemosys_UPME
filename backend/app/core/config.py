@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     sim_solver_highs_method: str = Field(default="ipm", alias="SIM_SOLVER_HIGHS_METHOD")
     sim_solver_highs_presolve: str = Field(default="on", alias="SIM_SOLVER_HIGHS_PRESOLVE")
     sim_solver_highs_parallel: str = Field(default="on", alias="SIM_SOLVER_HIGHS_PARALLEL")
+    sim_solver_highs_hipo_parallel_type: str = Field(
+        default="",
+        alias="SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE",
+    )
     sim_solver_highs_crossover: str = Field(default="choose", alias="SIM_SOLVER_HIGHS_CROSSOVER")
     sim_solver_highs_direct: bool = Field(default=True, alias="SIM_SOLVER_HIGHS_DIRECT")
     sim_solver_highs_time_limit: float = Field(default=0.0, alias="SIM_SOLVER_HIGHS_TIME_LIMIT")

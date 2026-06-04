@@ -45,6 +45,10 @@ services:
   api:
     build:
       context: ./backend
+      args:
+        HIGHS_BUILD_FROM_SOURCE: ${HIGHS_BUILD_FROM_SOURCE:-0}
+        HIGHS_GIT_REF: ${HIGHS_GIT_REF:-master}
+        HIGHS_ENABLE_HIPO: ${HIGHS_ENABLE_HIPO:-0}
     restart: unless-stopped
     command: >
       sh -lc "exec python -m uvicorn app.main:app
@@ -68,6 +72,7 @@ services:
       SIM_SOLVER_HIGHS_METHOD: ${SIM_SOLVER_HIGHS_METHOD:-ipm}
       SIM_SOLVER_HIGHS_PRESOLVE: ${SIM_SOLVER_HIGHS_PRESOLVE:-on}
       SIM_SOLVER_HIGHS_PARALLEL: ${SIM_SOLVER_HIGHS_PARALLEL:-on}
+      SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE: ${SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE:-}
       SIM_SOLVER_HIGHS_CROSSOVER: ${SIM_SOLVER_HIGHS_CROSSOVER:-choose}
       SIM_SOLVER_HIGHS_DIRECT: ${SIM_SOLVER_HIGHS_DIRECT:-true}
       SIM_SOLVER_HIGHS_TIME_LIMIT: ${SIM_SOLVER_HIGHS_TIME_LIMIT:-0}
@@ -102,6 +107,10 @@ services:
   simulation-worker:
     build:
       context: ./backend
+      args:
+        HIGHS_BUILD_FROM_SOURCE: ${HIGHS_BUILD_FROM_SOURCE:-0}
+        HIGHS_GIT_REF: ${HIGHS_GIT_REF:-master}
+        HIGHS_ENABLE_HIPO: ${HIGHS_ENABLE_HIPO:-0}
     restart: unless-stopped
     env_file:
       - ./backend/.env
@@ -118,6 +127,7 @@ services:
       SIM_SOLVER_HIGHS_METHOD: ${SIM_SOLVER_HIGHS_METHOD:-ipm}
       SIM_SOLVER_HIGHS_PRESOLVE: ${SIM_SOLVER_HIGHS_PRESOLVE:-on}
       SIM_SOLVER_HIGHS_PARALLEL: ${SIM_SOLVER_HIGHS_PARALLEL:-on}
+      SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE: ${SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE:-}
       SIM_SOLVER_HIGHS_CROSSOVER: ${SIM_SOLVER_HIGHS_CROSSOVER:-choose}
       SIM_SOLVER_HIGHS_DIRECT: ${SIM_SOLVER_HIGHS_DIRECT:-true}
       SIM_SOLVER_HIGHS_TIME_LIMIT: ${SIM_SOLVER_HIGHS_TIME_LIMIT:-0}

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +12,7 @@ SOLVER_THREADS_KEY = "solver.threads"
 SOLVER_HIGHS_METHOD_KEY = "solver.highs.method"
 SOLVER_HIGHS_PRESOLVE_KEY = "solver.highs.presolve"
 SOLVER_HIGHS_PARALLEL_KEY = "solver.highs.parallel"
+SOLVER_HIGHS_HIPO_PARALLEL_TYPE_KEY = "solver.highs.hipo_parallel_type"
 SOLVER_HIGHS_CROSSOVER_KEY = "solver.highs.run_crossover"
 SOLVER_HIGHS_USE_DIRECT_KEY = "solver.highs.use_direct"
 SOLVER_HIGHS_TIME_LIMIT_KEY = "solver.highs.time_limit"
@@ -30,6 +31,7 @@ class SolverHighsConfig:
     method: str = "ipm"
     presolve: str = "on"
     parallel: str = "on"
+    hipo_parallel_type: str = ""
     run_crossover: str = "choose"
     use_direct: bool = True
     time_limit: float = 0.0
@@ -81,6 +83,9 @@ def resolve_highs_config(settings: object) -> SolverHighsConfig:
     method = str(getattr(settings, "sim_solver_highs_method", "ipm") or "ipm")
     presolve = str(getattr(settings, "sim_solver_highs_presolve", "on") or "on")
     parallel = str(getattr(settings, "sim_solver_highs_parallel", "on") or "on")
+    hipo_parallel_type = str(
+        getattr(settings, "sim_solver_highs_hipo_parallel_type", "") or ""
+    )
     run_crossover = str(getattr(settings, "sim_solver_highs_crossover", "choose") or "choose")
     use_direct = bool(getattr(settings, "sim_solver_highs_direct", True))
     time_limit = float(getattr(settings, "sim_solver_highs_time_limit", 0) or 0)
@@ -107,6 +112,12 @@ def resolve_highs_config(settings: object) -> SolverHighsConfig:
                 db_parallel = _read_db_setting(db, SOLVER_HIGHS_PARALLEL_KEY)
                 if db_parallel is not None:
                     parallel = db_parallel
+                db_hipo_parallel_type = _read_db_setting(
+                    db,
+                    SOLVER_HIGHS_HIPO_PARALLEL_TYPE_KEY,
+                )
+                if db_hipo_parallel_type is not None:
+                    hipo_parallel_type = db_hipo_parallel_type
                 db_crossover = _read_db_setting(db, SOLVER_HIGHS_CROSSOVER_KEY)
                 if db_crossover is not None:
                     run_crossover = db_crossover
@@ -122,6 +133,7 @@ def resolve_highs_config(settings: object) -> SolverHighsConfig:
         method=_normalize_choice(method, allowed=VALID_HIGHS_METHODS, default="ipm"),
         presolve=_normalize_choice(presolve, allowed=VALID_ON_OFF_CHOOSE, default="on"),
         parallel=_normalize_choice(parallel, allowed=VALID_ON_OFF_CHOOSE, default="on"),
+        hipo_parallel_type=hipo_parallel_type.strip().lower(),
         run_crossover=_normalize_choice(run_crossover, allowed=VALID_ON_OFF_CHOOSE, default="choose"),
         use_direct=use_direct,
         time_limit=max(0.0, time_limit),
@@ -147,6 +159,8 @@ def apply_highs_options_to_model(h: object, config: SolverHighsConfig) -> int | 
         options["threads"] = config.threads
     if config.time_limit > 0:
         options["time_limit"] = config.time_limit
+    if config.method == "hipo" and config.hipo_parallel_type:
+        options["hipo_parallel_type"] = config.hipo_parallel_type
 
     if isinstance(h, dict):
         h.update(options)
@@ -161,12 +175,41 @@ def apply_highs_options_to_model(h: object, config: SolverHighsConfig) -> int | 
         return None
     for key, value in options.items():
         try:
-            set_option(key, value)
+            status = set_option(key, value)
         except Exception:  # pragma: no cover - depende de versión highspy
             logger.debug("HiGHS no aceptó opción %s=%s", key, value, exc_info=True)
+            if key == "solver" and value == "hipo":
+                raise ValueError(
+                    "La instalación actual de HiGHS no acepta solver=hipo. "
+                    "Reconstruye la imagen con HIGHS_BUILD_FROM_SOURCE=1 "
+                    "y HIGHS_ENABLE_HIPO=1."
+                )
+            continue
+        if _is_highs_status_error(status):
+            logger.debug("HiGHS rechazó opción %s=%s: %s", key, value, status)
+            if key == "solver" and value == "hipo":
+                raise ValueError(
+                    "La instalación actual de HiGHS no acepta solver=hipo. "
+                    "Reconstruye la imagen con HIGHS_BUILD_FROM_SOURCE=1 "
+                    "y HIGHS_ENABLE_HIPO=1."
+                )
     try:
         if config.threads > 0:
             return int(config.threads)
     except (TypeError, ValueError):
         pass
     return None
+
+
+def _is_highs_status_error(status: object) -> bool:
+    """Detecta errores devueltos por ``highspy.Highs.setOptionValue``."""
+    if status is None:
+        return False
+    if isinstance(status, str):
+        return status.lower().endswith("kerror")
+    try:
+        import highspy
+
+        return status == highspy.HighsStatus.kError
+    except Exception:  # pragma: no cover - depende de highspy instalado
+        return str(status).lower().endswith("kerror")

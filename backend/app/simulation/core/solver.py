@@ -396,6 +396,29 @@ def _solve_with_appsi_highs(
     return solver, results, raw_status, obj, threads_used
 
 
+def _validate_hipo_runtime_support(highs_config: SolverHighsConfig) -> None:
+    """Falla temprano si el runtime highspy no fue compilado con soporte HiPO."""
+    if highs_config.method != "hipo":
+        return
+
+    try:
+        import highspy
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError(
+            "SIM_SOLVER_HIGHS_METHOD=hipo requiere highspy instalado."
+        ) from exc
+
+    try:
+        h = highspy.Highs()
+        apply_highs_options_to_model(h, highs_config)
+    except Exception as exc:
+        raise RuntimeError(
+            "SIM_SOLVER_HIGHS_METHOD=hipo está configurado, pero esta imagen "
+            "no tiene HiGHS compilado con soporte HiPO. Reconstruye con "
+            "HIGHS_BUILD_FROM_SOURCE=1 y HIGHS_ENABLE_HIPO=1."
+        ) from exc
+
+
 def _run_infeasibility_diagnostics(instance: pyo.ConcreteModel) -> dict:
     tol = 1e-6
 
@@ -558,6 +581,8 @@ def _solve_highs(
     raw_status: str
     obj: float
     threads_used: int | None
+
+    _validate_hipo_runtime_support(highs_config)
 
     if highs_config.use_direct:
         try:
