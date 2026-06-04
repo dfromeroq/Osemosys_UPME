@@ -14,6 +14,10 @@ from app.services.system_settings_service import (
     SOLVER_THREADS_KEY,
     SystemSettingsService,
 )
+from app.simulation.core.solver import (
+    _effective_solver_threads,
+    _hardware_thread_limit,
+)
 
 router = APIRouter(prefix="/admin/system-settings")
 
@@ -26,8 +30,11 @@ def _to_public(
         user = UserRepository.get_by_id(db, updated_by_id)
         if user is not None:
             username = user.username
+    hardware = _hardware_thread_limit()
     return SolverSettingsPublic(
         solver_threads=value,
+        hardware_thread_limit=hardware,
+        effective_threads_preview=_effective_solver_threads(value),
         updated_at=updated_at,
         updated_by_username=username,
     )
@@ -41,7 +48,7 @@ def get_solver_settings(
     """Devuelve la configuración runtime del solver."""
     row = SystemSettingsService.get_raw(db, SOLVER_THREADS_KEY)
     if row is None:
-        return SolverSettingsPublic(solver_threads=0)
+        return _to_public(db, value=0, updated_at=None, updated_by_id=None)
     try:
         threads = int((row.value or "0").strip())
     except ValueError:

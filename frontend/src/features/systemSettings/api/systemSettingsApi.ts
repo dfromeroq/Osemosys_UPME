@@ -5,6 +5,8 @@ import { httpClient } from "@/shared/api/httpClient";
 
 export type SolverSettings = {
   solver_threads: number;
+  hardware_thread_limit: number;
+  effective_threads_preview: number;
   updated_at: string | null;
   updated_by_username: string | null;
 };

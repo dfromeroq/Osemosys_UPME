@@ -12,6 +12,9 @@ análisis de infactibilidad sin arrastrar cadenas de imports costosos
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from contextvars import ContextVar, Token
+
 # Claves normalizadas (minúsculas + solo alfanuméricos). Usar siempre el
 # mismo esquema de normalización al consultar.
 OSEMOSYS_PARAM_DEFAULTS: dict[str, float] = {
@@ -95,9 +98,36 @@ def _normalize_param_name(name: str | None) -> str:
     return "".join(ch for ch in name.strip().lower() if ch.isalnum())
 
 
-def get_param_default(name: str | None) -> float:
-    """Devuelve el default canónico OSeMOSYS por nombre. ``0.0`` si desconocido."""
-    return OSEMOSYS_PARAM_DEFAULTS.get(_normalize_param_name(name), 0.0)
+_defaults_context: ContextVar[dict[str, float] | None] = ContextVar(
+    "osemosys_runtime_defaults",
+    default=None,
+)
+
+
+def set_defaults_context(defaults_map: Mapping[str, float] | None) -> Token:
+    """Fija el mapa de defaults de la corrida actual (p. ej. versión del job)."""
+    if defaults_map is None:
+        return _defaults_context.set(None)
+    return _defaults_context.set({str(k): float(v) for k, v in defaults_map.items()})
+
+
+def reset_defaults_context(token: Token) -> None:
+    _defaults_context.reset(token)
+
+
+def get_param_default(
+    name: str | None,
+    *,
+    defaults_map: Mapping[str, float] | None = None,
+) -> float:
+    """Devuelve el default OSeMOSYS por nombre (runtime, contexto o fallback código)."""
+    key = _normalize_param_name(name)
+    if defaults_map is not None:
+        return float(defaults_map.get(key, OSEMOSYS_PARAM_DEFAULTS.get(key, 0.0)))
+    ctx = _defaults_context.get()
+    if ctx is not None:
+        return float(ctx.get(key, OSEMOSYS_PARAM_DEFAULTS.get(key, 0.0)))
+    return OSEMOSYS_PARAM_DEFAULTS.get(key, 0.0)
 
 
 def has_known_default(name: str | None) -> bool:

@@ -1073,9 +1073,13 @@ def _try_compute_iis_gurobi(
             pass
         try:
             from app.core.config import get_settings  # noqa: WPS433
-            from app.simulation.core.solver import _resolve_solver_threads  # noqa: WPS433
+            from app.simulation.core.solver import (  # noqa: WPS433
+                _effective_solver_threads,
+                _resolve_solver_threads,
+            )
 
-            threads = _resolve_solver_threads(get_settings())
+            configured = _resolve_solver_threads(get_settings())
+            threads = _effective_solver_threads(configured)
             if threads > 0:
                 model.setParam("Threads", threads)
         except Exception:

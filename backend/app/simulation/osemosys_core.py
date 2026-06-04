@@ -15,7 +15,7 @@ import gc
 import logging
 import os
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -39,6 +39,22 @@ from app.simulation.core.solver import solve_model
 logger = logging.getLogger(__name__)
 
 
+def load_param_defaults_for_simulation(
+    db: Session,
+    *,
+    version_id: int | None = None,
+) -> tuple[int, dict[str, float]]:
+    """Carga versión activa (o explícita) y mapa de defaults para ``create_abstract_model``."""
+    from app.services.model_parameter_defaults_service import ModelParameterDefaultsService
+
+    vid = (
+        version_id
+        if version_id is not None
+        else ModelParameterDefaultsService.get_active_version_id(db)
+    )
+    return vid, ModelParameterDefaultsService.get_defaults_map(db, vid)
+
+
 def _maybe_run_constraint_diagnostics(instance) -> None:
     if os.getenv("OSEMOSYS_CONSTRAINT_DIAGNOSTICS", "0") == "1":
         try:
@@ -60,6 +76,9 @@ def run_osemosys_from_db(
     on_solver_finished: Callable[[Any, Any, Any, dict], None] | None = None,
     run_iis_analysis: bool = False,
     job_id: int | None = None,
+    materialize_intermediate: bool = True,
+    param_defaults: Mapping[str, float] | None = None,
+    model_defaults_version_id: int | None = None,
 ) -> dict:
     """Pipeline completo: DB → CSVs temporales → DataPortal → solve → results.
 
@@ -80,6 +99,18 @@ def run_osemosys_from_db(
         dict devuelto en ``infeasibility_diagnostics``. Por defecto ``False``.
     """
     timings: dict[str, float] = {}
+    if param_defaults is not None:
+        defaults_map = dict(param_defaults)
+        if model_defaults_version_id is not None:
+            defaults_version_id = model_defaults_version_id
+        else:
+            defaults_version_id, _ = load_param_defaults_for_simulation(db)
+    else:
+        defaults_version_id, defaults_map = load_param_defaults_for_simulation(
+            db,
+            version_id=model_defaults_version_id,
+        )
+    timings["model_defaults_version_id"] = float(defaults_version_id)
 
     with tempfile.TemporaryDirectory(prefix="osemosys_csv_") as csv_dir:
 
@@ -122,6 +153,7 @@ def run_osemosys_from_db(
         model = create_abstract_model(
             has_storage=proc_result.has_storage,
             has_udc=proc_result.has_udc,
+            param_defaults=defaults_map,
         )
         timings["declare_model_seconds"] = perf_counter() - t
 
@@ -233,6 +265,7 @@ def run_osemosys_from_db(
             daytype_id_by_name=proc_result.daytype_id_by_name,
             dailytimebracket_id_by_name=proc_result.dailytimebracket_id_by_name,
             storage_id_by_name=proc_result.storage_id_by_name,
+            materialize_intermediate=materialize_intermediate,
         )
         timings["results_processing_seconds"] = perf_counter() - t
 
@@ -255,6 +288,9 @@ def run_osemosys_from_csv_dir(
     on_solver_finished: Callable[[Any, Any, Any, dict], None] | None = None,
     run_iis_analysis: bool = False,
     job_id: int | None = None,
+    materialize_intermediate: bool = True,
+    param_defaults: Mapping[str, float] | None = None,
+    model_defaults_version_id: int | None = None,
 ) -> dict:
     """Pipeline desde directorio de CSVs: lee sets del directorio y ejecuta solve → results.
 
@@ -284,6 +320,17 @@ def run_osemosys_from_csv_dir(
         dispatch, new_capacity, unmet_demand, annual_emissions, sol, etc.
     """
     timings: dict[str, float] = {}
+    if param_defaults is None:
+        from app.simulation.core.osemosys_defaults import OSEMOSYS_PARAM_DEFAULTS
+
+        defaults_map = dict(OSEMOSYS_PARAM_DEFAULTS)
+        defaults_version_id = model_defaults_version_id or 0
+    else:
+        defaults_map = dict(param_defaults)
+        defaults_version_id = model_defaults_version_id or 0
+    if model_defaults_version_id is not None:
+        timings["model_defaults_version_id"] = float(model_defaults_version_id)
+
     csv_dir = str(Path(csv_dir).resolve())
     if not os.path.isdir(csv_dir):
         return {
@@ -336,6 +383,7 @@ def run_osemosys_from_csv_dir(
     model = create_abstract_model(
         has_storage=proc_result.has_storage,
         has_udc=proc_result.has_udc,
+        param_defaults=defaults_map,
     )
     timings["declare_model_seconds"] = perf_counter() - t
 
@@ -429,6 +477,7 @@ def run_osemosys_from_csv_dir(
         daytype_id_by_name=proc_result.daytype_id_by_name,
         dailytimebracket_id_by_name=proc_result.dailytimebracket_id_by_name,
         storage_id_by_name=proc_result.storage_id_by_name,
+        materialize_intermediate=materialize_intermediate,
     )
     timings["results_processing_seconds"] = perf_counter() - t
 
@@ -449,6 +498,9 @@ def run_osemosys_from_excel(
     lp_dir: str | Path | None = None,
     sheet_name: str = "Parameters",
     div: int = 1,
+    materialize_intermediate: bool = True,
+    param_defaults: Mapping[str, float] | None = None,
+    model_defaults_version_id: int | None = None,
 ) -> dict:
     """Pipeline completo desde archivo Excel: Excel → CSVs temporales → solve → results.
 
@@ -481,6 +533,14 @@ def run_osemosys_from_excel(
     """
     timings: dict[str, float] = {}
     excel_path = Path(excel_path)
+    if param_defaults is None:
+        from app.simulation.core.osemosys_defaults import OSEMOSYS_PARAM_DEFAULTS
+
+        defaults_map = dict(OSEMOSYS_PARAM_DEFAULTS)
+    else:
+        defaults_map = dict(param_defaults)
+    if model_defaults_version_id is not None:
+        timings["model_defaults_version_id"] = float(model_defaults_version_id)
 
     with tempfile.TemporaryDirectory(prefix="osemosys_csv_") as csv_dir:
 
@@ -520,6 +580,7 @@ def run_osemosys_from_excel(
         model = create_abstract_model(
             has_storage=proc_result.has_storage,
             has_udc=proc_result.has_udc,
+            param_defaults=defaults_map,
         )
         timings["declare_model_seconds"] = perf_counter() - t
 
@@ -580,6 +641,7 @@ def run_osemosys_from_excel(
             daytype_id_by_name=proc_result.daytype_id_by_name,
             dailytimebracket_id_by_name=proc_result.dailytimebracket_id_by_name,
             storage_id_by_name=proc_result.storage_id_by_name,
+            materialize_intermediate=materialize_intermediate,
         )
         timings["results_processing_seconds"] = perf_counter() - t
 

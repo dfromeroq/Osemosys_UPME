@@ -28,7 +28,8 @@ type PermKey =
   | "can_manage_users"
   | "can_manage_scenarios"
   | "is_admin_reports"
-  | "can_manage_system_settings";
+  | "can_manage_system_settings"
+  | "can_manage_model_defaults";
 
 type PermState = Record<PermKey, boolean>;
 
@@ -87,6 +88,13 @@ const PERMS: {
     description:
       "Puede modificar la configuración runtime del sistema (ej. número de hilos del solver) desde el panel admin.",
   },
+  {
+    key: "can_manage_model_defaults",
+    label: "Defaults del modelo",
+    badge: "Defaults modelo",
+    description:
+      "Puede editar los valores default versionados del modelo OSeMOSYS (Pyomo) usados en simulaciones.",
+  },
 ];
 
 function permStateFrom(u: User): PermState {
@@ -98,6 +106,7 @@ function permStateFrom(u: User): PermState {
     can_manage_scenarios: u.can_manage_scenarios ?? false,
     is_admin_reports: u.is_admin_reports ?? false,
     can_manage_system_settings: u.can_manage_system_settings ?? false,
+    can_manage_model_defaults: u.can_manage_model_defaults ?? false,
   };
 }
 
@@ -133,6 +142,7 @@ export function UsersAdminPage() {
     can_manage_scenarios: false,
     is_admin_reports: false,
     can_manage_system_settings: false,
+    can_manage_model_defaults: false,
   });
 
   const refresh = useCallback(async () => {
@@ -167,6 +177,7 @@ export function UsersAdminPage() {
         can_manage_scenarios: form.can_manage_scenarios,
         is_admin_reports: form.is_admin_reports,
         can_manage_system_settings: form.can_manage_system_settings,
+        can_manage_model_defaults: form.can_manage_model_defaults,
       });
       setOpenCreate(false);
       setForm({
@@ -180,6 +191,7 @@ export function UsersAdminPage() {
         can_manage_scenarios: false,
         is_admin_reports: false,
         can_manage_system_settings: false,
+        can_manage_model_defaults: false,
       });
       await refresh();
       push("Usuario creado.", "success");

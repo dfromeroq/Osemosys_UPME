@@ -369,6 +369,7 @@ def run_infeasibility_diagnostic_job(self, job_id: int) -> None:
             "input_ref": getattr(job, "input_ref", None),
             "scenario_id": job.scenario_id,
             "solver_name": job.solver_name,
+            "model_defaults_version_id": getattr(job, "model_defaults_version_id", None),
             "diagnostics_seed": {
                 "constraint_violations": diag.get("constraint_violations", []),
                 "var_bound_conflicts": diag.get("var_bound_conflicts", []),
@@ -382,66 +383,42 @@ def run_infeasibility_diagnostic_job(self, job_id: int) -> None:
     try:
         _raise_if_cancel_requested(job_id)
         with SessionLocal() as db:
-            if job_snapshot["input_mode"] == "CSV_UPLOAD":
-                csv_dir = job_snapshot["input_ref"]
-                if not csv_dir or not os.path.isdir(str(csv_dir)):
-                    raise RuntimeError(
-                        "No se encontraron los CSV originales del job "
-                        f"({csv_dir!r}); el diagnóstico no puede correr."
-                    )
-                # Normalizaciones (idempotentes) antes de construir el dataportal.
-                reorder_activity_ratio_csvs_for_dataportal(str(csv_dir))
-                normalize_mode_of_operation_in_csv_dir(str(csv_dir))
-                strip_whitespace_in_set_csvs(str(csv_dir))
-                eliminar_valores_fuera_de_indices(str(csv_dir))
-                _raise_if_cancel_requested(job_id)
-                proc_result = get_processing_result_from_csv_dir(str(csv_dir))
-                model = create_abstract_model(
-                    has_storage=proc_result.has_storage,
-                    has_udc=proc_result.has_udc,
-                )
-                _raise_if_cancel_requested(job_id)
-                instance = build_instance(
-                    model,
-                    str(csv_dir),
-                    has_storage=proc_result.has_storage,
-                    has_udc=proc_result.has_udc,
-                )
-                del model
-                gc.collect()
-                _raise_if_cancel_requested(job_id)
-                solution_seed = {
-                    "solver_name": job_snapshot["solver_name"],
-                    "solver_status": "infactible",
-                    "infeasibility_diagnostics": dict(job_snapshot["diagnostics_seed"]),
-                }
-                enrich_solution_dict(
-                    solution_seed,
-                    instance=instance,
-                    csv_dir=str(csv_dir),
-                    job_id=job_id,
-                )
-                enriched = solution_seed["infeasibility_diagnostics"]
-            else:
-                if job_snapshot["scenario_id"] is None:
-                    raise RuntimeError(
-                        "Job sin scenario_id ni CSV_UPLOAD; no hay entradas "
-                        "para rebuild del modelo."
-                    )
-                with tempfile.TemporaryDirectory(prefix="osemosys_diag_") as tmp_csv:
-                    proc_result = run_data_processing(
-                        db,
-                        scenario_id=job_snapshot["scenario_id"],
-                        csv_dir=tmp_csv,
-                    )
+            from app.services.model_parameter_defaults_service import (
+                ModelParameterDefaultsService,
+            )
+            from app.simulation.core.osemosys_defaults import (
+                reset_defaults_context,
+                set_defaults_context,
+            )
+
+            _vid, _defaults_map = ModelParameterDefaultsService.resolve_for_job(
+                db,
+                job_version_id=job_snapshot.get("model_defaults_version_id"),
+            )
+            _defaults_token = set_defaults_context(_defaults_map)
+            try:
+                if job_snapshot["input_mode"] == "CSV_UPLOAD":
+                    csv_dir = job_snapshot["input_ref"]
+                    if not csv_dir or not os.path.isdir(str(csv_dir)):
+                        raise RuntimeError(
+                            "No se encontraron los CSV originales del job "
+                            f"({csv_dir!r}); el diagnóstico no puede correr."
+                        )
+                    reorder_activity_ratio_csvs_for_dataportal(str(csv_dir))
+                    normalize_mode_of_operation_in_csv_dir(str(csv_dir))
+                    strip_whitespace_in_set_csvs(str(csv_dir))
+                    eliminar_valores_fuera_de_indices(str(csv_dir))
                     _raise_if_cancel_requested(job_id)
+                    proc_result = get_processing_result_from_csv_dir(str(csv_dir))
                     model = create_abstract_model(
                         has_storage=proc_result.has_storage,
                         has_udc=proc_result.has_udc,
+                        param_defaults=_defaults_map,
                     )
+                    _raise_if_cancel_requested(job_id)
                     instance = build_instance(
                         model,
-                        tmp_csv,
+                        str(csv_dir),
                         has_storage=proc_result.has_storage,
                         has_udc=proc_result.has_udc,
                     )
@@ -456,10 +433,53 @@ def run_infeasibility_diagnostic_job(self, job_id: int) -> None:
                     enrich_solution_dict(
                         solution_seed,
                         instance=instance,
-                        csv_dir=tmp_csv,
+                        csv_dir=str(csv_dir),
                         job_id=job_id,
                     )
                     enriched = solution_seed["infeasibility_diagnostics"]
+                else:
+                    if job_snapshot["scenario_id"] is None:
+                        raise RuntimeError(
+                            "Job sin scenario_id ni CSV_UPLOAD; no hay entradas "
+                            "para rebuild del modelo."
+                        )
+                    with tempfile.TemporaryDirectory(prefix="osemosys_diag_") as tmp_csv:
+                        proc_result = run_data_processing(
+                            db,
+                            scenario_id=job_snapshot["scenario_id"],
+                            csv_dir=tmp_csv,
+                        )
+                        _raise_if_cancel_requested(job_id)
+                        model = create_abstract_model(
+                            has_storage=proc_result.has_storage,
+                            has_udc=proc_result.has_udc,
+                            param_defaults=_defaults_map,
+                        )
+                        instance = build_instance(
+                            model,
+                            tmp_csv,
+                            has_storage=proc_result.has_storage,
+                            has_udc=proc_result.has_udc,
+                        )
+                        del model
+                        gc.collect()
+                        _raise_if_cancel_requested(job_id)
+                        solution_seed = {
+                            "solver_name": job_snapshot["solver_name"],
+                            "solver_status": "infactible",
+                            "infeasibility_diagnostics": dict(
+                                job_snapshot["diagnostics_seed"],
+                            ),
+                        }
+                        enrich_solution_dict(
+                            solution_seed,
+                            instance=instance,
+                            csv_dir=tmp_csv,
+                            job_id=job_id,
+                        )
+                        enriched = solution_seed["infeasibility_diagnostics"]
+            finally:
+                reset_defaults_context(_defaults_token)
     except _DiagnosticCancelled as exc:
         was_cancelled = True
         error_message = str(exc) or "Cancelado por el usuario."

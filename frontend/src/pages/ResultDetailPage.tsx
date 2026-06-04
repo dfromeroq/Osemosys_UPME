@@ -103,13 +103,16 @@ const EXECUTIONS_TABLE_PAGE_SIZE = 10;
 const BADGE_OPTIMAL =
   'inline-flex shrink-0 items-center px-2 py-1 rounded-full bg-green-500/10 text-green-400 text-xs font-bold border border-green-500/20';
 
-function getSolverStatusPresentation(statusRaw: string): { label: string; badgeClass: string } {
+function getSolverStatusPresentation(
+  statusRaw: string,
+): { label: string; badgeClass: string } {
   const trimmed = statusRaw.trim();
-  const label = (trimmed || 'UNKNOWN').toUpperCase();
   const s = trimmed.toLowerCase();
 
   const pill =
     'inline-flex shrink-0 items-center px-2 py-1 rounded-full text-xs font-bold border';
+
+  const label = (trimmed || 'UNKNOWN').toUpperCase();
 
   if (s.includes('optimal')) {
     return { label, badgeClass: BADGE_OPTIMAL };
@@ -206,7 +209,9 @@ function ScenarioCard({ summary, isCurrent = false }: ScenarioCardProps) {
             ID de ejecución (referencia interna) · {summary.job_id}
           </p>
         </div>
-        <span className={`${status.badgeClass} self-start sm:mt-0.5`}>{status.label}</span>
+        <div className="flex flex-col items-end gap-1 self-start sm:mt-0.5">
+          <span className={status.badgeClass}>{status.label}</span>
+        </div>
       </header>
 
       <div className="pt-3 flex flex-col gap-1">

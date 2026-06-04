@@ -3100,6 +3100,7 @@ def get_result_summary(
         is_favorite=bool(is_favorite),
         is_infeasible_result=SimulationService._is_infeasible_succeeded_job(job),
         owner_username=owner,
+        model_defaults_version_id=getattr(job, "model_defaults_version_id", None),
     )
 
 

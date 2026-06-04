@@ -21,6 +21,7 @@ type UserPermissionsPayload = {
   can_manage_scenarios: boolean;
   is_admin_reports?: boolean;
   can_manage_system_settings?: boolean;
+  can_manage_model_defaults?: boolean;
 };
 
 type UserCreatePayload = {
@@ -34,6 +35,7 @@ type UserCreatePayload = {
   can_manage_scenarios?: boolean;
   is_admin_reports?: boolean;
   can_manage_system_settings?: boolean;
+  can_manage_model_defaults?: boolean;
 };
 
 /** Obtiene el usuario autenticado actual (requiere token válido) */

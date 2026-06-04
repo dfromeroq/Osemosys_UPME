@@ -32,7 +32,57 @@ from app.models import OsemosysParamValue, OsemosysOutputParamValue, SimulationJ
 from app.repositories.simulation_repository import SimulationRepository
 from app.simulation.core.data_processing import PARAM_INDEX
 from app.simulation.core.results_processing import VARIABLE_INDEX_NAMES
-from app.simulation.osemosys_core import run_osemosys_from_csv_dir, run_osemosys_from_db
+from app.simulation.osemosys_core import (
+    load_param_defaults_for_simulation,
+    run_osemosys_from_csv_dir,
+    run_osemosys_from_db,
+)
+
+
+def _on_stage_event(
+    db: Session,
+    *,
+    job: SimulationJob,
+    job_id: int,
+    stage_name: str,
+    stage_progress: float,
+) -> None:
+    """Registra progreso de etapa; hilos reales se persisten tras el solve."""
+    job.progress = stage_progress
+    threads_suffix = ""
+    if stage_name == "solver_start":
+        from app.simulation.core.solver import _resolve_solver_threads
+
+        configured = _resolve_solver_threads(get_settings())
+        if (job.solver_name or "").lower() == "highs":
+            threads_suffix = f" Hilos configurados: {configured}."
+        elif (job.solver_name or "").lower() == "glpk":
+            threads_suffix = " GLPK usa 1 hilo."
+        elif configured > 0:
+            threads_suffix = f" Hilos configurados: {configured}."
+
+    if stage_name == "infeasibility_analysis_start":
+        msg = (
+            "Modelo infactible detectado. Iniciando análisis de infactibilidad "
+            "(IIS + mapeo a parámetros). Esto puede tomar varios segundos."
+        )
+        evt = "WARN"
+    elif stage_name == "infeasibility_analysis_complete":
+        msg = "Análisis de infactibilidad finalizado."
+        evt = "INFO"
+    else:
+        msg = f"Bloque {stage_name} ejecutado.{threads_suffix}"
+        evt = "STAGE"
+    SimulationRepository.add_event(
+        db,
+        job_id=job_id,
+        event_type=evt,
+        stage=stage_name,
+        message=msg,
+        progress=stage_progress,
+    )
+    db.commit()
+    _check_cancel_requested(db, job_id=job_id)
 
 
 def _safe_slug(text: str | None, *, max_len: int = 60) -> str:
@@ -224,8 +274,19 @@ def _build_output_rows(
         r["value"] = float(row.get("annual_emissions", 0.0))
         rows.append(r)
 
+    _append_intermediate_output_rows(rows, solution=solution, job_id=job_id, lookups=lookups)
 
-    # Mapeo de nombre de dimensión del registry → columna de OsemosysOutputParamValue.
+    return rows
+
+
+def _append_intermediate_output_rows(
+    rows: list[dict],
+    *,
+    solution: dict[str, Any],
+    job_id: int,
+    lookups: dict[str, dict[str, int]],
+) -> None:
+    """Añade filas de variables intermedias desde dict o iterador streaming."""
     _DIM_TO_ID_COL = {
         "REGION": "id_region",
         "TECHNOLOGY": "id_technology",
@@ -244,36 +305,43 @@ def _build_output_rows(
         "EMISSION": "emission_name",
     }
 
-    for var_name, entries in solution.get("intermediate_variables", {}).items():
-        index_names = VARIABLE_INDEX_NAMES.get(var_name, ())
-        for entry in entries:
-            idx = entry.get("index") or []
-            row = _empty_row_template(job_id, var_name)
-            row["value"] = float(entry.get("value", 0.0))
-            row["index_json"] = idx
-            if index_names and len(idx) == len(index_names):
-                for dim, raw_val in zip(index_names, idx):
-                    if raw_val is None:
-                        continue
-                    if dim == "YEAR":
-                        try:
-                            row["year"] = int(raw_val)
-                        except (TypeError, ValueError):
-                            pass
-                        continue
-                    name = str(raw_val) if raw_val != "" else None
-                    id_col = _DIM_TO_ID_COL.get(dim)
-                    if id_col and name is not None:
-                        lk = lookups.get(dim, {})
-                        found = lk.get(name)
-                        if found is not None:
-                            row[id_col] = int(found)
-                    name_col = _DIM_TO_NAME_COL.get(dim)
-                    if name_col and name is not None:
-                        row[name_col] = name
-            rows.append(row)
+    stream = solution.get("_intermediate_entry_iter")
+    if stream is not None:
+        entry_pairs = stream
+    else:
+        entry_pairs = (
+            (var_name, entry)
+            for var_name, entries in solution.get("intermediate_variables", {}).items()
+            for entry in entries
+        )
 
-    return rows
+    for var_name, entry in entry_pairs:
+        idx = entry.get("index") or []
+        row = _empty_row_template(job_id, var_name)
+        row["value"] = float(entry.get("value", 0.0))
+        row["index_json"] = idx
+        index_names = VARIABLE_INDEX_NAMES.get(var_name, ())
+        if index_names and len(idx) == len(index_names):
+            for dim, raw_val in zip(index_names, idx):
+                if raw_val is None:
+                    continue
+                if dim == "YEAR":
+                    try:
+                        row["year"] = int(raw_val)
+                    except (TypeError, ValueError):
+                        pass
+                    continue
+                name = str(raw_val) if raw_val != "" else None
+                id_col = _DIM_TO_ID_COL.get(dim)
+                if id_col and name is not None:
+                    lk = lookups.get(dim, {})
+                    found = lk.get(name)
+                    if found is not None:
+                        row[id_col] = int(found)
+                name_col = _DIM_TO_NAME_COL.get(dim)
+                if name_col and name is not None:
+                    row[name_col] = name
+        rows.append(row)
 
 
 def _persist_infeasibility_event(
@@ -330,6 +398,7 @@ def _persist_solution(
     """Persiste resumen y filas de salida para cualquier tipo de job."""
     job.objective_value = solution.get("objective_value")
     job.solver_threads_used = solution.get("solver_threads_used")
+    job.solver_threads_configured = solution.get("solver_threads_configured")
     job.coverage_ratio = solution.get("coverage_ratio")
     job.reserve_margin_dual = solution.get("reserve_margin_dual")
     job.total_demand = solution.get("total_demand")
@@ -364,6 +433,8 @@ def _persist_critical_solver_metadata(
     aunque el worker muera durante la etapa posterior de persistencia pesada.
     """
     job.infeasibility_diagnostics_json = solution.get("infeasibility_diagnostics")
+    job.solver_threads_used = solution.get("solver_threads_used")
+    job.solver_threads_configured = solution.get("solver_threads_configured")
     model_timings = dict(solution.get("model_timings", {}))
     model_timings["solver_status"] = solution.get("solver_status", "unknown")
     job.model_timings_json = model_timings
@@ -468,29 +539,13 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
     db.commit()
 
     def _on_stage(stage_name: str, stage_progress: float) -> None:
-        job.progress = stage_progress
-        if stage_name == "infeasibility_analysis_start":
-            msg = (
-                "Modelo infactible detectado. Iniciando análisis de infactibilidad "
-                "(IIS + mapeo a parámetros). Esto puede tomar varios segundos."
-            )
-            evt = "WARN"
-        elif stage_name == "infeasibility_analysis_complete":
-            msg = "Análisis de infactibilidad finalizado."
-            evt = "INFO"
-        else:
-            msg = f"Bloque {stage_name} ejecutado."
-            evt = "STAGE"
-        SimulationRepository.add_event(
+        _on_stage_event(
             db,
+            job=job,
             job_id=job_id,
-            event_type=evt,
-            stage=stage_name,
-            message=msg,
-            progress=stage_progress,
+            stage_name=stage_name,
+            stage_progress=stage_progress,
         )
-        db.commit()
-        _check_cancel_requested(db, job_id=job_id)
 
     _gen_lp = bool(getattr(job, "generate_lp", False))
     _scenario_name = getattr(getattr(job, "scenario", None), "name", None)
@@ -498,6 +553,9 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
     _lp_basename_eff = (
         _lp_basename_for_job(job, scenario_name=_scenario_name) if _gen_lp else None
     )
+    defaults_version_id, defaults_map = load_param_defaults_for_simulation(db)
+    job.model_defaults_version_id = defaults_version_id
+    db.commit()
     solution = run_osemosys_from_db(
         db,
         scenario_id=job.scenario_id,
@@ -508,6 +566,9 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
         lp_dir=str(_lp_dir_eff) if _lp_dir_eff else None,
         lp_basename=_lp_basename_eff,
         job_id=job_id,
+        materialize_intermediate=False,
+        param_defaults=defaults_map,
+        model_defaults_version_id=defaults_version_id,
     )
 
     # Persistimos la ruta del .lp si se generó: habilita descarga vía
@@ -645,33 +706,20 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
     db.commit()
 
     def _on_stage(stage_name: str, stage_progress: float) -> None:
-        job.progress = stage_progress
-        if stage_name == "infeasibility_analysis_start":
-            msg = (
-                "Modelo infactible detectado. Iniciando análisis de infactibilidad "
-                "(IIS + mapeo a parámetros). Esto puede tomar varios segundos."
-            )
-            evt = "WARN"
-        elif stage_name == "infeasibility_analysis_complete":
-            msg = "Análisis de infactibilidad finalizado."
-            evt = "INFO"
-        else:
-            msg = f"Bloque {stage_name} ejecutado."
-            evt = "STAGE"
-        SimulationRepository.add_event(
+        _on_stage_event(
             db,
+            job=job,
             job_id=job_id,
-            event_type=evt,
-            stage=stage_name,
-            message=msg,
-            progress=stage_progress,
+            stage_name=stage_name,
+            stage_progress=stage_progress,
         )
-        db.commit()
-        _check_cancel_requested(db, job_id=job_id)
 
     _gen_lp = bool(getattr(job, "generate_lp", False))
     _lp_dir_eff = _lp_dir_for_jobs() if _gen_lp else None
     _lp_basename_eff = _lp_basename_for_job(job) if _gen_lp else "osemosys"
+    defaults_version_id, defaults_map = load_param_defaults_for_simulation(db)
+    job.model_defaults_version_id = defaults_version_id
+    db.commit()
     solution = run_osemosys_from_csv_dir(
         csv_root,
         solver_name=job.solver_name,
@@ -681,6 +729,9 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
         lp_dir=str(_lp_dir_eff) if _lp_dir_eff else None,
         lp_basename=_lp_basename_eff,
         job_id=job_id,
+        materialize_intermediate=False,
+        param_defaults=defaults_map,
+        model_defaults_version_id=defaults_version_id,
     )
 
     if _gen_lp and _lp_dir_eff:

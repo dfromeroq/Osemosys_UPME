@@ -1,5 +1,6 @@
 /**
- * Guard de permisos: requiere can_manage_catalogs. Redirige a escenarios si no tiene permiso.
+ * Guard de permisos: requiere can_manage_catalogs (p. ej. etiquetas de escenario).
+ * La página Catálogos usa RequireCatalogsArea con permisos OR más amplios.
  */
 import { Navigate, Outlet } from "react-router-dom";
 import { useCurrentUser } from "@/app/providers/useCurrentUser";

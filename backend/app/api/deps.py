@@ -103,6 +103,16 @@ def get_system_settings_manager(current_user: User = Depends(get_current_user)) 
     return current_user
 
 
+def get_model_defaults_manager(current_user: User = Depends(get_current_user)) -> User:
+    """Autoriza edición de defaults versionados del modelo OSeMOSYS."""
+    if not current_user.can_manage_model_defaults:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permisos para administrar los defaults del modelo.",
+        )
+    return current_user
+
+
 def get_scenario_manager(current_user: User = Depends(get_current_user)) -> User:
     """Autoriza administración integral de escenarios ajenos.
 

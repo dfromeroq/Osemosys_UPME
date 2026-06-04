@@ -35,6 +35,11 @@ from .scenario_operation_job_event import ScenarioOperationJobEvent
 from .scenario_permission import ScenarioPermission
 from .season import Season
 from .simulation_benchmark import SimulationBenchmark
+from .model_parameter_catalog import ModelParameterCatalog
+from .model_parameter_default_version import (
+    ModelParameterDefaultItem,
+    ModelParameterDefaultVersion,
+)
 from .simulation_job import SimulationJob
 from .simulation_job_event import SimulationJobEvent
 from .simulation_job_favorite import SimulationJobFavorite
@@ -80,6 +85,9 @@ __all__ = [
     "ChartSeriesConfig",
     "Categorie",
     "DeletionLog",
+    "ModelParameterCatalog",
+    "ModelParameterDefaultItem",
+    "ModelParameterDefaultVersion",
     "SimulationJob",
     "SimulationJobEvent",
     "SimulationJobFavorite",

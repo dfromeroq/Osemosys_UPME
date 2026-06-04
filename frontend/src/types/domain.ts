@@ -39,6 +39,7 @@ export type User = {
   /** Admin de configuración del sistema — puede modificar runtime settings
    * (ej. hilos del solver) desde el panel admin. */
   can_manage_system_settings?: boolean;
+  can_manage_model_defaults?: boolean;
 };
 
 /** Categoría jerárquica de etiquetas de escenario. */
@@ -193,10 +194,10 @@ export type SimulationRun = {
   user_id: string;
   username?: string | null;
   solver_name: SimulationSolver;
-  /** Hilos efectivamente entregados al solver (leídos del propio optimizador
-   * tras configurarlo). null si el solver es single-thread o si la lectura
-   * falló. */
+  /** Hilos que HiGHS aplicó post-solve (getOptionValue). */
   solver_threads_used?: number | null;
+  /** Hilos pedidos en admin/env (antes del cap por hardware). */
+  solver_threads_configured?: number | null;
   input_mode: SimulationInputMode;
   input_name?: string | null;
   simulation_type: SimulationType;
@@ -332,6 +333,7 @@ export type RunResult = {
   scenario_id: number | null;
   solver_name: SimulationSolver;
   solver_threads_used?: number | null;
+  solver_threads_configured?: number | null;
   records_used: number;
   osemosys_param_records: number;
   objective_value: number;
