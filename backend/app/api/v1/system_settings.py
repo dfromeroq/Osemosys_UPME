@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -12,10 +14,6 @@ from app.models import User
 from app.repositories.user_repository import UserRepository
 from app.schemas.system_setting import SolverSettingsPublic, SolverSettingsUpdate
 from app.services.system_settings_service import SystemSettingsService
-from app.simulation.core.solver import (
-    _effective_solver_threads,
-    _hardware_thread_limit,
-)
 from app.simulation.core.solver_config import (
     SOLVER_HIGHS_CROSSOVER_KEY,
     SOLVER_HIGHS_HIPO_PARALLEL_TYPE_KEY,
@@ -31,6 +29,22 @@ from app.simulation.core.solver_config import (
 )
 
 router = APIRouter(prefix="/admin/system-settings")
+
+
+def _hardware_thread_limit() -> int:
+    """Devuelve CPUs visibles para este proceso."""
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except Exception:
+        return max(1, os.cpu_count() or 1)
+
+
+def _effective_solver_threads(requested_threads: int) -> int:
+    """Aplica el mismo cap visible por hardware usado en la vista admin."""
+    hardware = _hardware_thread_limit()
+    if requested_threads <= 0:
+        return hardware
+    return min(requested_threads, hardware)
 
 
 def _latest_updated(db: Session) -> tuple[object | None, object | None]:
@@ -58,18 +72,29 @@ def _latest_updated(db: Session) -> tuple[object | None, object | None]:
     return latest_at, latest_by
 
 
-def _to_public(db: Session) -> SolverSettingsPublic:
+def _to_public(
+    db: Session,
+    *,
+    value: int | None = None,
+    updated_at=None,
+    updated_by_id=None,
+) -> SolverSettingsPublic:
     cfg = resolve_highs_config(get_settings())
-    latest_at, latest_by = _latest_updated(db)
+    if value is None:
+        solver_threads = cfg.threads
+        latest_at, latest_by = _latest_updated(db)
+    else:
+        solver_threads = value
+        latest_at, latest_by = updated_at, updated_by_id
     username: str | None = None
     if latest_by is not None:
         user = UserRepository.get_by_id(db, latest_by)
         if user is not None:
             username = user.username
     return SolverSettingsPublic(
-        solver_threads=cfg.threads,
+        solver_threads=solver_threads,
         hardware_thread_limit=_hardware_thread_limit(),
-        effective_threads_preview=_effective_solver_threads(cfg.threads),
+        effective_threads_preview=_effective_solver_threads(solver_threads),
         highs_method=cfg.method,  # type: ignore[arg-type]
         highs_presolve=cfg.presolve,  # type: ignore[arg-type]
         highs_parallel=cfg.parallel,  # type: ignore[arg-type]
