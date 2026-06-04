@@ -6,36 +6,80 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_system_settings_manager
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.models import User
 from app.repositories.user_repository import UserRepository
 from app.schemas.system_setting import SolverSettingsPublic, SolverSettingsUpdate
-from app.services.system_settings_service import (
-    SOLVER_THREADS_KEY,
-    SystemSettingsService,
-)
+from app.services.system_settings_service import SystemSettingsService
 from app.simulation.core.solver import (
     _effective_solver_threads,
     _hardware_thread_limit,
+)
+from app.simulation.core.solver_config import (
+    SOLVER_HIGHS_CROSSOVER_KEY,
+    SOLVER_HIGHS_HIPO_PARALLEL_TYPE_KEY,
+    SOLVER_HIGHS_IPM_TOL_KEY,
+    SOLVER_HIGHS_METHOD_KEY,
+    SOLVER_HIGHS_PARALLEL_KEY,
+    SOLVER_HIGHS_PRESOLVE_KEY,
+    SOLVER_HIGHS_PRIMAL_TOL_KEY,
+    SOLVER_HIGHS_TIME_LIMIT_KEY,
+    SOLVER_HIGHS_USE_DIRECT_KEY,
+    SOLVER_THREADS_KEY,
+    resolve_highs_config,
 )
 
 router = APIRouter(prefix="/admin/system-settings")
 
 
-def _to_public(
-    db: Session, *, value: int, updated_at, updated_by_id
-) -> SolverSettingsPublic:
+def _latest_updated(db: Session) -> tuple[object | None, object | None]:
+    keys = [
+        SOLVER_THREADS_KEY,
+        SOLVER_HIGHS_METHOD_KEY,
+        SOLVER_HIGHS_PRESOLVE_KEY,
+        SOLVER_HIGHS_PARALLEL_KEY,
+        SOLVER_HIGHS_HIPO_PARALLEL_TYPE_KEY,
+        SOLVER_HIGHS_CROSSOVER_KEY,
+        SOLVER_HIGHS_USE_DIRECT_KEY,
+        SOLVER_HIGHS_TIME_LIMIT_KEY,
+        SOLVER_HIGHS_IPM_TOL_KEY,
+        SOLVER_HIGHS_PRIMAL_TOL_KEY,
+    ]
+    latest_at = None
+    latest_by = None
+    for key in keys:
+        row = SystemSettingsService.get_raw(db, key)
+        if row is None or row.updated_at is None:
+            continue
+        if latest_at is None or row.updated_at >= latest_at:
+            latest_at = row.updated_at
+            latest_by = row.updated_by
+    return latest_at, latest_by
+
+
+def _to_public(db: Session) -> SolverSettingsPublic:
+    cfg = resolve_highs_config(get_settings())
+    latest_at, latest_by = _latest_updated(db)
     username: str | None = None
-    if updated_by_id is not None:
-        user = UserRepository.get_by_id(db, updated_by_id)
+    if latest_by is not None:
+        user = UserRepository.get_by_id(db, latest_by)
         if user is not None:
             username = user.username
-    hardware = _hardware_thread_limit()
     return SolverSettingsPublic(
-        solver_threads=value,
-        hardware_thread_limit=hardware,
-        effective_threads_preview=_effective_solver_threads(value),
-        updated_at=updated_at,
+        solver_threads=cfg.threads,
+        hardware_thread_limit=_hardware_thread_limit(),
+        effective_threads_preview=_effective_solver_threads(cfg.threads),
+        highs_method=cfg.method,  # type: ignore[arg-type]
+        highs_presolve=cfg.presolve,  # type: ignore[arg-type]
+        highs_parallel=cfg.parallel,  # type: ignore[arg-type]
+        highs_hipo_parallel_type=cfg.hipo_parallel_type,
+        highs_run_crossover=cfg.run_crossover,  # type: ignore[arg-type]
+        highs_use_direct=cfg.use_direct,
+        highs_time_limit=cfg.time_limit,
+        highs_ipm_optimality_tolerance=cfg.ipm_optimality_tolerance,
+        highs_primal_feasibility_tolerance=cfg.primal_feasibility_tolerance,
+        updated_at=latest_at,  # type: ignore[arg-type]
         updated_by_username=username,
     )
 
@@ -46,19 +90,7 @@ def get_solver_settings(
     _: User = Depends(get_system_settings_manager),
 ) -> SolverSettingsPublic:
     """Devuelve la configuración runtime del solver."""
-    row = SystemSettingsService.get_raw(db, SOLVER_THREADS_KEY)
-    if row is None:
-        return _to_public(db, value=0, updated_at=None, updated_by_id=None)
-    try:
-        threads = int((row.value or "0").strip())
-    except ValueError:
-        threads = 0
-    return _to_public(
-        db,
-        value=threads,
-        updated_at=row.updated_at,
-        updated_by_id=row.updated_by,
-    )
+    return _to_public(db)
 
 
 @router.patch("/solver", response_model=SolverSettingsPublic)
@@ -67,16 +99,26 @@ def update_solver_settings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_system_settings_manager),
 ) -> SolverSettingsPublic:
-    """Actualiza el número de hilos a entregar al solver multihilo."""
-    row = SystemSettingsService.set_value(
-        db,
-        key=SOLVER_THREADS_KEY,
-        value=payload.solver_threads,
-        updated_by=current_user.id,
-    )
-    return _to_public(
-        db,
-        value=payload.solver_threads,
-        updated_at=row.updated_at,
-        updated_by_id=row.updated_by,
-    )
+    """Actualiza opciones runtime del solver multihilo."""
+    updates = {
+        SOLVER_THREADS_KEY: payload.solver_threads,
+        SOLVER_HIGHS_METHOD_KEY: payload.highs_method,
+        SOLVER_HIGHS_PRESOLVE_KEY: payload.highs_presolve,
+        SOLVER_HIGHS_PARALLEL_KEY: payload.highs_parallel,
+        SOLVER_HIGHS_HIPO_PARALLEL_TYPE_KEY: payload.highs_hipo_parallel_type,
+        SOLVER_HIGHS_CROSSOVER_KEY: payload.highs_run_crossover,
+        SOLVER_HIGHS_USE_DIRECT_KEY: payload.highs_use_direct,
+        SOLVER_HIGHS_TIME_LIMIT_KEY: payload.highs_time_limit,
+        SOLVER_HIGHS_IPM_TOL_KEY: payload.highs_ipm_optimality_tolerance,
+        SOLVER_HIGHS_PRIMAL_TOL_KEY: payload.highs_primal_feasibility_tolerance,
+    }
+    for key, value in updates.items():
+        if value is None:
+            continue
+        SystemSettingsService.set_value(
+            db,
+            key=key,
+            value=value,
+            updated_by=current_user.id,
+        )
+    return _to_public(db)
