@@ -25,24 +25,9 @@ from app.visualization.colors import (
     _color_ref_import,
 )
 
-# Gases de efecto invernadero a filtrar (EMIC02 con cero, no letra O)
-_GEI_GASES = {"EMIC02", "EMICH4", "EMIN2O"}
-
-# Contaminantes criterio
-_CONTAMINANTES = {
-    "EMIBC",
-    "EMICO",
-    "EMICOVDM",
-    "EMINH3",
-    "EMINOx",
-    "EMIPM10",
-    "EMIPM2_5",
-    "EMISOx",
-}
 
 # Modos de transporte por carretera (sub-filtro "CARRETERA")
 ROAD_TRANSPORT_CODES = {"BUS", "MOT", "TCK", "STT", "LDV", "FWD", "TAX", "MIC"}
-_ROAD_TRANSPORT_PATTERN = "|".join(ROAD_TRANSPORT_CODES)
 
 # Importaciones de líquidos (compartido: ref_import, liquidos_prod_import)
 _PREFIJOS_IMP_LIQUIDOS = ("IMPDSL", "IMPGSL", "IMPJET", "IMPLPG")
@@ -1086,7 +1071,7 @@ def _filtro_pwr(df, **kw):
     return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_PWR)]
 
 
-TECNOLOGIAS_PWR_LIQUIDOS = ["PWRDSL", "PWRFOL", "PWRGSL", "PWRJET", "PWRLPG"]
+TECNOLOGIAS_PWR_LIQUIDOS = ["PWRDSL", "PWRFOIL", "PWRGSL", "PWRJET", "PWRLPG"]
 
 
 def _filtro_pwr_liquidos(df, **kw):
@@ -1390,28 +1375,76 @@ def _filtro_consumo_liquidos(df, **kw):
     ]
 
 
+TECNOLOGIAS_PWR_LIQUIDOS_TOTAL = [
+    "PWRDSL",
+    "PWRFOIL",
+    "PWRJET",
+    "PWRLPG",
+]
+
+FUELS_LIQUIDOS = [
+    "DSL",
+    "FOL",
+    "GSL",
+    "JET",
+    "LPG",
+]
+
+
 def _filtro_liquidos_total(df, **kw):
-    """Filtrar demanda por combustibles líquidos (DSL, FOL, GSL, JET, LPG)
-    en todos los sectores: demanda + generación eléctrica.
-
-    Sectores de demanda: DEMRES, DEMIND, DEMTRA, DEMTER, DEMCON, DEMAGF, DEMCOQ
-    Generación eléctrica: PWRDSL, PWRFOIL, PWRJET, PWRLPG
-    """
-    if "TECHNOLOGY" not in df.columns:
+    if "TECHNOLOGY" not in df.columns or "FUEL" not in df.columns:
         return df.iloc[0:0]
 
-    demanda_mask = df["TECHNOLOGY"].str.startswith(
-        ("DEMRES", "DEMIND", "DEMTRA", "DEMTER", "DEMCON", "DEMAGF", "DEMCOQ")
-    )
-    electrico_mask = df["TECHNOLOGY"].str.startswith(
-        ("PWRDSL", "PWRFOL", "PWRJET", "PWRLPG")
-    )
+    return df[
+        df["TECHNOLOGY"].isin(TECNOLOGIAS_DEMANDA + TECNOLOGIAS_PWR_LIQUIDOS)
+        & df["FUEL"].isin(FUELS_LIQUIDOS)
+    ]
 
-    df = df[demanda_mask | electrico_mask]
 
-    if "FUEL" not in df.columns:
+TECNOLOGIAS_EXPORTACION_LIQUIDOS = [
+    "EXPDSL",
+    "EXPGSL",
+    "EXPJET",
+    "EXPLPG",
+]
+
+TECNOLOGIAS_DEMANDA_EXPORTACION_LIQUIDOS = (
+    TECNOLOGIAS_DEMANDA + TECNOLOGIAS_EXPORTACION_LIQUIDOS
+)
+
+
+def _filtro_demanda_exportaciones_liquidos(df, **kw):
+    if "TECHNOLOGY" not in df.columns or "FUEL" not in df.columns:
         return df.iloc[0:0]
-    return df[df["FUEL"].isin({"DSL", "FOL", "GSL", "JET", "LPG"})]
+
+    return df[
+        df["TECHNOLOGY"].isin(TECNOLOGIAS_DEMANDA_EXPORTACION_LIQUIDOS)
+        & df["FUEL"].isin(FUELS_LIQUIDOS)
+    ]
+
+
+TECNOLOGIAS_PETROLEO_CRUDO = ["MINOIL", "MINOIL_1LIV", "MINOIL_2MID", "MINOIL_3PES"]
+
+
+def _filtro_min_oil(df, **kw):
+    """Minería petróleo crudo (MINOIL)."""
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_PETROLEO_CRUDO)]
+
+
+TECNOLOGIAS_IMPORTACION_PETROLEO_CRUDO = ["IMPOIL"]
+
+
+def _filtro_imp_oil(df, **kw):
+    """Importación de petróleo crudo (IMPOIL)."""
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_IMPORTACION_PETROLEO_CRUDO)]
+
+
+TECNOLOGIAS_EXPORTACION_PETROLEO = ["EXPOIL"]
+
+
+def _filtro_exp_oil(df, **kw):
+    """Exportación de petróleo crudo (EXPOIL)."""
+    return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_EXPORTACION_PETROLEO)]
 
 
 ###########################################################################################################
@@ -1420,35 +1453,6 @@ def _filtro_liquidos_total(df, **kw):
 def _filtro_contiene(df, prefijo: str, sub_filtro=None, **kw):
     """Filtro genérico: TECHNOLOGY *contiene* el texto dado."""
     return df[df["TECHNOLOGY"].str.contains(prefijo)]
-
-
-def _filtro_exp_oil(df, **kw):
-    """Exportación de petróleo crudo (EXPOIL)."""
-    return df[df["TECHNOLOGY"].str.startswith("EXPOIL")]
-
-
-def _filtro_demanda_exportaciones_liquidos(df, **kw):
-    """Sectores de demanda + exportaciones de líquidos.
-
-    Sectores de demanda: DEMRES, DEMIND, DEMTRA, DEMTER, DEMCON, DEMAGF, DEMCOQ
-    Exportaciones: EXPDSL, EXPGSL, EXPJET, EXPLPG
-    Combustibles: DSL, FOL, GSL, JET, LPG
-    """
-    if "TECHNOLOGY" not in df.columns:
-        return df.iloc[0:0]
-
-    demanda_mask = df["TECHNOLOGY"].str.startswith(
-        ("DEMRES", "DEMIND", "DEMTRA", "DEMTER", "DEMCON", "DEMAGF", "DEMCOQ")
-    )
-    export_mask = df["TECHNOLOGY"].str.startswith(
-        ("EXPDSL", "EXPGSL", "EXPJET", "EXPLPG")
-    )
-
-    df = df[demanda_mask | export_mask]
-
-    if "FUEL" not in df.columns:
-        return df.iloc[0:0]
-    return df[df["FUEL"].isin({"DSL", "FOL", "GSL", "JET", "LPG"})]
 
 
 def _filtro_otros(df, sub_filtro=None, **kw):
@@ -1514,16 +1518,6 @@ def _color_h2_verde_azul_gris(df, color_col):
         order.append(cat)
         colors.append(palette.get(cat, "#999999"))
     return colors, order
-
-
-def _filtro_min_oil(df, **kw):
-    """Minería petróleo crudo (MINOIL)."""
-    return df[df["TECHNOLOGY"].str.startswith("MINOIL")]
-
-
-def _filtro_imp_oil(df, **kw):
-    """Importación de petróleo crudo (IMPOIL)."""
-    return df[df["TECHNOLOGY"].str.startswith("IMPOIL")]
 
 
 def _filtro_por_fuel_set(df, fuel_set: set, **kw):
