@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useToast } from "@/app/providers/useToast";
 import {
   systemSettingsApi,
+  type HipoParallelType,
   type HighsMethod,
   type OnOffChoose,
   type SolverSettings,
@@ -36,6 +37,13 @@ const ON_OFF_OPTIONS: { value: OnOffChoose; label: string }[] = [
   { value: "on", label: "On" },
   { value: "off", label: "Off" },
   { value: "choose", label: "Choose" },
+];
+
+const HIPO_PARALLEL_OPTIONS: { value: HipoParallelType; label: string }[] = [
+  { value: "", label: "Default (both)" },
+  { value: "both", label: "Tree + node" },
+  { value: "tree", label: "Tree" },
+  { value: "node", label: "Node" },
 ];
 
 function settingsToDraft(s: SolverSettings): SolverSettingsUpdate {
@@ -209,14 +217,24 @@ export function SystemSettingsAdminPage() {
                   </select>
                 </label>
 
-                <TextField
-                  label="HiPO parallel type"
-                  value={draft.highs_hipo_parallel_type}
-                  onChange={(e) =>
-                    patchDraft({ highs_hipo_parallel_type: e.target.value.trim() })
-                  }
-                  disabled={saving || draft.highs_method !== "hipo"}
-                />
+                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <span>HiPO parallel type</span>
+                  <select
+                    value={draft.highs_hipo_parallel_type}
+                    onChange={(e) =>
+                      patchDraft({
+                        highs_hipo_parallel_type: e.target.value as HipoParallelType,
+                      })
+                    }
+                    disabled={saving || draft.highs_method !== "hipo"}
+                  >
+                    {HIPO_PARALLEL_OPTIONS.map((opt) => (
+                      <option key={opt.value || "default"} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
                 <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <span>Crossover (IPM→básica)</span>

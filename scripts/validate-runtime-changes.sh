@@ -45,6 +45,27 @@ run_py_compile() {
   (cd "${ROOT_DIR}" && python3 -m py_compile "${existing[@]}")
 }
 
+run_highs_runtime_check() {
+  log "Validando runtime Python de HiGHS"
+  (cd "${BACKEND_DIR}" && python3 - <<'PY'
+import highspy
+import pyomo.environ as pyo
+
+solver = pyo.SolverFactory("appsi_highs")
+if solver is None or not solver.available(exception_flag=False):
+    raise SystemExit("appsi_highs no esta disponible para Pyomo")
+
+h = highspy.Highs()
+status = h.setOptionValue("solver", "ipm")
+text = str(status)
+if "kError" in text or text.endswith("Error"):
+    raise SystemExit(f"highspy rechazo solver=ipm: {status}")
+
+print("highspy/appsi_highs OK")
+PY
+  )
+}
+
 run_frontend_typecheck() {
   if [[ "${RUN_FRONTEND_TYPECHECK}" != "1" ]]; then
     log "Saltando frontend typecheck (RUN_FRONTEND_TYPECHECK=${RUN_FRONTEND_TYPECHECK})"
@@ -84,6 +105,7 @@ run_backend_tests() {
 run_root_compose_config
 run_backend_compose_config
 run_py_compile
+run_highs_runtime_check
 run_frontend_typecheck
 run_backend_tests
 
