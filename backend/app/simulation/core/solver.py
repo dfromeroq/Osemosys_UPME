@@ -219,11 +219,86 @@ def _resolve_solver_threads(settings: object) -> int:
         return fallback
 
 
+def _hardware_thread_limit() -> int:
+    """CPUs disponibles para el proceso (affinity o cpu_count)."""
+    try:
+        return len(os.sched_getaffinity(0))
+    except (AttributeError, NotImplementedError, OSError):
+        return os.cpu_count() or 1
+
+
 def _effective_solver_threads(configured: int) -> int:
-    """Hilos efectivos para HiGHS: configurado explícito o todos los CPUs."""
-    if configured > 0:
-        return configured
-    return os.cpu_count() or 1
+    """Hilos a entregar al solver: cap por hardware; 0 → todos los CPUs."""
+    limit = _hardware_thread_limit()
+    if configured <= 0:
+        return limit
+    applied = min(configured, limit)
+    if configured > limit:
+        logger.warning(
+            "solver.threads=%s excede CPUs disponibles (%s); usando %s",
+            configured,
+            limit,
+            applied,
+        )
+    return applied
+
+
+def _solver_thread_settings(settings: object) -> tuple[int, int]:
+    """Devuelve (configurado admin/env, aplicado al solver tras cap hardware)."""
+    configured = _resolve_solver_threads(settings)
+    return configured, _effective_solver_threads(configured)
+
+
+def _reset_highspy_scheduler() -> None:
+    try:
+        import highspy
+
+        if hasattr(highspy.Highs, "resetGlobalScheduler"):
+            highspy.Highs.resetGlobalScheduler()
+    except Exception:  # pragma: no cover - best effort
+        pass
+
+
+def _read_highspy_threads_used(h: object) -> int:
+    """Hilos que HiGHS aplicó (getOptionValue); threads=0 → hardware_limit."""
+    try:
+        result = h.getOptionValue("threads")
+        opt = result[1] if isinstance(result, tuple) and len(result) >= 2 else result
+        if opt is not None and int(opt) > 0:
+            return int(opt)
+    except (TypeError, ValueError, AttributeError):
+        pass
+    return _hardware_thread_limit()
+
+
+def _highs_model_status_is_notset(status: object) -> bool:
+    try:
+        import highspy
+
+        notset = getattr(highspy.HighsModelStatus, "kNotset", None)
+        if notset is not None and status == notset:
+            return True
+    except (ImportError, AttributeError):
+        pass
+    return "notset" in str(status).lower()
+
+
+def _run_highspy(h: object, *, settings: object) -> float:
+    """Ejecuta h.run(); un retry tras reset scheduler si kNotset."""
+    t0 = perf_counter()
+    h.run()
+    elapsed = perf_counter() - t0
+    if not _highs_model_status_is_notset(h.getModelStatus()):
+        return elapsed
+    logger.warning(
+        "HiGHS devolvió kNotset; reintentando run() tras resetGlobalScheduler",
+    )
+    _reset_highspy_scheduler()
+    _, applied = _solver_thread_settings(settings)
+    h.setOptionValue("threads", applied)
+    t1 = perf_counter()
+    h.run()
+    return elapsed + (perf_counter() - t1)
 
 
 def planned_solver_threads(solver_name: str, *, settings: object) -> int | None:
@@ -341,22 +416,37 @@ def _ensure_dual_suffix(instance: pyo.ConcreteModel) -> Suffix:
     return dual_suffix
 
 
-def _apply_highspy_options(h: object, *, settings: object) -> int:
-    """Aplica opciones HiGHS fijas (ipm) + threads desde settings/BD o CPU count."""
-    solver_threads = _effective_solver_threads(_resolve_solver_threads(settings))
+# Tolerancia IPM más estricta que el default (1e-8): certifica postsolve dual en
+# regional con run_crossover=choose sin activar crossover (~11s vs ~26s con on).
+HIGHS_IPM_OPTIMALITY_TOLERANCE = 1e-12
+
+
+def _apply_highspy_options(h: object, *, settings: object) -> tuple[int, int]:
+    """Aplica opciones HiGHS fijas (ipm) + threads desde settings/BD o CPU count.
+
+    Returns
+    -------
+    tuple[int, int]
+        ``(solver_threads_configured, solver_threads_applied)``.
+    """
+    configured, applied = _solver_thread_settings(settings)
     h.setOptionValue("log_to_console", False)
     h.setOptionValue("output_flag", False)
     h.setOptionValue("solver", "ipm")
     h.setOptionValue("presolve", "on")
     h.setOptionValue("parallel", "on")
     h.setOptionValue("run_crossover", "choose")
-    h.setOptionValue("threads", solver_threads)
+    h.setOptionValue("ipm_optimality_tolerance", HIGHS_IPM_OPTIMALITY_TOLERANCE)
+    h.setOptionValue("threads", applied)
     logger.info(
         "HiGHS directo (highspy): method=ipm presolve=on parallel=on "
-        "run_crossover=choose threads=%s",
-        solver_threads,
+        "run_crossover=choose ipm_optimality_tolerance=%s "
+        "threads_configured=%s threads_applied=%s",
+        HIGHS_IPM_OPTIMALITY_TOLERANCE,
+        configured,
+        applied,
     )
-    return solver_threads
+    return configured, applied
 
 
 def _apply_highspy_solution(instance: pyo.ConcreteModel, h: object) -> float:
@@ -459,16 +549,16 @@ def _solve_with_highspy_lp(
     if not lp_path.is_file():
         raise FileNotFoundError(f"Archivo LP no encontrado: {lp_path}")
 
+    _reset_highspy_scheduler()
     h = highspy.Highs()
-    threads_used = _apply_highspy_options(h, settings=settings)
+    threads_configured, _threads_applied = _apply_highspy_options(h, settings=settings)
 
     t_read = perf_counter()
     h.readModel(str(lp_path))
     read_model_seconds = perf_counter() - t_read
 
-    t_run = perf_counter()
-    h.run()
-    highs_run_seconds = perf_counter() - t_run
+    highs_run_seconds = _run_highspy(h, settings=settings)
+    threads_used = _read_highspy_threads_used(h)
 
     raw_status = _highs_status_to_raw(h.getModelStatus())
     status_display = normalize_solver_status_display(raw_status)
@@ -513,6 +603,7 @@ def _solve_with_highspy_lp(
         "solver_name": "highs",
         "solver_status": status_display,
         "objective_value": obj,
+        "solver_threads_configured": threads_configured,
         "solver_threads_used": threads_used,
         "reserve_margin_dual": reserve_margin_dual,
         "infeasibility_diagnostics": diagnostics,
@@ -520,6 +611,12 @@ def _solve_with_highspy_lp(
         "read_model_seconds": read_model_seconds,
         "highs_run_seconds": highs_run_seconds,
         "map_solution_seconds": map_solution_seconds,
+        "highs_options": {
+            "run_crossover": "choose",
+            "ipm_optimality_tolerance": HIGHS_IPM_OPTIMALITY_TOLERANCE,
+            "threads_configured": threads_configured,
+            "threads_used": threads_used,
+        },
     }
 
 

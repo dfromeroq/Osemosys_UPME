@@ -10,6 +10,7 @@ import { paths } from "@/routes/paths";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { Button } from "@/shared/components/Button";
 import { useCurrentUser } from "@/app/providers/useCurrentUser";
+import { canAccessCatalogsArea } from "@/features/catalogs/catalogAccess";
 
 const SIDEBAR_KEY = "app.sidebar.collapsed";
 
@@ -42,12 +43,8 @@ export function AppLayout() {
     { to: paths.app, label: "Inicio" },
     { to: paths.scenarios, label: "Escenarios" },
     { to: paths.changeRequests, label: "Solicitudes de cambio" },
-    ...(user?.can_manage_catalogs ? [{ to: paths.catalogs, label: "Catálogos" }] : []),
+    ...(canAccessCatalogsArea(user) ? [{ to: paths.catalogs, label: "Catálogos" }] : []),
     ...(user?.can_manage_users ? [{ to: paths.usersAdmin, label: "Usuarios y permisos" }] : []),
-    ...(user?.can_manage_system_settings ? [{ to: paths.systemSettingsAdmin, label: "Configuración" }] : []),
-    ...(user?.can_manage_model_defaults
-      ? [{ to: paths.modelParameterDefaults, label: "Defaults del modelo" }]
-      : []),
     { to: paths.simulation, label: "Simulación" },
     { to: paths.results, label: "Resultados" },
     { to: paths.reports, label: "Reportes" },

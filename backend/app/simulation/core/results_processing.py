@@ -1347,6 +1347,21 @@ def process_results(
     profile.record_memory_peak()
     profile.log_summary()
     timings.update(profile.timings)
+    for key in (
+        "read_model_seconds",
+        "highs_run_seconds",
+        "write_lp_seconds",
+        "map_solution_seconds",
+        "solver_backend",
+    ):
+        if key in solver_result:
+            timings[key] = solver_result[key]
+    if solver_result.get("highs_options"):
+        timings["highs_options"] = solver_result["highs_options"]
+    if solver_result.get("solver_threads_configured") is not None:
+        timings["solver_threads_configured"] = solver_result["solver_threads_configured"]
+    if solver_result.get("solver_threads_used") is not None:
+        timings["solver_threads_used"] = solver_result["solver_threads_used"]
 
     result = {
         "objective_value": solver_result["objective_value"],
@@ -1354,6 +1369,8 @@ def process_results(
         "solver_status": solver_result["solver_status"],
         "coverage_ratio": coverage_ratio,
         "reserve_margin_dual": solver_result.get("reserve_margin_dual"),
+        "solver_threads_configured": solver_result.get("solver_threads_configured"),
+        "solver_threads_used": solver_result.get("solver_threads_used"),
         "total_demand": total_demand,
         "total_dispatch": total_dispatch,
         "total_unmet": total_unmet,

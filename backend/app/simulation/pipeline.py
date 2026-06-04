@@ -32,7 +32,6 @@ from app.models import OsemosysParamValue, OsemosysOutputParamValue, SimulationJ
 from app.repositories.simulation_repository import SimulationRepository
 from app.simulation.core.data_processing import PARAM_INDEX
 from app.simulation.core.results_processing import VARIABLE_INDEX_NAMES
-from app.simulation.core.solver import planned_solver_threads
 from app.simulation.osemosys_core import (
     load_param_defaults_for_simulation,
     run_osemosys_from_csv_dir,
@@ -48,16 +47,19 @@ def _on_stage_event(
     stage_name: str,
     stage_progress: float,
 ) -> None:
-    """Registra progreso de etapa y persiste hilos del solver en ``solver_start``."""
+    """Registra progreso de etapa; hilos reales se persisten tras el solve."""
     job.progress = stage_progress
     threads_suffix = ""
     if stage_name == "solver_start":
-        planned = planned_solver_threads(job.solver_name, settings=get_settings())
-        if planned is not None:
-            job.solver_threads_used = planned
-            threads_suffix = f" Hilos del solver: {planned}."
+        from app.simulation.core.solver import _resolve_solver_threads
+
+        configured = _resolve_solver_threads(get_settings())
+        if (job.solver_name or "").lower() == "highs":
+            threads_suffix = f" Hilos configurados: {configured}."
         elif (job.solver_name or "").lower() == "glpk":
             threads_suffix = " GLPK usa 1 hilo."
+        elif configured > 0:
+            threads_suffix = f" Hilos configurados: {configured}."
 
     if stage_name == "infeasibility_analysis_start":
         msg = (
@@ -396,6 +398,7 @@ def _persist_solution(
     """Persiste resumen y filas de salida para cualquier tipo de job."""
     job.objective_value = solution.get("objective_value")
     job.solver_threads_used = solution.get("solver_threads_used")
+    job.solver_threads_configured = solution.get("solver_threads_configured")
     job.coverage_ratio = solution.get("coverage_ratio")
     job.reserve_margin_dual = solution.get("reserve_margin_dual")
     job.total_demand = solution.get("total_demand")
@@ -430,6 +433,8 @@ def _persist_critical_solver_metadata(
     aunque el worker muera durante la etapa posterior de persistencia pesada.
     """
     job.infeasibility_diagnostics_json = solution.get("infeasibility_diagnostics")
+    job.solver_threads_used = solution.get("solver_threads_used")
+    job.solver_threads_configured = solution.get("solver_threads_configured")
     model_timings = dict(solution.get("model_timings", {}))
     model_timings["solver_status"] = solution.get("solver_status", "unknown")
     job.model_timings_json = model_timings

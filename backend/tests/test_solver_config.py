@@ -76,20 +76,43 @@ def test_apply_highspy_options_sets_threads(monkeypatch) -> None:
     h = _FakeHighs()
     settings = SimpleNamespace(sim_solver_threads=8)
     monkeypatch.setattr(solver_module, "_resolve_solver_threads", lambda _s: 8)
+    monkeypatch.setattr(solver_module, "_hardware_thread_limit", lambda: 16)
 
-    threads_used = solver_module._apply_highspy_options(h, settings=settings)
+    configured, applied = solver_module._apply_highspy_options(h, settings=settings)
 
-    assert threads_used == 8
+    assert configured == 8
+    assert applied == 8
     assert h.options["threads"] == 8
     assert h.options["solver"] == "ipm"
     assert h.options["presolve"] == "on"
     assert h.options["parallel"] == "on"
     assert h.options["run_crossover"] == "choose"
+    assert h.options["ipm_optimality_tolerance"] == solver_module.HIGHS_IPM_OPTIMALITY_TOLERANCE
+
+
+def test_effective_solver_threads_caps_at_hardware(monkeypatch) -> None:
+    monkeypatch.setattr(solver_module, "_hardware_thread_limit", lambda: 16)
+    assert solver_module._effective_solver_threads(18) == 16
+    assert solver_module._effective_solver_threads(0) == 16
+    assert solver_module._effective_solver_threads(8) == 8
+
+
+def test_read_highspy_threads_used_reads_option_or_hardware(monkeypatch) -> None:
+    class _H:
+        def __init__(self, opt: object) -> None:
+            self._opt = opt
+
+        def getOptionValue(self, _key: str) -> object:
+            return (0, self._opt)
+
+    monkeypatch.setattr(solver_module, "_hardware_thread_limit", lambda: 16)
+    assert solver_module._read_highspy_threads_used(_H(12)) == 12
+    assert solver_module._read_highspy_threads_used(_H(0)) == 16
 
 
 def test_planned_solver_threads_highs_uses_cpu_count_when_zero(monkeypatch) -> None:
     monkeypatch.setattr(solver_module, "_resolve_solver_threads", lambda _s: 0)
-    monkeypatch.setattr(solver_module.os, "cpu_count", lambda: 12)
+    monkeypatch.setattr(solver_module, "_hardware_thread_limit", lambda: 12)
 
     assert solver_module.planned_solver_threads("highs", settings=object()) == 12
 
@@ -102,11 +125,12 @@ def test_apply_highspy_options_uses_cpu_count_when_threads_zero(monkeypatch) -> 
     h = _FakeHighs()
     settings = SimpleNamespace(sim_solver_threads=0)
     monkeypatch.setattr(solver_module, "_resolve_solver_threads", lambda _s: 0)
-    monkeypatch.setattr(solver_module.os, "cpu_count", lambda: 16)
+    monkeypatch.setattr(solver_module, "_hardware_thread_limit", lambda: 16)
 
-    threads_used = solver_module._apply_highspy_options(h, settings=settings)
+    configured, applied = solver_module._apply_highspy_options(h, settings=settings)
 
-    assert threads_used == 16
+    assert configured == 0
+    assert applied == 16
     assert h.options["threads"] == 16
 
 
@@ -154,6 +178,62 @@ def test_solve_model_highs_routes_to_highspy_lp(monkeypatch) -> None:
     assert "write_lp_seconds" in result
 
 
+def test_solve_with_highspy_lp_resets_scheduler(monkeypatch, tmp_path) -> None:
+    lp_path = tmp_path / "model.lp"
+    lp_path.write_text("stub lp", encoding="utf-8")
+    reset_calls: list[int] = []
+
+    class _FakeHighsEngine:
+        def setOptionValue(self, *_args, **_kwargs) -> None:
+            pass
+
+        def readModel(self, _path: str) -> None:
+            pass
+
+        def getModelStatus(self) -> str:
+            return "kOptimal"
+
+        def getOptionValue(self, _key: str) -> tuple[int, int]:
+            return (0, 4)
+
+        def getInfo(self) -> object:
+            return SimpleNamespace(objective_function_value=1.0)
+
+        def getSolution(self) -> object:
+            return SimpleNamespace(col_value=[], row_dual=[])
+
+        def getLp(self) -> object:
+            return SimpleNamespace(col_names_=[], row_names_=[])
+
+    fake_highspy_mod = SimpleNamespace(
+        Highs=_FakeHighsEngine,
+        HighsModelStatus=SimpleNamespace(kOptimal=1, kNotset=0),
+    )
+    monkeypatch.setitem(__import__("sys").modules, "highspy", fake_highspy_mod)
+    monkeypatch.setattr(
+        solver_module,
+        "_reset_highspy_scheduler",
+        lambda: reset_calls.append(1),
+    )
+    monkeypatch.setattr(solver_module, "_run_highspy", lambda _h, **_k: 0.1)
+    monkeypatch.setattr(solver_module, "_highs_status_to_raw", lambda _s: "optimal")
+    monkeypatch.setattr(solver_module, "_apply_highspy_solution", lambda *_a, **_k: 1.0)
+    monkeypatch.setattr(solver_module, "_apply_highspy_duals", lambda *_a, **_k: None)
+    monkeypatch.setattr(solver_module, "_extract_reserve_margin_dual", lambda _i: None)
+    monkeypatch.setattr(solver_module, "_resolve_solver_threads", lambda _s: 18)
+    monkeypatch.setattr(solver_module, "_hardware_thread_limit", lambda: 16)
+
+    result = solver_module._solve_with_highspy_lp(
+        _FakeInstance(),
+        lp_path,
+        settings=SimpleNamespace(sim_solver_threads=18, sim_solver_keepfiles=False),
+    )
+
+    assert reset_calls == [1]
+    assert result["solver_threads_configured"] == 18
+    assert result["solver_threads_used"] == 4
+
+
 def test_solve_with_highspy_lp_infeasible_runs_appsi_diagnostics(monkeypatch, tmp_path) -> None:
     lp_path = tmp_path / "model.lp"
     lp_path.write_text("stub lp", encoding="utf-8")
@@ -170,6 +250,9 @@ def test_solve_with_highspy_lp_infeasible_runs_appsi_diagnostics(monkeypatch, tm
 
         def getModelStatus(self) -> str:
             return "kInfeasible"
+
+        def getOptionValue(self, _key: str) -> tuple[int, int]:
+            return (0, 4)
 
     appsi_calls: list[int] = []
     diag_calls: list[int] = []
@@ -232,6 +315,9 @@ def test_solve_with_highspy_lp_unknown_feasible_strict_does_not_map(
 
         def getInfo(self) -> _FakeInfo:
             return _FakeInfo()
+
+        def getOptionValue(self, _key: str) -> tuple[int, int]:
+            return (0, 4)
 
     fake_highspy_mod = SimpleNamespace(
         Highs=_FakeHighsEngine,

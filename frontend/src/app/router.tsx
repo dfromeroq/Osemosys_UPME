@@ -9,10 +9,9 @@ import { Navigate, Outlet, createBrowserRouter, useParams } from "react-router-d
 import { AppLayout } from "@/layouts/AppLayout";
 import { AuthLayout } from "@/layouts/AuthLayout";
 import { RequireAuth } from "@/routes/RequireAuth";
+import { RequireCatalogsArea } from "@/routes/RequireCatalogsArea";
 import { RequireCatalogManager } from "@/routes/RequireCatalogManager";
 import { RequireOfficialDataImporter } from "@/routes/RequireOfficialDataImporter";
-import { RequireModelDefaultsManager } from "@/routes/RequireModelDefaultsManager";
-import { RequireSystemSettingsManager } from "@/routes/RequireSystemSettingsManager";
 import { RequireUserManager } from "@/routes/RequireUserManager";
 import { paths } from "@/routes/paths";
 import { LoginPage } from "@/pages/LoginPage";
@@ -37,10 +36,6 @@ const ReportsPage = lazy(() => import("@/pages/ReportsPage").then((m) => ({ defa
 const ReportDashboardPage = lazy(() => import("@/pages/ReportDashboardPage").then((m) => ({ default: m.ReportDashboardPage })));
 const HistoryPage = lazy(() => import("@/pages/HistoryPage").then((m) => ({ default: m.HistoryPage })));
 const ScenarioTagsAdminPage = lazy(() => import("@/pages/ScenarioTagsAdminPage").then((m) => ({ default: m.ScenarioTagsAdminPage })));
-const SystemSettingsAdminPage = lazy(() => import("@/pages/SystemSettingsAdminPage").then((m) => ({ default: m.SystemSettingsAdminPage })));
-const ModelParameterDefaultsPage = lazy(() =>
-  import("@/pages/ModelParameterDefaultsPage").then((m) => ({ default: m.ModelParameterDefaultsPage })),
-);
 const ChartViewerPage = lazy(() => import("@/pages/ChartViewerPage").then((m) => ({ default: m.ChartViewerPage })));
 
 /** Placeholder mínimo mientras se carga una página lazy (sin artefactos visuales). */
@@ -119,26 +114,22 @@ export const router = createBrowserRouter([
                 children: [{ path: "users-admin", element: <SuspenseWrapper><UsersAdminPage /></SuspenseWrapper> }],
               },
               {
-                element: <RequireSystemSettingsManager />,
-                children: [{ path: "system-settings", element: <SuspenseWrapper><SystemSettingsAdminPage /></SuspenseWrapper> }],
-              },
-              {
-                element: <RequireModelDefaultsManager />,
+                element: <RequireCatalogsArea />,
                 children: [
+                  { path: "catalogs", element: <SuspenseWrapper><CatalogsPage /></SuspenseWrapper> },
+                  {
+                    path: "system-settings",
+                    element: <Navigate to={`${paths.catalogs}?tab=solver_config`} replace />,
+                  },
                   {
                     path: "model-parameter-defaults",
-                    element: (
-                      <SuspenseWrapper>
-                        <ModelParameterDefaultsPage />
-                      </SuspenseWrapper>
-                    ),
+                    element: <Navigate to={`${paths.catalogs}?tab=model_defaults`} replace />,
                   },
                 ],
               },
               {
                 element: <RequireCatalogManager />,
                 children: [
-                  { path: "catalogs", element: <SuspenseWrapper><CatalogsPage /></SuspenseWrapper> },
                   { path: "scenario-tags-admin", element: <SuspenseWrapper><ScenarioTagsAdminPage /></SuspenseWrapper> },
                 ],
               },

@@ -97,9 +97,9 @@ class SimulationJob(Base):
     finished_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # --- Result summary (populated when job succeeds) ---
-    #: Hilos efectivamente entregados al solver (leídos del propio optimizador
-    #: post-configuración). NULL si el solver no soporta multihilo (e.g. GLPK)
-    #: o si la lectura del valor efectivo falló.
+    #: Valor pedido en admin/env (``solver.threads`` / ``SIM_SOLVER_THREADS``).
+    solver_threads_configured: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Hilos que HiGHS aplicó (``getOptionValue('threads')`` post-run).
     solver_threads_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
     objective_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     coverage_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)

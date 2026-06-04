@@ -90,15 +90,22 @@ function formatSolverThreadsForLogs(run: SimulationRun | null | undefined): {
   hint: string | null;
 } {
   if (!run) return { value: "—", hint: null };
-  const threads = run.solver_threads_used;
-  if (threads != null && threads > 0) {
-    return { value: String(threads), hint: null };
-  }
   if (run.solver_name === "glpk") {
     return { value: "1", hint: "GLPK es single-thread" };
   }
+  const used = run.solver_threads_used;
+  const configured = run.solver_threads_configured;
+  if (used != null && used > 0) {
+    if (configured != null && configured > 0 && configured !== used) {
+      return {
+        value: `${used} (configurados: ${configured})`,
+        hint: null,
+      };
+    }
+    return { value: String(used), hint: null };
+  }
   if (ACTIVE_STATUSES.has(run.status)) {
-    return { value: "—", hint: "Se asignan al preparar el solver" };
+    return { value: "—", hint: "Se reportan al finalizar el solver" };
   }
   return { value: "—", hint: null };
 }

@@ -80,9 +80,10 @@ class SimulationJobPublic(BaseModel):
     user_id: str
     username: str | None = None
     solver_name: SimulationSolver
-    #: Hilos efectivamente entregados al solver (NULL si el solver no soporta
-    #: multihilo o si la lectura del valor efectivo falló).
+    #: Hilos efectivamente entregados al solver (NULL si no aplica).
     solver_threads_used: int | None = None
+    #: Hilos pedidos en admin/env antes del cap por hardware.
+    solver_threads_configured: int | None = None
     input_mode: SimulationInputMode = "SCENARIO"
     input_name: str | None = None
     simulation_type: SimulationType = "NATIONAL"
