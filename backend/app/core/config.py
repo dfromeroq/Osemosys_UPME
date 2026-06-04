@@ -51,6 +51,18 @@ class Settings(BaseSettings):
     sim_solver_tee: bool = Field(default=False, alias="SIM_SOLVER_TEE")
     sim_solver_keepfiles: bool = Field(default=False, alias="SIM_SOLVER_KEEPFILES")
     sim_solver_threads: int = Field(default=0, alias="SIM_SOLVER_THREADS")
+    sim_solver_highs_method: str = Field(default="ipm", alias="SIM_SOLVER_HIGHS_METHOD")
+    sim_solver_highs_presolve: str = Field(default="on", alias="SIM_SOLVER_HIGHS_PRESOLVE")
+    sim_solver_highs_parallel: str = Field(default="on", alias="SIM_SOLVER_HIGHS_PARALLEL")
+    sim_solver_highs_hipo_parallel_type: str = Field(
+        default="",
+        alias="SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE",
+    )
+    sim_solver_highs_crossover: str = Field(default="choose", alias="SIM_SOLVER_HIGHS_CROSSOVER")
+    sim_solver_highs_direct: bool = Field(default=True, alias="SIM_SOLVER_HIGHS_DIRECT")
+    sim_solver_highs_time_limit: float = Field(default=0.0, alias="SIM_SOLVER_HIGHS_TIME_LIMIT")
+    sim_solver_highs_ipm_tol: float = Field(default=1e-7, alias="SIM_SOLVER_HIGHS_IPM_TOL")
+    sim_solver_highs_primal_tol: float = Field(default=1e-7, alias="SIM_SOLVER_HIGHS_PRIMAL_TOL")
     simulation_artifacts_dir: str = Field(default="/app/tmp", alias="SIMULATION_ARTIFACTS_DIR")
     docker_socket_path: str = Field(default="/var/run/docker.sock", alias="DOCKER_SOCKET_PATH")
     docker_metrics_services: str = Field(
