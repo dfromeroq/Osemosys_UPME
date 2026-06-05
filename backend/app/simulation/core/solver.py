@@ -12,6 +12,7 @@ Uso: recibe la instancia concreta de instance_builder.build_instance();
 from __future__ import annotations
 
 import logging
+import os
 import re
 import tempfile
 from collections.abc import Callable
@@ -160,11 +161,13 @@ def _apply_solver_runtime_options(
             )
             return None
         threads_used = apply_highs_options_to_model(highs_options, highs_config)
+        from app.simulation.core.solver_config import _display_highs_value
+
         logger.info(
             "Configurando HiGHS (appsi): method=%s presolve=%s parallel=%s threads=%s",
-            highs_config.method,
-            highs_config.presolve,
-            highs_config.parallel,
+            _display_highs_value(highs_config.method),
+            _display_highs_value(highs_config.presolve),
+            _display_highs_value(highs_config.parallel),
             highs_config.threads or "default",
         )
         if hasattr(solver, "config"):
@@ -237,11 +240,64 @@ def _ensure_dual_suffix(instance: pyo.ConcreteModel) -> None:
         instance.dual = Suffix(direction=Suffix.IMPORT)
 
 
+def _selective_solution_map_enabled() -> bool:
+    flag = os.getenv("OSEMOSYS_SELECTIVE_SOLUTION_MAP", "1").strip().lower()
+    return flag not in ("0", "false", "no", "off")
+
+
+def _set_var_value_from_col_map(
+    var: Var,
+    col_map: dict[str, float],
+) -> None:
+    pyomo_name = var.name
+    lp_name = _pyomo_name_to_lp(pyomo_name)
+    val = col_map.get(pyomo_name)
+    if val is None:
+        val = col_map.get(lp_name)
+    if val is not None:
+        var.set_value(val, skip_validation=True)
+
+
+def _map_dual_value(
+    instance: pyo.ConcreteModel,
+    con: Constraint,
+    dual_map: dict[str, float],
+) -> None:
+    pyomo_name = con.name
+    lp_name = _pyomo_name_to_lp(pyomo_name)
+    dual_val = dual_map.get(pyomo_name)
+    if dual_val is None:
+        dual_val = dual_map.get(lp_name)
+    if dual_val is not None:
+        instance.dual[con] = dual_val
+
+
+def _map_reserve_margin_duals(
+    instance: pyo.ConcreteModel,
+    dual_map: dict[str, float],
+) -> None:
+    """Carga duales solo para restricciones usadas por reserve_margin_dual."""
+    _ensure_dual_suffix(instance)
+
+    native = getattr(instance, "ReserveMarginConstraint", None)
+    if native is not None:
+        for con_data in native.values():
+            _map_dual_value(instance, con_data, dual_map)
+
+    udc = getattr(instance, "UDC1_UserDefinedConstraintInequality", None)
+    if udc is not None:
+        for idx, con_data in udc.items():
+            if isinstance(idx, tuple) and len(idx) >= 2 and idx[1] == "UDC_Margin":
+                _map_dual_value(instance, con_data, dual_map)
+
+
 def _apply_highspy_solution_to_instance(
     instance: pyo.ConcreteModel,
     h: object,
 ) -> tuple[float, dict[str, float]]:
     """Carga primals/duals de highspy en la instancia Pyomo."""
+    from app.simulation.core.results_processing import vars_to_load_from_solution
+
     solution = h.getSolution()
     lp = h.getLp()
     col_names = list(getattr(lp, "col_names_", []) or [])
@@ -255,14 +311,23 @@ def _apply_highspy_solution_to_instance(
             col_map[name] = float(col_values[idx])
             col_map[_lp_name_to_pyomo(name)] = float(col_values[idx])
 
-    for var in instance.component_data_objects(Var, active=True):
-        pyomo_name = var.name
-        lp_name = _pyomo_name_to_lp(pyomo_name)
-        val = col_map.get(pyomo_name)
-        if val is None:
-            val = col_map.get(lp_name)
-        if val is not None:
-            var.set_value(val, skip_validation=True)
+    use_selective = _selective_solution_map_enabled()
+    if use_selective:
+        var_names = vars_to_load_from_solution(instance)
+        for name in var_names:
+            comp = getattr(instance, name, None)
+            if comp is None:
+                continue
+            try:
+                values_iter = comp.values()
+            except AttributeError:
+                _set_var_value_from_col_map(comp, col_map)
+                continue
+            for var in values_iter:
+                _set_var_value_from_col_map(var, col_map)
+    else:
+        for var in instance.component_data_objects(Var, active=True):
+            _set_var_value_from_col_map(var, col_map)
 
     dual_map: dict[str, float] = {}
     for idx, name in enumerate(row_names):
@@ -271,15 +336,12 @@ def _apply_highspy_solution_to_instance(
             dual_map[_lp_name_to_pyomo(name)] = float(row_duals[idx])
 
     if dual_map:
-        _ensure_dual_suffix(instance)
-        for con in instance.component_data_objects(Constraint, active=True):
-            pyomo_name = con.name
-            lp_name = _pyomo_name_to_lp(pyomo_name)
-            dual_val = dual_map.get(pyomo_name)
-            if dual_val is None:
-                dual_val = dual_map.get(lp_name)
-            if dual_val is not None:
-                instance.dual[con] = dual_val
+        if use_selective:
+            _map_reserve_margin_duals(instance, dual_map)
+        else:
+            _ensure_dual_suffix(instance)
+            for con in instance.component_data_objects(Constraint, active=True):
+                _map_dual_value(instance, con, dual_map)
 
     try:
         info = h.getInfo()
@@ -298,9 +360,12 @@ def _solve_with_direct_highspy(
     highs_config: SolverHighsConfig,
     lp_path: Path | None,
     timings: dict[str, float],
+    on_stage: Callable[[str, float], None] | None = None,
 ) -> tuple[str, float, int | None]:
     import highspy
 
+    if on_stage:
+        on_stage("solver_write_lp", 76.0)
     t0 = perf_counter()
     if lp_path is None:
         with tempfile.NamedTemporaryFile(suffix=".lp", delete=False) as tmp:
@@ -315,26 +380,34 @@ def _solve_with_direct_highspy(
         cleanup_lp = False
 
     h = highspy.Highs()
+    from app.simulation.core.solver_config import _display_highs_value
+
     threads_used = apply_highs_options_to_model(h, highs_config)
     logger.info(
         "HiGHS directo: method=%s presolve=%s parallel=%s threads=%s crossover=%s",
-        highs_config.method,
-        highs_config.presolve,
-        highs_config.parallel,
+        _display_highs_value(highs_config.method),
+        _display_highs_value(highs_config.presolve),
+        _display_highs_value(highs_config.parallel),
         highs_config.threads or "default",
-        highs_config.run_crossover,
+        _display_highs_value(highs_config.run_crossover),
     )
 
+    if on_stage:
+        on_stage("solver_read_model", 78.0)
     t_read = perf_counter()
     h.readModel(str(lp_path))
     timings["solver_read_model_seconds"] = perf_counter() - t_read
 
+    if on_stage:
+        on_stage("solver_run", 82.0)
     t_run = perf_counter()
     h.run()
     timings["solver_run_seconds"] = perf_counter() - t_run
 
     raw_status = _highs_status_to_raw(h.getModelStatus())
 
+    if on_stage:
+        on_stage("solver_map_solution", 86.0)
     t_map = perf_counter()
     obj = 0.0
     if "optimal" in raw_status.lower() or raw_status.lower() in {
@@ -361,6 +434,7 @@ def _solve_with_appsi_highs(
     highs_config: SolverHighsConfig,
     settings: object,
     timings: dict[str, float],
+    on_stage: Callable[[str, float], None] | None = None,
 ) -> tuple[object, object, str, float, int | None]:
     solver = pyo.SolverFactory("appsi_highs")
     threads_used = _apply_solver_runtime_options(
@@ -372,6 +446,8 @@ def _solve_with_appsi_highs(
         except Exception:  # pragma: no cover
             pass
 
+    if on_stage:
+        on_stage("solver_run", 82.0)
     t0 = perf_counter()
     results = solver.solve(
         instance,
@@ -385,6 +461,8 @@ def _solve_with_appsi_highs(
     raw_status = str(results.solver.termination_condition)
     obj = 0.0
     if "optimal" in raw_status.lower():
+        if on_stage:
+            on_stage("solver_map_solution", 86.0)
         t_load = perf_counter()
         instance.solutions.load_from(results)
         timings["solver_load_solution_seconds"] = perf_counter() - t_load
@@ -574,6 +652,7 @@ def _solve_highs(
     highs_config: SolverHighsConfig,
     lp_path: Path | None,
     on_solver_finished: Callable[[pyo.ConcreteModel, Any, Any, dict], None] | None,
+    on_stage: Callable[[str, float], None] | None = None,
 ) -> dict:
     solver_timings: dict[str, float] = {}
     solver_obj: object | None = None
@@ -591,6 +670,7 @@ def _solve_highs(
                 highs_config=highs_config,
                 lp_path=Path(lp_path) if lp_path is not None else None,
                 timings=solver_timings,
+                on_stage=on_stage,
             )
         except Exception:
             logger.exception(
@@ -601,6 +681,7 @@ def _solve_highs(
                 highs_config=highs_config,
                 settings=settings,
                 timings=solver_timings,
+                on_stage=on_stage,
             )
     else:
         solver_obj, results_obj, raw_status, obj, threads_used = _solve_with_appsi_highs(
@@ -608,6 +689,7 @@ def _solve_highs(
             highs_config=highs_config,
             settings=settings,
             timings=solver_timings,
+            on_stage=on_stage,
         )
 
     status_display = normalize_solver_status_display(raw_status)
@@ -663,6 +745,7 @@ def solve_model(
     solver_name: str = "glpk",
     lp_path: str | Path | None = None,
     on_solver_finished: Callable[[pyo.ConcreteModel, Any, Any, dict], None] | None = None,
+    on_stage: Callable[[str, float], None] | None = None,
 ) -> dict:
     """Resuelve el modelo usando Pyomo SolverFactory o highspy directo."""
     settings = get_settings()
@@ -692,6 +775,7 @@ def solve_model(
                 highs_config=highs_config,
                 lp_path=Path(lp_path) if lp_path is not None else None,
                 on_solver_finished=on_solver_finished,
+                on_stage=on_stage,
             )
 
         logger.info("Resolviendo con %s (SolverFactory('%s'))...", candidate, factory_name)
@@ -700,6 +784,8 @@ def solve_model(
             solver, candidate=candidate, settings=settings, highs_config=highs_config
         )
         solver_timings: dict[str, float] = {}
+        if on_stage:
+            on_stage("solver_run", 82.0)
         t0 = perf_counter()
         results = solver.solve(
             instance,

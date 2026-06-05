@@ -37,12 +37,12 @@ def _fake_settings(**overrides: object) -> SimpleNamespace:
     base = dict(
         sim_solver_tee=False,
         sim_solver_keepfiles=False,
-        sim_solver_threads=8,
-        sim_solver_highs_method="ipm",
-        sim_solver_highs_presolve="on",
-        sim_solver_highs_parallel="on",
+        sim_solver_threads=0,
+        sim_solver_highs_method="",
+        sim_solver_highs_presolve="",
+        sim_solver_highs_parallel="",
         sim_solver_highs_hipo_parallel_type="",
-        sim_solver_highs_crossover="choose",
+        sim_solver_highs_crossover="",
         sim_solver_highs_direct=False,
         sim_solver_highs_time_limit=0.0,
         sim_solver_highs_ipm_tol=1e-7,
@@ -57,10 +57,22 @@ def test_normalize_solver_status_display_maps_infeasible_to_spanish() -> None:
     assert solver_module.normalize_solver_status_display("optimal") == "optimal"
 
 
+def test_resolve_highs_config_defaults_match_notebook() -> None:
+    cfg = resolve_highs_config(_fake_settings())
+    assert cfg.method == ""
+    assert cfg.presolve == ""
+    assert cfg.parallel == ""
+    assert cfg.run_crossover == ""
+    assert cfg.threads == 0
+
+
 def test_resolve_highs_config_from_env() -> None:
     cfg = resolve_highs_config(
         _fake_settings(
+            sim_solver_threads=8,
             sim_solver_highs_method="hipo",
+            sim_solver_highs_presolve="on",
+            sim_solver_highs_parallel="on",
             sim_solver_highs_hipo_parallel_type="both",
         )
     )
@@ -71,6 +83,13 @@ def test_resolve_highs_config_from_env() -> None:
     assert cfg.threads == 8
 
 
+def test_apply_highs_options_default_applies_nothing() -> None:
+    opts: dict[str, object] = {}
+    threads = apply_highs_options_to_model(opts, SolverHighsConfig())
+    assert threads is None
+    assert opts == {}
+
+
 def test_apply_highs_options_to_dict() -> None:
     opts: dict[str, object] = {}
     cfg = SolverHighsConfig(threads=4, method="ipm", presolve="on", parallel="on")
@@ -79,7 +98,8 @@ def test_apply_highs_options_to_dict() -> None:
     assert opts["solver"] == "ipm"
     assert opts["presolve"] == "on"
     assert opts["parallel"] == "on"
-    assert opts["log_to_console"] is False
+    assert "ipm_optimality_tolerance" in opts
+    assert "log_to_console" not in opts
 
 
 def test_apply_highs_options_to_dict_includes_hipo_parallel_type() -> None:
@@ -187,7 +207,7 @@ def test_solve_model_sets_highs_threads_and_options_when_appsi(monkeypatch) -> N
 def test_solve_model_routes_to_direct_highspy(monkeypatch, tmp_path) -> None:
     calls: dict[str, object] = {}
 
-    def _fake_direct(instance, *, highs_config, lp_path, timings):
+    def _fake_direct(instance, *, highs_config, lp_path, timings, on_stage=None):
         calls["direct"] = True
         timings["solver_backend"] = "direct_highspy"
         return "optimal", 123.0, 16

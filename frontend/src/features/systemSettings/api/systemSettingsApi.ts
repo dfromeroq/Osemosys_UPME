@@ -3,8 +3,14 @@
  */
 import { httpClient } from "@/shared/api/httpClient";
 
-export type HighsMethod = "choose" | "simplex" | "ipm" | "ipx" | "hipo";
-export type OnOffChoose = "off" | "on" | "choose";
+export type HighsMethod =
+  | "default"
+  | "choose"
+  | "simplex"
+  | "ipm"
+  | "ipx"
+  | "hipo";
+export type OnOffChoose = "default" | "off" | "on" | "choose";
 
 export type SolverSettings = {
   solver_threads: number;

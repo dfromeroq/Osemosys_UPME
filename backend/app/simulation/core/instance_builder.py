@@ -22,7 +22,14 @@ logger = logging.getLogger(__name__)
 _USE_PANDAS_DATAPORTAL = os.getenv("OSEMOSYS_FAST_DATAPORTAL", "1") != "0"
 
 # Columnas de índice que Pyomo/DataPortal tratan como enteros (paridad con CSV nativo).
-_INT_INDEX_COLS = frozenset({"YEAR", "MODE_OF_OPERATION"})
+# SEASON/DAYTYPE/DAILYTIMEBRACKET son sets ordenados numéricos en OSeMOSYS (p. ej. "1" → 1).
+_INT_INDEX_COLS = frozenset({
+    "YEAR",
+    "MODE_OF_OPERATION",
+    "SEASON",
+    "DAYTYPE",
+    "DAILYTIMEBRACKET",
+})
 
 
 def _csv_has_data(fpath: str) -> bool:
@@ -91,6 +98,7 @@ def build_instance(
     *,
     has_storage: bool = False,
     has_udc: bool = True,
+    timings_out: dict[str, float] | None = None,
 ) -> ConcreteModel:
     """Carga CSVs via DataPortal y crea instancia concreta."""
     data = DataPortal()
@@ -303,5 +311,8 @@ def build_instance(
             ", ".join(f"{k}={v:.2f}s" for k, v in top),
         )
     logger.info("Instancia creada exitosamente")
+
+    if timings_out is not None:
+        timings_out.update(load_timings)
 
     return instance

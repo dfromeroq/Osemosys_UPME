@@ -116,6 +116,10 @@ class SimulationJobPublic(BaseModel):
     diagnostic_finished_at: str | None = None
     #: Duración total del diagnóstico en segundos.
     diagnostic_seconds: float | None = None
+    #: Tiempos macro del pipeline (extract_data_seconds, solve_seconds, …).
+    stage_times: dict[str, float | str] = Field(default_factory=dict)
+    #: Tiempos granulares medidos en el worker (solver_run_seconds, …).
+    model_timings: dict[str, float | str] = Field(default_factory=dict)
 
 
 class SimulationOverviewPublic(BaseModel):

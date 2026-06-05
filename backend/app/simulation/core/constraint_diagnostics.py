@@ -1,6 +1,7 @@
 """Diagnóstico de restricciones innecesarias o redundantes en el modelo OSeMOSYS.
 
-Ejecutar antes del solve vía variable de entorno:
+Desactivado por defecto (OSEMOSYS_CONSTRAINT_DIAGNOSTICS=0 en .env).
+Activar solo para debug local vía variable de entorno:
     OSEMOSYS_CONSTRAINT_DIAGNOSTICS=1
 
 El reporte se emite por el logger estándar del módulo.

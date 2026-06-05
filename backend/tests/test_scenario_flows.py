@@ -419,7 +419,12 @@ def test_run_data_processing_skips_postprocessing_for_preprocessed_csv_scenario(
     monkeypatch.setattr(data_processing_module, "process_and_save_emission_ratios", _mark("emission_ratios"))
     monkeypatch.setattr(data_processing_module, "ensure_udc_csvs", _mark("udc"))
     monkeypatch.setattr(data_processing_module, "apply_udc_config", _mark("apply_udc"))
-    monkeypatch.setattr(data_processing_module, "reorder_activity_ratio_csvs_for_dataportal", _mark("reorder"))
+    monkeypatch.setattr(data_processing_module, "apply_light_csv_preprocess", _mark("light_preprocess"))
+    monkeypatch.setattr(
+        data_processing_module,
+        "_build_processing_result_from_csv_dir",
+        lambda _csv_dir: export_result,
+    )
 
     result = data_processing_module.run_data_processing(
         db_session,
@@ -427,8 +432,8 @@ def test_run_data_processing_skips_postprocessing_for_preprocessed_csv_scenario(
         csv_dir=str(tmp_path),
     )
 
+    assert called_steps == ["light_preprocess"]
     assert result is export_result
-    assert called_steps == []
 
 
 def test_excel_preview_detects_inserts_and_apply_creates_missing_catalogs(db_session) -> None:

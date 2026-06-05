@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import tracemalloc
 from collections import defaultdict
 from collections.abc import Callable, Iterator
@@ -194,6 +195,10 @@ _EPS = 1e-10
 
 _ROA_COLUMNS = ("R", "L", "T", "MO", "Y", "ROA")
 
+_TYPED_SOLUTION_VARS: frozenset[str] = frozenset({"NewCapacity", "AnnualEmissions"})
+
+_safe_extract_cache_lock = threading.Lock()
+
 
 def _profile_enabled() -> bool:
     return os.getenv("OSEMOSYS_PROFILE_RESULTS", "").strip().lower() in (
@@ -321,8 +326,9 @@ def _safe_extract(var_component, *, use_cache: bool = True) -> dict:
                 cache = {}
                 model._safe_extract_cache = cache
             comp_name = var_component.local_name
-            if comp_name in cache:
-                return cache[comp_name]
+            with _safe_extract_cache_lock:
+                if comp_name in cache:
+                    return cache[comp_name]
         except Exception:
             cache = None
             comp_name = None
@@ -341,14 +347,16 @@ def _safe_extract(var_component, *, use_cache: bool = True) -> dict:
                 if val is not None and abs(val) >= _EPS:
                     raw[k] = val
         if cache is not None and comp_name:
-            cache[comp_name] = raw
+            with _safe_extract_cache_lock:
+                cache[comp_name] = raw
         return raw
 
     raw = var_component.extract_values()
     res = {k: (v if v is not None else 0.0) for k, v in raw.items()}
 
     if cache is not None and comp_name:
-        cache[comp_name] = res
+        with _safe_extract_cache_lock:
+            cache[comp_name] = res
     return res
 
 
@@ -869,13 +877,10 @@ def _extract_pyomo_variables_parallel(
                 out[name] = entries
         return out
 
-    # En paralelo cada hilo extrae una variable distinta: el caché del modelo
-    # no aporta y puede generar contención; use_cache=False evita escrituras
-    # concurrentes en model._safe_extract_cache.
     out = {}
     with ThreadPoolExecutor(max_workers=min(workers, len(var_names))) as pool:
         futures = {
-            pool.submit(_extract_pyomo_variable, instance, name, use_cache=False): name
+            pool.submit(_extract_pyomo_variable, instance, name, use_cache=True): name
             for name in var_names
         }
         for future in as_completed(futures):
@@ -979,6 +984,27 @@ def _intermediate_var_names(
     return var_names
 
 
+def vars_to_load_from_solution(
+    instance: pyo.ConcreteModel,
+    *,
+    emissions: list | None = None,
+    has_storage: bool | None = None,
+) -> frozenset[str]:
+    """Nombres de Var que process_results leerá; usado para mapeo selectivo HiGHS."""
+    if emissions is None:
+        emission_set = getattr(instance, "EMISSION", None)
+        emissions = list(emission_set) if emission_set is not None else []
+    if has_storage is None:
+        storage_set = getattr(instance, "STORAGE", None)
+        has_storage = bool(storage_set is not None and len(list(storage_set)) > 0)
+
+    names = set(_TYPED_SOLUTION_VARS)
+    names.update(_intermediate_var_names(instance, emissions, has_storage))
+    if getattr(instance, "OBJ", None) is not None:
+        names.add("OBJ")
+    return frozenset(names)
+
+
 def _collect_intermediate_parts(
     instance: pyo.ConcreteModel,
     regions: list,
@@ -992,6 +1018,8 @@ def _collect_intermediate_parts(
 ) -> tuple[dict[str, list], list[dict], list[dict], list[dict], list[dict]]:
     """Extrae variables Pyomo, derivadas de capacidad y prod/use en bloques reutilizables."""
     var_names = _intermediate_var_names(instance, emissions, has_storage)
+    if aggregates is not None and aggregates.roa_raw:
+        var_names = [name for name in var_names if name != "RateOfActivity"]
 
     pyomo_out: dict[str, list] = {}
     tca_entries: list[dict] = []
@@ -1028,6 +1056,14 @@ def _collect_intermediate_parts(
     if aggregates is None:
         aggregates = _precompute_roa_aggregates(instance)
 
+    if aggregates.roa_raw:
+        roa_entries = _format_pyomo_entries_from_raw(
+            aggregates.roa_raw,
+            "RateOfActivity",
+        )
+        if roa_entries:
+            pyomo_out["RateOfActivity"] = roa_entries
+
     prod_entries, use_entries = _entries_from_prod_use(
         aggregates.prod_by_rftly,
         aggregates.use_by_rftly,
@@ -1052,11 +1088,10 @@ def _iter_intermediate_entries(
         yield "AccumulatedNewCapacity", entry
     for entry in prod_entries:
         yield "ProductionByTechnology", entry
-    for entry in prod_entries:
+        # Mismo contenido que ProductionByTechnology; se persiste por contrato OSeMOSYS.
         yield "RateOfProductionByTechnology", entry
     for entry in use_entries:
         yield "UseByTechnology", entry
-    for entry in use_entries:
         yield "RateOfUseByTechnology", entry
 
 

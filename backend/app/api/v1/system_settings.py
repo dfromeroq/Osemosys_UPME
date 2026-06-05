@@ -23,6 +23,7 @@ from app.simulation.core.solver_config import (
     SOLVER_HIGHS_TIME_LIMIT_KEY,
     SOLVER_HIGHS_USE_DIRECT_KEY,
     SOLVER_THREADS_KEY,
+    _display_highs_value,
     resolve_highs_config,
 )
 
@@ -64,11 +65,11 @@ def _to_public(db: Session) -> SolverSettingsPublic:
             username = user.username
     return SolverSettingsPublic(
         solver_threads=cfg.threads,
-        highs_method=cfg.method,  # type: ignore[arg-type]
-        highs_presolve=cfg.presolve,  # type: ignore[arg-type]
-        highs_parallel=cfg.parallel,  # type: ignore[arg-type]
+        highs_method=_display_highs_value(cfg.method),  # type: ignore[arg-type]
+        highs_presolve=_display_highs_value(cfg.presolve),  # type: ignore[arg-type]
+        highs_parallel=_display_highs_value(cfg.parallel),  # type: ignore[arg-type]
         highs_hipo_parallel_type=cfg.hipo_parallel_type,
-        highs_run_crossover=cfg.run_crossover,  # type: ignore[arg-type]
+        highs_run_crossover=_display_highs_value(cfg.run_crossover),  # type: ignore[arg-type]
         highs_use_direct=cfg.use_direct,
         highs_time_limit=cfg.time_limit,
         highs_ipm_optimality_tolerance=cfg.ipm_optimality_tolerance,
