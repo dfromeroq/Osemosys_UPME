@@ -4,7 +4,6 @@ import { useToast } from "@/app/providers/useToast";
 import {
   systemSettingsApi,
   type HighsMethod,
-  type HipoParallelType,
   type OnOffChoose,
   type SolverSettings,
   type SolverSettingsUpdate,
@@ -29,7 +28,6 @@ type SolverSettingsTabProps = {
 
 const METHOD_OPTIONS: { value: HighsMethod; label: string }[] = [
   { value: "ipm", label: "IPM" },
-  { value: "hipo", label: "HiPO" },
   { value: "simplex", label: "Simplex" },
   { value: "ipx", label: "IPX" },
   { value: "choose", label: "Choose" },
@@ -41,20 +39,12 @@ const ON_OFF_OPTIONS: { value: OnOffChoose; label: string }[] = [
   { value: "choose", label: "Choose" },
 ];
 
-const HIPO_PARALLEL_OPTIONS: { value: HipoParallelType; label: string }[] = [
-  { value: "", label: "Default (both)" },
-  { value: "both", label: "Tree + node" },
-  { value: "tree", label: "Tree" },
-  { value: "node", label: "Node" },
-];
-
 function settingsToDraft(s: SolverSettings): SolverSettingsUpdate {
   return {
     solver_threads: s.solver_threads,
     highs_method: s.highs_method,
     highs_presolve: s.highs_presolve,
     highs_parallel: s.highs_parallel,
-    highs_hipo_parallel_type: s.highs_hipo_parallel_type,
     highs_run_crossover: s.highs_run_crossover,
     highs_use_direct: s.highs_use_direct,
     highs_time_limit: s.highs_time_limit,
@@ -214,25 +204,6 @@ export function SolverSettingsTab({ canEdit }: SolverSettingsTabProps) {
                   >
                     {ON_OFF_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span>HiPO parallel type</span>
-                  <select
-                    value={draft.highs_hipo_parallel_type}
-                    onChange={(e) =>
-                      patchDraft({
-                        highs_hipo_parallel_type: e.target.value as HipoParallelType,
-                      })
-                    }
-                    disabled={saving || !canEdit || draft.highs_method !== "hipo"}
-                  >
-                    {HIPO_PARALLEL_OPTIONS.map((opt) => (
-                      <option key={opt.value || "default"} value={opt.value}>
                         {opt.label}
                       </option>
                     ))}
