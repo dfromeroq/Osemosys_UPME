@@ -3,9 +3,8 @@
  */
 import { httpClient } from "@/shared/api/httpClient";
 
-export type HighsMethod = "choose" | "simplex" | "ipm" | "ipx" | "hipo";
+export type HighsMethod = "choose" | "simplex" | "ipm" | "ipx";
 export type OnOffChoose = "off" | "on" | "choose";
-export type HipoParallelType = "" | "tree" | "node" | "both";
 
 export type SolverSettings = {
   solver_threads: number;
@@ -14,7 +13,6 @@ export type SolverSettings = {
   highs_method: HighsMethod;
   highs_presolve: OnOffChoose;
   highs_parallel: OnOffChoose;
-  highs_hipo_parallel_type: HipoParallelType;
   highs_run_crossover: OnOffChoose;
   highs_use_direct: boolean;
   highs_time_limit: number;
