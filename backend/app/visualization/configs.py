@@ -220,7 +220,13 @@ def _filtro_gas_flujos(df, **kw):
     return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_GAS_FLUJOS)]
 
 
-TECNOLOGIAS_REFINERIAS = ["UPSREF_BAR", "UPSREF_CAR", "UPSREF_REF"]
+TECNOLOGIAS_REFINERIAS = [
+    "UPSREF_BAR",
+    "UPSREF_CAR",
+    "UPSREF_REF",
+    "UPSREFDSL",
+    "UPSREFGSL",
+]
 
 
 def _filtro_ref_total(df, **kw):
@@ -1211,21 +1217,28 @@ def _filtro_coquerias(df, sub_filtro=None, **kw):
     return df[mask]
 
 
-TECNOLOGIAS_IMPORTACION_SOLIDOS = ["MINCOA", "IMPCOA"]
+TECNOLOGIAS_IMPORTACION_SOLIDOS = ["MINCOA", "IMPCOA", "MINCOA1", "IMPCOA2"]
 
 
 def _filtro_solidos_import(df, **kw):
     return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_IMPORTACION_SOLIDOS)]
 
 
-TECNOLOGIAS_IMPORTACION_EXPORTACION_SOLIDOS = ["MINCOA", "IMPCOA", "EXPCOA"]
+TECNOLOGIAS_IMPORTACION_EXPORTACION_SOLIDOS = [
+    "MINCOA",
+    "IMPCOA",
+    "EXPCOA",
+    "MINCOA1",
+    "IMPCOA1",
+    "EXPCOA1",
+]
 
 
 def _filtro_solidos_flujos(df, **kw):
     return df[df["TECHNOLOGY"].isin(TECNOLOGIAS_IMPORTACION_EXPORTACION_SOLIDOS)]
 
 
-TECNOLOGIAS_EXTRACCION_SOLIDOS = ["MINCOA"]
+TECNOLOGIAS_EXTRACCION_SOLIDOS = ["MINCOA", "MINCOA1"]
 
 
 def _filtro_solidos_extraccion(df, **kw):
@@ -1249,7 +1262,7 @@ def _filtro_extraccion_min(df, **kw):
     return df[df["TECHNOLOGY"].isin((TECNOLOGIAS_EXTRACCION_MINERIA))]
 
 
-TECNOLOGIAS_PRODUCCION_SAF = ["UPSSAF", "UPSBJS", "UPSATJ"]
+TECNOLOGIAS_PRODUCCION_SAF = ["UPSSAF", "UPSSAF1", "UPSBJS", "UPSBJS1", "UPSATJ"]
 
 
 def _filtro_saf_produccion(df, **kw):
@@ -1290,7 +1303,14 @@ def _filtro_h2_verde_azul_gris(df, **kw):
     return df[df["TECHNOLOGY"].isin((TECNOLOGIAS_H2_PRODUCCION_VERDE_AZUL_GRIS))]
 
 
-TECNOLOGIAS_UPSTREAM_REFINACION = ["UPSSAF", "UPSALK", "UPSPEM"]
+TECNOLOGIAS_UPSTREAM_REFINACION = [
+    "UPSSAF",
+    "UPSSAF1",
+    "UPSALK",
+    "UPSALK1",
+    "UPSPEM",
+    "UPSPEM1",
+]
 
 
 def _filtro_ups_refinacion(df, **kw):
@@ -1300,6 +1320,8 @@ def _filtro_ups_refinacion(df, **kw):
 
 TECNOLOGIAS_MINERIA_HIDROCARBUROS = [
     "MINOIL",
+    "MINOIL1",
+    "MINNGS1",
     "MINOIL_1LIV",
     "MINOIL_2MID",
     "MINOIL_3PES",
@@ -1312,7 +1334,10 @@ def _filtro_min_hidrocarburos(df, **kw):
     return df[df["TECHNOLOGY"].isin((TECNOLOGIAS_MINERIA_HIDROCARBUROS))]
 
 
-TECNOLOGIAS_MINERIA_CARBON = ["MINCOA"]
+TECNOLOGIAS_MINERIA_CARBON = [
+    "MINCOA",
+    "MINCOA1",
+]
 
 
 def _filtro_min_carbon(df, **kw):
