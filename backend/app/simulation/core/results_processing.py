@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import tracemalloc
 from collections import defaultdict
 from collections.abc import Callable, Iterator
@@ -194,6 +195,10 @@ _EPS = 1e-10
 
 _ROA_COLUMNS = ("R", "L", "T", "MO", "Y", "ROA")
 
+_TYPED_SOLUTION_VARS: frozenset[str] = frozenset({"NewCapacity", "AnnualEmissions"})
+
+_safe_extract_cache_lock = threading.Lock()
+
 
 def _profile_enabled() -> bool:
     return os.getenv("OSEMOSYS_PROFILE_RESULTS", "").strip().lower() in (
@@ -321,8 +326,9 @@ def _safe_extract(var_component, *, use_cache: bool = True) -> dict:
                 cache = {}
                 model._safe_extract_cache = cache
             comp_name = var_component.local_name
-            if comp_name in cache:
-                return cache[comp_name]
+            with _safe_extract_cache_lock:
+                if comp_name in cache:
+                    return cache[comp_name]
         except Exception:
             cache = None
             comp_name = None
@@ -341,14 +347,16 @@ def _safe_extract(var_component, *, use_cache: bool = True) -> dict:
                 if val is not None and abs(val) >= _EPS:
                     raw[k] = val
         if cache is not None and comp_name:
-            cache[comp_name] = raw
+            with _safe_extract_cache_lock:
+                cache[comp_name] = raw
         return raw
 
     raw = var_component.extract_values()
     res = {k: (v if v is not None else 0.0) for k, v in raw.items()}
 
     if cache is not None and comp_name:
-        cache[comp_name] = res
+        with _safe_extract_cache_lock:
+            cache[comp_name] = res
     return res
 
 
@@ -869,13 +877,10 @@ def _extract_pyomo_variables_parallel(
                 out[name] = entries
         return out
 
-    # En paralelo cada hilo extrae una variable distinta: el caché del modelo
-    # no aporta y puede generar contención; use_cache=False evita escrituras
-    # concurrentes en model._safe_extract_cache.
     out = {}
     with ThreadPoolExecutor(max_workers=min(workers, len(var_names))) as pool:
         futures = {
-            pool.submit(_extract_pyomo_variable, instance, name, use_cache=False): name
+            pool.submit(_extract_pyomo_variable, instance, name, use_cache=True): name
             for name in var_names
         }
         for future in as_completed(futures):
@@ -979,6 +984,27 @@ def _intermediate_var_names(
     return var_names
 
 
+def vars_to_load_from_solution(
+    instance: pyo.ConcreteModel,
+    *,
+    emissions: list | None = None,
+    has_storage: bool | None = None,
+) -> frozenset[str]:
+    """Nombres de Var que process_results leerá; usado para mapeo selectivo HiGHS."""
+    if emissions is None:
+        emission_set = getattr(instance, "EMISSION", None)
+        emissions = list(emission_set) if emission_set is not None else []
+    if has_storage is None:
+        storage_set = getattr(instance, "STORAGE", None)
+        has_storage = bool(storage_set is not None and len(list(storage_set)) > 0)
+
+    names = set(_TYPED_SOLUTION_VARS)
+    names.update(_intermediate_var_names(instance, emissions, has_storage))
+    if getattr(instance, "OBJ", None) is not None:
+        names.add("OBJ")
+    return frozenset(names)
+
+
 def _collect_intermediate_parts(
     instance: pyo.ConcreteModel,
     regions: list,
@@ -992,6 +1018,8 @@ def _collect_intermediate_parts(
 ) -> tuple[dict[str, list], list[dict], list[dict], list[dict], list[dict]]:
     """Extrae variables Pyomo, derivadas de capacidad y prod/use en bloques reutilizables."""
     var_names = _intermediate_var_names(instance, emissions, has_storage)
+    if aggregates is not None and aggregates.roa_raw:
+        var_names = [name for name in var_names if name != "RateOfActivity"]
 
     pyomo_out: dict[str, list] = {}
     tca_entries: list[dict] = []
@@ -1028,6 +1056,14 @@ def _collect_intermediate_parts(
     if aggregates is None:
         aggregates = _precompute_roa_aggregates(instance)
 
+    if aggregates.roa_raw:
+        roa_entries = _format_pyomo_entries_from_raw(
+            aggregates.roa_raw,
+            "RateOfActivity",
+        )
+        if roa_entries:
+            pyomo_out["RateOfActivity"] = roa_entries
+
     prod_entries, use_entries = _entries_from_prod_use(
         aggregates.prod_by_rftly,
         aggregates.use_by_rftly,
@@ -1052,11 +1088,10 @@ def _iter_intermediate_entries(
         yield "AccumulatedNewCapacity", entry
     for entry in prod_entries:
         yield "ProductionByTechnology", entry
-    for entry in prod_entries:
+        # Mismo contenido que ProductionByTechnology; se persiste por contrato OSeMOSYS.
         yield "RateOfProductionByTechnology", entry
     for entry in use_entries:
         yield "UseByTechnology", entry
-    for entry in use_entries:
         yield "RateOfUseByTechnology", entry
 
 
@@ -1198,6 +1233,7 @@ def process_results(
     storage_id_by_name: dict[str, int] | None = None,
     parallel: bool = True,
     materialize_intermediate: bool = True,
+    on_stage: Callable[[str, float], None] | None = None,
 ) -> dict:
     """Construye el dict de resultados compatible con el pipeline.
 
@@ -1218,11 +1254,17 @@ def process_results(
         if y_num is not None:
             normalized_years.append(y_num)
 
-    t_extract = perf_counter()
+    if on_stage:
+        on_stage("process_results_precompute", 89.3)
+    t_precompute = perf_counter()
     with profile.time_block("precompute_roa_aggregates_seconds"):
         aggregates = _precompute_roa_aggregates(instance)
+    timings["process_results_precompute_seconds"] = perf_counter() - t_precompute
     profile.set_count("roa_entries", len(aggregates.roa_raw))
 
+    if on_stage:
+        on_stage("process_results_typed", 89.6)
+    t_typed = perf_counter()
     parallel_tasks = [
         (
             "dispatch",
@@ -1267,7 +1309,6 @@ def process_results(
     new_capacity = typed["new_capacity"]
     unmet = typed["unmet"]
     annual_emissions = typed["annual_emissions"]
-    timings["extract_results_seconds"] = perf_counter() - t_extract
     profile.set_count("dispatch_rows", len(dispatch))
     profile.set_count("new_capacity_rows", len(new_capacity))
 
@@ -1276,7 +1317,6 @@ def process_results(
     _attach_region_names(unmet, region_name_by_id)
     _attach_region_names(annual_emissions, region_name_by_id)
 
-    t_summary = perf_counter()
     total_dispatch = sum(row["dispatch"] for row in dispatch)
     total_unmet = sum(row["unmet_demand"] for row in unmet)
 
@@ -1291,7 +1331,14 @@ def process_results(
     sol = _build_sol_dict(
         dispatch, new_capacity, unmet, annual_emissions, region_name_by_id,
     )
+    timings["process_results_typed_seconds"] = perf_counter() - t_typed
+    timings["extract_results_seconds"] = (
+        timings["process_results_precompute_seconds"] + timings["process_results_typed_seconds"]
+    )
 
+    if on_stage:
+        on_stage("process_results_intermediate", 91.0)
+    t_intermediate = perf_counter()
     intermediate_variables: dict[str, list] = {}
     intermediate_entry_iter = None
     pyomo_out: dict[str, list] = {}
@@ -1318,7 +1365,8 @@ def process_results(
             intermediate_entry_iter = _iter_intermediate_entries(
                 pyomo_out, tca_entries, anc_entries, prod_entries, use_entries,
             )
-    timings["intermediate_vars_seconds"] = perf_counter() - t_summary
+    timings["process_results_intermediate_seconds"] = perf_counter() - t_intermediate
+    timings["intermediate_vars_seconds"] = timings["process_results_intermediate_seconds"]
     profile.set_count(
         "intermediate_var_names",
         len(intermediate_variables) if materialize_intermediate else len(pyomo_out),
@@ -1347,24 +1395,6 @@ def process_results(
     profile.record_memory_peak()
     profile.log_summary()
     timings.update(profile.timings)
-    solver_timings = solver_result.get("solver_timings")
-    if isinstance(solver_timings, dict):
-        timings.update(solver_timings)
-    for key in (
-        "read_model_seconds",
-        "highs_run_seconds",
-        "write_lp_seconds",
-        "map_solution_seconds",
-        "solver_backend",
-    ):
-        if key in solver_result:
-            timings[key] = solver_result[key]
-    if solver_result.get("highs_options"):
-        timings["highs_options"] = solver_result["highs_options"]
-    if solver_result.get("solver_threads_configured") is not None:
-        timings["solver_threads_configured"] = solver_result["solver_threads_configured"]
-    if solver_result.get("solver_threads_used") is not None:
-        timings["solver_threads_used"] = solver_result["solver_threads_used"]
 
     result = {
         "objective_value": solver_result["objective_value"],

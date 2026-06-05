@@ -37,14 +37,15 @@ def _fake_settings(**overrides: object) -> SimpleNamespace:
     base = dict(
         sim_solver_tee=False,
         sim_solver_keepfiles=False,
-        sim_solver_threads=8,
-        sim_solver_highs_method="ipm",
-        sim_solver_highs_presolve="on",
-        sim_solver_highs_parallel="on",
-        sim_solver_highs_crossover="choose",
+        sim_solver_threads=0,
+        sim_solver_highs_method="",
+        sim_solver_highs_presolve="",
+        sim_solver_highs_parallel="",
+        sim_solver_highs_hipo_parallel_type="",
+        sim_solver_highs_crossover="",
         sim_solver_highs_direct=False,
         sim_solver_highs_time_limit=0.0,
-        sim_solver_highs_ipm_tol=1e-12,
+        sim_solver_highs_ipm_tol=1e-7,
         sim_solver_highs_primal_tol=1e-7,
     )
     base.update(overrides)
@@ -56,25 +57,37 @@ def test_normalize_solver_status_display_maps_infeasible_to_spanish() -> None:
     assert solver_module.normalize_solver_status_display("optimal") == "optimal"
 
 
+def test_resolve_highs_config_defaults_match_notebook() -> None:
+    cfg = resolve_highs_config(_fake_settings())
+    assert cfg.method == ""
+    assert cfg.presolve == ""
+    assert cfg.parallel == ""
+    assert cfg.run_crossover == ""
+    assert cfg.threads == 0
+
+
 def test_resolve_highs_config_from_env() -> None:
     cfg = resolve_highs_config(
         _fake_settings(
-            sim_solver_highs_method="ipm",
+            sim_solver_threads=8,
+            sim_solver_highs_method="hipo",
+            sim_solver_highs_presolve="on",
+            sim_solver_highs_parallel="on",
+            sim_solver_highs_hipo_parallel_type="both",
         )
     )
-    assert cfg.method == "ipm"
+    assert cfg.method == "hipo"
     assert cfg.presolve == "on"
     assert cfg.parallel == "on"
+    assert cfg.hipo_parallel_type == "both"
     assert cfg.threads == 8
 
 
-def test_resolve_highs_config_rejects_hipo_method() -> None:
-    cfg = resolve_highs_config(
-        _fake_settings(
-            sim_solver_highs_method="hipo",
-        )
-    )
-    assert cfg.method == "ipm"
+def test_apply_highs_options_default_applies_nothing() -> None:
+    opts: dict[str, object] = {}
+    threads = apply_highs_options_to_model(opts, SolverHighsConfig())
+    assert threads is None
+    assert opts == {}
 
 
 def test_apply_highs_options_to_dict() -> None:
@@ -85,8 +98,40 @@ def test_apply_highs_options_to_dict() -> None:
     assert opts["solver"] == "ipm"
     assert opts["presolve"] == "on"
     assert opts["parallel"] == "on"
-    assert opts["simplex_max_concurrency"] == 4
-    assert opts["log_to_console"] is False
+    assert "ipm_optimality_tolerance" in opts
+    assert "log_to_console" not in opts
+
+
+def test_apply_highs_options_to_dict_includes_hipo_parallel_type() -> None:
+    opts: dict[str, object] = {}
+    cfg = SolverHighsConfig(
+        threads=4,
+        method="hipo",
+        presolve="on",
+        parallel="on",
+        hipo_parallel_type="both",
+    )
+    apply_highs_options_to_model(opts, cfg)
+
+    assert opts["solver"] == "hipo"
+    assert opts["hipo_parallel_type"] == "both"
+
+
+def test_apply_highs_options_raises_when_hipo_is_rejected() -> None:
+    class _RejectingHighs:
+        def setOptionValue(self, key, value):  # noqa: ANN001, N802
+            if key == "solver" and value == "hipo":
+                return "HighsStatus.kError"
+            return "HighsStatus.kOk"
+
+    cfg = SolverHighsConfig(method="hipo")
+
+    try:
+        apply_highs_options_to_model(_RejectingHighs(), cfg)
+    except ValueError as exc:
+        assert "solver=hipo" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("Expected ValueError when HiGHS rejects hipo")
 
 
 def test_pyomo_lp_name_roundtrip() -> None:
@@ -162,7 +207,7 @@ def test_solve_model_sets_highs_threads_and_options_when_appsi(monkeypatch) -> N
 def test_solve_model_routes_to_direct_highspy(monkeypatch, tmp_path) -> None:
     calls: dict[str, object] = {}
 
-    def _fake_direct(instance, *, highs_config, lp_path, timings):
+    def _fake_direct(instance, *, highs_config, lp_path, timings, on_stage=None):
         calls["direct"] = True
         timings["solver_backend"] = "direct_highspy"
         return "optimal", 123.0, 16
@@ -189,103 +234,6 @@ def test_solve_model_routes_to_direct_highspy(monkeypatch, tmp_path) -> None:
     assert calls.get("direct") is True
     assert result["objective_value"] == 123.0
     assert result["solver_timings"]["solver_backend"] == "direct_highspy"
-
-
-def test_solve_model_retries_appsi_when_direct_highs_status_is_unknown(monkeypatch) -> None:
-    fake_solver = _FakeSolver(status="optimal")
-
-    def _fake_direct(instance, *, highs_config, lp_path, timings):  # noqa: ARG001
-        timings["solver_backend"] = "direct_highspy"
-        timings["solver_run_seconds"] = 12.3
-        return "HighsModelStatus.kUnknown", 0.0, 12
-
-    monkeypatch.setattr(solver_module, "_solve_with_direct_highspy", _fake_direct)
-    monkeypatch.setattr(
-        solver_module,
-        "get_settings",
-        lambda: _fake_settings(sim_solver_highs_direct=True),
-    )
-    monkeypatch.setattr(
-        solver_module,
-        "resolve_highs_config",
-        lambda _settings: SolverHighsConfig(threads=12, use_direct=True),
-    )
-    monkeypatch.setattr(
-        solver_module,
-        "get_solver_availability",
-        lambda: {"glpk": False, "highs": True},
-    )
-    monkeypatch.setattr(
-        solver_module.pyo,
-        "SolverFactory",
-        lambda _factory_name: fake_solver,
-    )
-    monkeypatch.setattr(solver_module.pyo, "value", lambda _obj: 456.0)
-
-    result = solver_module.solve_model(_FakeInstance(), solver_name="highs")
-
-    assert result["solver_status"] == "optimal"
-    assert result["objective_value"] == 456.0
-    assert result["solver_timings"]["solver_backend"] == "appsi_highs"
-    assert fake_solver.last_kwargs is not None
-    assert fake_solver.last_kwargs["load_solutions"] is False
-
-
-def test_solve_model_rejects_unprocessable_highs_status_after_retry(monkeypatch) -> None:
-    fake_solver = _FakeSolver(status="unknown")
-
-    def _fake_direct(instance, *, highs_config, lp_path, timings):  # noqa: ARG001
-        timings["solver_backend"] = "direct_highspy"
-        timings["solver_run_seconds"] = 12.3
-        return "HighsModelStatus.kUnknown", 0.0, 12
-
-    monkeypatch.setattr(solver_module, "_solve_with_direct_highspy", _fake_direct)
-    monkeypatch.setattr(
-        solver_module,
-        "get_settings",
-        lambda: _fake_settings(sim_solver_highs_direct=True),
-    )
-    monkeypatch.setattr(
-        solver_module,
-        "resolve_highs_config",
-        lambda _settings: SolverHighsConfig(threads=12, use_direct=True),
-    )
-    monkeypatch.setattr(
-        solver_module,
-        "get_solver_availability",
-        lambda: {"glpk": False, "highs": True},
-    )
-    monkeypatch.setattr(
-        solver_module.pyo,
-        "SolverFactory",
-        lambda _factory_name: fake_solver,
-    )
-
-    try:
-        solver_module.solve_model(_FakeInstance(), solver_name="highs")
-    except RuntimeError as exc:
-        assert "HiGHS terminó sin una solución procesable" in str(exc)
-        assert "unknown" in str(exc)
-        assert "solver_run_seconds=" in str(exc)
-    else:  # pragma: no cover
-        raise AssertionError("Expected RuntimeError for unprocessable HiGHS status")
-
-
-def test_solve_model_fails_when_requested_solver_is_unavailable(monkeypatch) -> None:
-    monkeypatch.setattr(solver_module, "get_settings", lambda: _fake_settings())
-    monkeypatch.setattr(
-        solver_module,
-        "get_solver_availability",
-        lambda: {"glpk": True, "highs": False, "gurobi": True},
-    )
-
-    try:
-        solver_module.solve_model(_FakeInstance(), solver_name="highs")
-    except RuntimeError as exc:
-        assert "Solver 'highs' no disponible" in str(exc)
-        assert "SolverFactory('appsi_highs')" in str(exc)
-    else:  # pragma: no cover
-        raise AssertionError("Expected RuntimeError when highs is unavailable")
 
 
 def test_solve_model_does_not_set_glpk_threads(monkeypatch) -> None:

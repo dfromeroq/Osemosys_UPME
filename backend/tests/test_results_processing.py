@@ -28,6 +28,7 @@ from app.simulation.core.results_processing import (
     _precompute_roa_aggregates_pd,
     _safe_extract,
     process_results,
+    vars_to_load_from_solution,
 )
 
 
@@ -395,6 +396,57 @@ class TestProcessResults:
 
 
 class TestStreamingIntermediate:
+    def test_iter_includes_rate_prod_use_aliases(self, mini_instance) -> None:
+        kwargs = dict(
+            instance=mini_instance,
+            regions=["R1"],
+            technologies=["T1", "T2"],
+            years=[2020, 2021, 2022],
+            emissions=["CO2"],
+            has_storage=False,
+            parallel=False,
+        )
+        streamed = list(_iter_intermediate_entries(*_collect_intermediate_parts(**kwargs)))
+        var_names = {name for name, _ in streamed}
+        assert "RateOfProductionByTechnology" in var_names
+        assert "RateOfUseByTechnology" in var_names
+        assert "ProductionByTechnology" in var_names
+        assert "UseByTechnology" in var_names
+        prod = [e for n, e in streamed if n == "ProductionByTechnology"]
+        rate_prod = [e for n, e in streamed if n == "RateOfProductionByTechnology"]
+        assert prod == rate_prod
+
+    def test_roa_reused_when_aggregates_provided(self, mini_instance) -> None:
+        aggregates = _precompute_roa_aggregates(mini_instance)
+        kwargs = dict(
+            instance=mini_instance,
+            regions=["R1"],
+            technologies=["T1", "T2"],
+            years=[2020, 2021, 2022],
+            emissions=["CO2"],
+            has_storage=False,
+            parallel=False,
+            aggregates=aggregates,
+        )
+        pyomo_out, *_ = _collect_intermediate_parts(**kwargs)
+        assert "RateOfActivity" in pyomo_out
+        direct = _extract_pyomo_variable(mini_instance, "RateOfActivity")
+        assert sorted((tuple(e["index"]), e["value"]) for e in pyomo_out["RateOfActivity"]) == sorted(
+            (tuple(e["index"]), e["value"]) for e in direct
+        )
+
+    def test_vars_to_load_from_solution(self, mini_instance) -> None:
+        names = vars_to_load_from_solution(
+            mini_instance,
+            emissions=["CO2"],
+            has_storage=False,
+        )
+        assert "NewCapacity" in names
+        assert "AnnualEmissions" in names
+        assert "RateOfActivity" in names
+        assert "OperatingCost" in names
+        assert "OBJ" in names
+
     def test_iter_matches_materialized_dict(self, mini_instance) -> None:
         kwargs = dict(
             instance=mini_instance,

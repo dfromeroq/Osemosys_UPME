@@ -22,6 +22,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
+from collections.abc import Iterator
 from typing import Any, Final
 
 from sqlalchemy import func, insert
@@ -32,57 +33,7 @@ from app.models import OsemosysParamValue, OsemosysOutputParamValue, SimulationJ
 from app.repositories.simulation_repository import SimulationRepository
 from app.simulation.core.data_processing import PARAM_INDEX
 from app.simulation.core.results_processing import VARIABLE_INDEX_NAMES
-from app.simulation.osemosys_core import (
-    load_param_defaults_for_simulation,
-    run_osemosys_from_csv_dir,
-    run_osemosys_from_db,
-)
-
-
-def _on_stage_event(
-    db: Session,
-    *,
-    job: SimulationJob,
-    job_id: int,
-    stage_name: str,
-    stage_progress: float,
-) -> None:
-    """Registra progreso de etapa; hilos reales se persisten tras el solve."""
-    job.progress = stage_progress
-    threads_suffix = ""
-    if stage_name == "solver_start":
-        from app.simulation.core.solver import _resolve_solver_threads
-
-        configured = _resolve_solver_threads(get_settings())
-        if (job.solver_name or "").lower() == "highs":
-            threads_suffix = f" Hilos configurados: {configured}."
-        elif (job.solver_name or "").lower() == "glpk":
-            threads_suffix = " GLPK usa 1 hilo."
-        elif configured > 0:
-            threads_suffix = f" Hilos configurados: {configured}."
-
-    if stage_name == "infeasibility_analysis_start":
-        msg = (
-            "Modelo infactible detectado. Iniciando análisis de infactibilidad "
-            "(IIS + mapeo a parámetros). Esto puede tomar varios segundos."
-        )
-        evt = "WARN"
-    elif stage_name == "infeasibility_analysis_complete":
-        msg = "Análisis de infactibilidad finalizado."
-        evt = "INFO"
-    else:
-        msg = f"Bloque {stage_name} ejecutado.{threads_suffix}"
-        evt = "STAGE"
-    SimulationRepository.add_event(
-        db,
-        job_id=job_id,
-        event_type=evt,
-        stage=stage_name,
-        message=msg,
-        progress=stage_progress,
-    )
-    db.commit()
-    _check_cancel_requested(db, job_id=job_id)
+from app.simulation.osemosys_core import run_osemosys_from_csv_dir, run_osemosys_from_db
 
 
 def _safe_slug(text: str | None, *, max_len: int = 60) -> str:
@@ -126,6 +77,86 @@ STAGE_PERSIST_RESULTS: Final[str] = "persist_results"
 STAGE_CANCEL: Final[str] = "cancel"
 
 BATCH_SIZE: Final[int] = 2000
+
+# Mensajes legibles por etapa interna del worker (``on_stage`` en osemosys_core).
+STAGE_EVENT_MESSAGES: Final[dict[str, tuple[str, str]]] = {
+    "data_loading": ("Cargando y preprocesando datos de entrada.", "STAGE"),
+    "data_loaded": ("Datos de entrada listos.", "STAGE"),
+    "declare_model": (
+        "Modelo abstracto OSeMOSYS declarado (sets, variables, restricciones).",
+        "STAGE",
+    ),
+    "create_instance_start": (
+        "Cargando CSVs en DataPortal y creando instancia concreta (Pyomo).",
+        "STAGE",
+    ),
+    "create_instance_pyomo": (
+        "Instancia Pyomo creada; liberando modelo abstracto.",
+        "STAGE",
+    ),
+    "constraint_diagnostics": (
+        "Ejecutando diagnóstico de restricciones (modo debug; puede tardar varios minutos).",
+        "STAGE",
+    ),
+    "instance_ready": ("Instancia lista; iniciando optimización.", "STAGE"),
+    "create_instance": ("Instancia lista; iniciando optimización.", "STAGE"),
+    "solver_start": ("Preparando optimización.", "STAGE"),
+    "solver_write_lp": ("Escribiendo archivo LP para HiGHS.", "STAGE"),
+    "solver_read_model": ("HiGHS cargando el modelo LP en memoria.", "STAGE"),
+    "solver_run": (
+        "HiGHS resolviendo el modelo (puede tardar varios minutos).",
+        "STAGE",
+    ),
+    "solver_map_solution": ("Mapeando solución de HiGHS al modelo Pyomo.", "STAGE"),
+    "solver": ("Optimización finalizada.", "STAGE"),
+    "release_model": (
+        "Liberando modelo abstracto y memoria (gc.collect).",
+        "STAGE",
+    ),
+    "process_results": (
+        "Extrayendo resultados del modelo Pyomo (dispatch, capacidades, emisiones…).",
+        "STAGE",
+    ),
+    "process_results_precompute": (
+        "Precomputando agregados de actividad (RateOfActivity).",
+        "STAGE",
+    ),
+    "process_results_typed": (
+        "Extrayendo variables principales: dispatch, capacidad, demanda no atendida y emisiones.",
+        "STAGE",
+    ),
+    "process_results_intermediate": (
+        "Extrayendo variables intermedias del modelo Pyomo (puede tardar varios minutos).",
+        "STAGE",
+    ),
+    "process_results_complete": (
+        "Extracción de resultados completada; preparando persistencia en BD.",
+        "STAGE",
+    ),
+    "persist_results": (
+        "Insertando filas de resultado en PostgreSQL.",
+        "STAGE",
+    ),
+    "infeasibility_analysis_start": (
+        "Modelo infactible detectado. Iniciando análisis de infactibilidad "
+        "(IIS + mapeo a parámetros). Esto puede tomar varios segundos.",
+        "WARN",
+    ),
+    "infeasibility_analysis_complete": (
+        "Análisis de infactibilidad finalizado.",
+        "INFO",
+    ),
+    "complete": ("Procesamiento de resultados completado.", "STAGE"),
+    "end": ("Simulación finalizada correctamente.", "STAGE"),
+}
+
+
+def _resolve_stage_event(stage_name: str) -> tuple[str, str]:
+    """Devuelve (mensaje, event_type) para una etapa del pipeline."""
+    return STAGE_EVENT_MESSAGES.get(
+        stage_name,
+        (f"Bloque {stage_name} ejecutado.", "STAGE"),
+    )
 
 
 def _build_csv_inputs_summary(csv_root: str | Path) -> tuple[int, list[dict[str, Any]]]:
@@ -224,13 +255,64 @@ def _empty_row_template(job_id: int, variable_name: str) -> dict[str, Any]:
     }
 
 
-def _build_output_rows(
+_DIM_TO_ID_COL: Final[dict[str, str]] = {
+    "REGION": "id_region",
+    "TECHNOLOGY": "id_technology",
+    "FUEL": "id_fuel",
+    "EMISSION": "id_emission",
+    "TIMESLICE": "id_timeslice",
+    "MODE_OF_OPERATION": "id_mode_of_operation",
+    "SEASON": "id_season",
+    "DAYTYPE": "id_daytype",
+    "DAILYTIMEBRACKET": "id_dailytimebracket",
+    "STORAGE": "id_storage",
+}
+_DIM_TO_NAME_COL: Final[dict[str, str]] = {
+    "TECHNOLOGY": "technology_name",
+    "FUEL": "fuel_name",
+    "EMISSION": "emission_name",
+}
+
+
+def _row_from_intermediate_entry(
+    job_id: int,
+    var_name: str,
+    entry: dict,
+    lookups: dict[str, dict[str, int]],
+) -> dict[str, Any]:
+    idx = entry.get("index") or []
+    row = _empty_row_template(job_id, var_name)
+    row["value"] = float(entry.get("value", 0.0))
+    row["index_json"] = idx
+    index_names = VARIABLE_INDEX_NAMES.get(var_name, ())
+    if index_names and len(idx) == len(index_names):
+        for dim, raw_val in zip(index_names, idx):
+            if raw_val is None:
+                continue
+            if dim == "YEAR":
+                try:
+                    row["year"] = int(raw_val)
+                except (TypeError, ValueError):
+                    pass
+                continue
+            name = str(raw_val) if raw_val != "" else None
+            id_col = _DIM_TO_ID_COL.get(dim)
+            if id_col and name is not None:
+                lk = lookups.get(dim, {})
+                found = lk.get(name)
+                if found is not None:
+                    row[id_col] = int(found)
+            name_col = _DIM_TO_NAME_COL.get(dim)
+            if name_col and name is not None:
+                row[name_col] = name
+    return row
+
+
+def _iter_typed_output_rows(
     solution: dict[str, Any],
     job_id: int,
-) -> list[dict]:
-    """Construye la lista de dicts para bulk insert en osemosys_output_param_value."""
-    rows: list[dict] = []
-    lookups: dict[str, dict[str, int]] = solution.get("dimension_lookups", {}) or {}
+    lookups: dict[str, dict[str, int]],
+) -> Iterator[dict[str, Any]]:
     fuel_lookup = lookups.get("FUEL", {})
 
     for row in solution.get("dispatch", []):
@@ -249,7 +331,7 @@ def _build_output_rows(
         r["year"] = row.get("year")
         r["value"] = float(row.get("dispatch", 0.0))
         r["value2"] = float(row.get("cost", 0.0))
-        rows.append(r)
+        yield r
 
     for row in solution.get("new_capacity", []):
         r = _empty_row_template(job_id, "NewCapacity")
@@ -258,53 +340,28 @@ def _build_output_rows(
         r["technology_name"] = row.get("technology_name")
         r["year"] = row.get("year")
         r["value"] = float(row.get("new_capacity", 0.0))
-        rows.append(r)
+        yield r
 
     for row in solution.get("unmet_demand", []):
         r = _empty_row_template(job_id, "UnmetDemand")
         r["id_region"] = row.get("region_id")
         r["year"] = row.get("year")
         r["value"] = float(row.get("unmet_demand", 0.0))
-        rows.append(r)
+        yield r
 
     for row in solution.get("annual_emissions", []):
         r = _empty_row_template(job_id, "AnnualEmissions")
         r["id_region"] = row.get("region_id")
         r["year"] = row.get("year")
         r["value"] = float(row.get("annual_emissions", 0.0))
-        rows.append(r)
-
-    _append_intermediate_output_rows(rows, solution=solution, job_id=job_id, lookups=lookups)
-
-    return rows
+        yield r
 
 
-def _append_intermediate_output_rows(
-    rows: list[dict],
-    *,
+def _iter_intermediate_output_rows(
     solution: dict[str, Any],
     job_id: int,
     lookups: dict[str, dict[str, int]],
-) -> None:
-    """Añade filas de variables intermedias desde dict o iterador streaming."""
-    _DIM_TO_ID_COL = {
-        "REGION": "id_region",
-        "TECHNOLOGY": "id_technology",
-        "FUEL": "id_fuel",
-        "EMISSION": "id_emission",
-        "TIMESLICE": "id_timeslice",
-        "MODE_OF_OPERATION": "id_mode_of_operation",
-        "SEASON": "id_season",
-        "DAYTYPE": "id_daytype",
-        "DAILYTIMEBRACKET": "id_dailytimebracket",
-        "STORAGE": "id_storage",
-    }
-    _DIM_TO_NAME_COL = {
-        "TECHNOLOGY": "technology_name",
-        "FUEL": "fuel_name",
-        "EMISSION": "emission_name",
-    }
-
+) -> Iterator[dict[str, Any]]:
     stream = solution.get("_intermediate_entry_iter")
     if stream is not None:
         entry_pairs = stream
@@ -314,34 +371,42 @@ def _append_intermediate_output_rows(
             for var_name, entries in solution.get("intermediate_variables", {}).items()
             for entry in entries
         )
-
     for var_name, entry in entry_pairs:
-        idx = entry.get("index") or []
-        row = _empty_row_template(job_id, var_name)
-        row["value"] = float(entry.get("value", 0.0))
-        row["index_json"] = idx
-        index_names = VARIABLE_INDEX_NAMES.get(var_name, ())
-        if index_names and len(idx) == len(index_names):
-            for dim, raw_val in zip(index_names, idx):
-                if raw_val is None:
-                    continue
-                if dim == "YEAR":
-                    try:
-                        row["year"] = int(raw_val)
-                    except (TypeError, ValueError):
-                        pass
-                    continue
-                name = str(raw_val) if raw_val != "" else None
-                id_col = _DIM_TO_ID_COL.get(dim)
-                if id_col and name is not None:
-                    lk = lookups.get(dim, {})
-                    found = lk.get(name)
-                    if found is not None:
-                        row[id_col] = int(found)
-                name_col = _DIM_TO_NAME_COL.get(dim)
-                if name_col and name is not None:
-                    row[name_col] = name
-        rows.append(row)
+        yield _row_from_intermediate_entry(job_id, var_name, entry, lookups)
+
+
+def _iter_output_rows(
+    solution: dict[str, Any],
+    job_id: int,
+) -> Iterator[dict[str, Any]]:
+    """Yield filas para bulk insert sin materializar la lista completa."""
+    lookups: dict[str, dict[str, int]] = solution.get("dimension_lookups", {}) or {}
+    yield from _iter_typed_output_rows(solution, job_id, lookups)
+    yield from _iter_intermediate_output_rows(solution, job_id, lookups)
+
+
+def _iter_output_row_batches(
+    solution: dict[str, Any],
+    job_id: int,
+    *,
+    batch_size: int = BATCH_SIZE,
+) -> Iterator[list[dict[str, Any]]]:
+    batch: list[dict[str, Any]] = []
+    for row in _iter_output_rows(solution, job_id):
+        batch.append(row)
+        if len(batch) >= batch_size:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
+
+
+def _build_output_rows(
+    solution: dict[str, Any],
+    job_id: int,
+) -> list[dict]:
+    """Construye la lista de dicts para bulk insert en osemosys_output_param_value."""
+    return list(_iter_output_rows(solution, job_id))
 
 
 def _persist_infeasibility_event(
@@ -398,7 +463,6 @@ def _persist_solution(
     """Persiste resumen y filas de salida para cualquier tipo de job."""
     job.objective_value = solution.get("objective_value")
     job.solver_threads_used = solution.get("solver_threads_used")
-    job.solver_threads_configured = solution.get("solver_threads_configured")
     job.coverage_ratio = solution.get("coverage_ratio")
     job.reserve_margin_dual = solution.get("reserve_margin_dual")
     job.total_demand = solution.get("total_demand")
@@ -413,12 +477,12 @@ def _persist_solution(
     job.inputs_summary_json = inputs_summary
     job.infeasibility_diagnostics_json = solution.get("infeasibility_diagnostics")
 
-    output_rows = _build_output_rows(solution, job_id=job.id)
-    for i in range(0, len(output_rows), BATCH_SIZE):
-        batch = output_rows[i : i + BATCH_SIZE]
+    output_count = 0
+    for batch in _iter_output_row_batches(solution, job_id=job.id, batch_size=BATCH_SIZE):
         db.execute(insert(OsemosysOutputParamValue), batch)
         db.flush()
-    return len(output_rows)
+        output_count += len(batch)
+    return output_count
 
 
 def _persist_critical_solver_metadata(
@@ -433,8 +497,6 @@ def _persist_critical_solver_metadata(
     aunque el worker muera durante la etapa posterior de persistencia pesada.
     """
     job.infeasibility_diagnostics_json = solution.get("infeasibility_diagnostics")
-    job.solver_threads_used = solution.get("solver_threads_used")
-    job.solver_threads_configured = solution.get("solver_threads_configured")
     model_timings = dict(solution.get("model_timings", {}))
     model_timings["solver_status"] = solution.get("solver_status", "unknown")
     job.model_timings_json = model_timings
@@ -502,6 +564,8 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
     )
     db.commit()
     stage_times[f"{STAGE_EXTRACT_DATA}_seconds"] = perf_counter() - t0
+    job.stage_times_json = dict(stage_times)
+    db.commit()
 
     # ------------------------------------------------------------------
     # ETAPA 2: CONSTRUCCION DEL MODELO
@@ -539,13 +603,18 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
     db.commit()
 
     def _on_stage(stage_name: str, stage_progress: float) -> None:
-        _on_stage_event(
+        job.progress = stage_progress
+        msg, evt = _resolve_stage_event(stage_name)
+        SimulationRepository.add_event(
             db,
-            job=job,
             job_id=job_id,
-            stage_name=stage_name,
-            stage_progress=stage_progress,
+            event_type=evt,
+            stage=stage_name,
+            message=msg,
+            progress=stage_progress,
         )
+        db.commit()
+        _check_cancel_requested(db, job_id=job_id)
 
     _gen_lp = bool(getattr(job, "generate_lp", False))
     _scenario_name = getattr(getattr(job, "scenario", None), "name", None)
@@ -553,9 +622,6 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
     _lp_basename_eff = (
         _lp_basename_for_job(job, scenario_name=_scenario_name) if _gen_lp else None
     )
-    defaults_version_id, defaults_map = load_param_defaults_for_simulation(db)
-    job.model_defaults_version_id = defaults_version_id
-    db.commit()
     solution = run_osemosys_from_db(
         db,
         scenario_id=job.scenario_id,
@@ -567,8 +633,6 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
         lp_basename=_lp_basename_eff,
         job_id=job_id,
         materialize_intermediate=False,
-        param_defaults=defaults_map,
-        model_defaults_version_id=defaults_version_id,
     )
 
     # Persistimos la ruta del .lp si se generó: habilita descarga vía
@@ -579,7 +643,7 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
         if candidate.is_file():
             job.lp_path = str(candidate)
 
-    job.progress = 85.0
+    job.progress = 94.0
     SimulationRepository.add_event(
         db,
         job_id=job_id,
@@ -602,19 +666,22 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
     db.commit()
     _persist_critical_solver_metadata(db, job=job, solution=solution)
     stage_times[f"{STAGE_SOLVE}_seconds"] = perf_counter() - t2
+    job.stage_times_json = dict(stage_times)
+    db.commit()
 
     # ------------------------------------------------------------------
     # ETAPA 4: PERSISTENCIA DE RESULTADOS EN BD
     # ------------------------------------------------------------------
     t3 = perf_counter()
     _check_cancel_requested(db, job_id=job_id)
+    _persist_msg, _persist_evt = _resolve_stage_event(STAGE_PERSIST_RESULTS)
     SimulationRepository.add_event(
         db,
         job_id=job_id,
-        event_type="STAGE",
+        event_type=_persist_evt,
         stage=STAGE_PERSIST_RESULTS,
-        message="Persistiendo resultados en base de datos.",
-        progress=90.0,
+        message=_persist_msg,
+        progress=96.0,
     )
     db.commit()
 
@@ -628,7 +695,8 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
     )
 
     stage_times[f"{STAGE_PERSIST_RESULTS}_seconds"] = perf_counter() - t3
-    job.stage_times_json = stage_times
+    job.stage_times_json = dict(stage_times)
+    db.commit()
 
     logger.info(
         "Job %s: %d filas de resultado insertadas en osemosys_output_param_value",
@@ -677,6 +745,8 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
     )
     db.commit()
     stage_times[f"{STAGE_EXTRACT_DATA}_seconds"] = perf_counter() - t0
+    job.stage_times_json = dict(stage_times)
+    db.commit()
 
     t1 = perf_counter()
     _check_cancel_requested(db, job_id=job_id)
@@ -706,20 +776,22 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
     db.commit()
 
     def _on_stage(stage_name: str, stage_progress: float) -> None:
-        _on_stage_event(
+        job.progress = stage_progress
+        msg, evt = _resolve_stage_event(stage_name)
+        SimulationRepository.add_event(
             db,
-            job=job,
             job_id=job_id,
-            stage_name=stage_name,
-            stage_progress=stage_progress,
+            event_type=evt,
+            stage=stage_name,
+            message=msg,
+            progress=stage_progress,
         )
+        db.commit()
+        _check_cancel_requested(db, job_id=job_id)
 
     _gen_lp = bool(getattr(job, "generate_lp", False))
     _lp_dir_eff = _lp_dir_for_jobs() if _gen_lp else None
     _lp_basename_eff = _lp_basename_for_job(job) if _gen_lp else "osemosys"
-    defaults_version_id, defaults_map = load_param_defaults_for_simulation(db)
-    job.model_defaults_version_id = defaults_version_id
-    db.commit()
     solution = run_osemosys_from_csv_dir(
         csv_root,
         solver_name=job.solver_name,
@@ -730,8 +802,6 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
         lp_basename=_lp_basename_eff,
         job_id=job_id,
         materialize_intermediate=False,
-        param_defaults=defaults_map,
-        model_defaults_version_id=defaults_version_id,
     )
 
     if _gen_lp and _lp_dir_eff:
@@ -739,7 +809,7 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
         if candidate.is_file():
             job.lp_path = str(candidate)
 
-    job.progress = 85.0
+    job.progress = 94.0
     SimulationRepository.add_event(
         db,
         job_id=job_id,
@@ -762,16 +832,19 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
     db.commit()
     _persist_critical_solver_metadata(db, job=job, solution=solution)
     stage_times[f"{STAGE_SOLVE}_seconds"] = perf_counter() - t2
+    job.stage_times_json = dict(stage_times)
+    db.commit()
 
     t3 = perf_counter()
     _check_cancel_requested(db, job_id=job_id)
+    _persist_msg, _persist_evt = _resolve_stage_event(STAGE_PERSIST_RESULTS)
     SimulationRepository.add_event(
         db,
         job_id=job_id,
-        event_type="STAGE",
+        event_type=_persist_evt,
         stage=STAGE_PERSIST_RESULTS,
-        message="Persistiendo resultados CSV en base de datos.",
-        progress=90.0,
+        message=_persist_msg,
+        progress=96.0,
     )
     db.commit()
 
@@ -784,7 +857,8 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
         stage_times=stage_times,
     )
     stage_times[f"{STAGE_PERSIST_RESULTS}_seconds"] = perf_counter() - t3
-    job.stage_times_json = stage_times
+    job.stage_times_json = dict(stage_times)
+    db.commit()
 
     logger.info(
         "Job CSV %s: %d filas de resultado insertadas en osemosys_output_param_value",

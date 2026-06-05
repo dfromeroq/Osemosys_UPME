@@ -12,6 +12,7 @@ Uso: recibe la instancia concreta de instance_builder.build_instance();
 from __future__ import annotations
 
 import logging
+import os
 import re
 import tempfile
 from collections.abc import Callable
@@ -160,11 +161,13 @@ def _apply_solver_runtime_options(
             )
             return None
         threads_used = apply_highs_options_to_model(highs_options, highs_config)
+        from app.simulation.core.solver_config import _display_highs_value
+
         logger.info(
             "Configurando HiGHS (appsi): method=%s presolve=%s parallel=%s threads=%s",
-            highs_config.method,
-            highs_config.presolve,
-            highs_config.parallel,
+            _display_highs_value(highs_config.method),
+            _display_highs_value(highs_config.presolve),
+            _display_highs_value(highs_config.parallel),
             highs_config.threads or "default",
         )
         if hasattr(solver, "config"):
@@ -219,16 +222,12 @@ def _highs_status_to_raw(status: object) -> str:
         return str(status)
 
     mapping = {
-        getattr(highspy.HighsModelStatus, "kNotset", None): "notset",
         getattr(highspy.HighsModelStatus, "kOptimal", None): "optimal",
         getattr(highspy.HighsModelStatus, "kInfeasible", None): "infeasible",
         getattr(highspy.HighsModelStatus, "kUnbounded", None): "unbounded",
-        getattr(highspy.HighsModelStatus, "kUnknown", None): "unknown",
         getattr(highspy.HighsModelStatus, "kTimeLimit", None): "maxTimeLimit",
         getattr(highspy.HighsModelStatus, "kIterationLimit", None): "maxIterations",
         getattr(highspy.HighsModelStatus, "kObjectiveBound", None): "objectiveLimit",
-        getattr(highspy.HighsModelStatus, "kObjectiveTarget", None): "objectiveTarget",
-        getattr(highspy.HighsModelStatus, "kSolutionLimit", None): "solutionLimit",
     }
     for hs, label in mapping.items():
         if hs is not None and status == hs:
@@ -236,82 +235,60 @@ def _highs_status_to_raw(status: object) -> str:
     return str(status)
 
 
-def _reset_highspy_scheduler() -> None:
-    """Libera el scheduler global de HiGHS antes/después de corridas pesadas."""
-    try:
-        import highspy
-
-        reset = getattr(highspy.Highs, "resetGlobalScheduler", None)
-        if callable(reset):
-            try:
-                reset(True)
-            except TypeError:
-                reset()
-    except Exception:  # pragma: no cover - best effort según versión highspy
-        logger.debug("No fue posible resetear el scheduler global de HiGHS", exc_info=True)
-
-
-def _is_highs_status_error(status: object) -> bool:
-    if status is None:
-        return False
-    if isinstance(status, str):
-        return status.lower().endswith("kerror")
-    try:
-        import highspy
-
-        return status == highspy.HighsStatus.kError
-    except Exception:  # pragma: no cover
-        return str(status).lower().endswith("kerror")
-
-
-def _read_highspy_threads_used(h: object, fallback: int | None) -> int | None:
-    try:
-        result = h.getOptionValue("threads")
-        value = result[1] if isinstance(result, tuple) and len(result) >= 2 else result
-        return int(value) if value is not None else fallback
-    except (AttributeError, TypeError, ValueError):
-        return fallback
-
-
-def _run_highspy_with_retry(
-    h: object,
-    *,
-    highs_config: SolverHighsConfig,
-    timings: dict[str, float],
-) -> None:
-    """Ejecuta HiGHS y reintenta una vez si el scheduler deja estado kNotset."""
-    t_run = perf_counter()
-    logger.info("HiGHS run() iniciado")
-    h.run()
-    elapsed = perf_counter() - t_run
-    timings["solver_run_seconds"] = elapsed
-    raw_status = _highs_status_to_raw(h.getModelStatus())
-    logger.info("HiGHS run() terminó en %.2fs con status=%s", elapsed, raw_status)
-    if raw_status != "notset":
-        return
-
-    logger.warning("HiGHS devolvió kNotset; resetGlobalScheduler() y reintento run()")
-    _reset_highspy_scheduler()
-    if highs_config.threads > 0:
-        try:
-            h.setOptionValue("threads", highs_config.threads)
-        except Exception:  # pragma: no cover
-            logger.debug("No fue posible reaplicar threads a HiGHS", exc_info=True)
-    t_retry = perf_counter()
-    h.run()
-    retry_elapsed = perf_counter() - t_retry
-    timings["solver_retry_run_seconds"] = retry_elapsed
-    timings["solver_run_seconds"] = elapsed + retry_elapsed
-    logger.info(
-        "HiGHS retry run() terminó en %.2fs con status=%s",
-        retry_elapsed,
-        _highs_status_to_raw(h.getModelStatus()),
-    )
-
-
 def _ensure_dual_suffix(instance: pyo.ConcreteModel) -> None:
     if getattr(instance, "dual", None) is None:
         instance.dual = Suffix(direction=Suffix.IMPORT)
+
+
+def _selective_solution_map_enabled() -> bool:
+    flag = os.getenv("OSEMOSYS_SELECTIVE_SOLUTION_MAP", "1").strip().lower()
+    return flag not in ("0", "false", "no", "off")
+
+
+def _set_var_value_from_col_map(
+    var: Var,
+    col_map: dict[str, float],
+) -> None:
+    pyomo_name = var.name
+    lp_name = _pyomo_name_to_lp(pyomo_name)
+    val = col_map.get(pyomo_name)
+    if val is None:
+        val = col_map.get(lp_name)
+    if val is not None:
+        var.set_value(val, skip_validation=True)
+
+
+def _map_dual_value(
+    instance: pyo.ConcreteModel,
+    con: Constraint,
+    dual_map: dict[str, float],
+) -> None:
+    pyomo_name = con.name
+    lp_name = _pyomo_name_to_lp(pyomo_name)
+    dual_val = dual_map.get(pyomo_name)
+    if dual_val is None:
+        dual_val = dual_map.get(lp_name)
+    if dual_val is not None:
+        instance.dual[con] = dual_val
+
+
+def _map_reserve_margin_duals(
+    instance: pyo.ConcreteModel,
+    dual_map: dict[str, float],
+) -> None:
+    """Carga duales solo para restricciones usadas por reserve_margin_dual."""
+    _ensure_dual_suffix(instance)
+
+    native = getattr(instance, "ReserveMarginConstraint", None)
+    if native is not None:
+        for con_data in native.values():
+            _map_dual_value(instance, con_data, dual_map)
+
+    udc = getattr(instance, "UDC1_UserDefinedConstraintInequality", None)
+    if udc is not None:
+        for idx, con_data in udc.items():
+            if isinstance(idx, tuple) and len(idx) >= 2 and idx[1] == "UDC_Margin":
+                _map_dual_value(instance, con_data, dual_map)
 
 
 def _apply_highspy_solution_to_instance(
@@ -319,6 +296,8 @@ def _apply_highspy_solution_to_instance(
     h: object,
 ) -> tuple[float, dict[str, float]]:
     """Carga primals/duals de highspy en la instancia Pyomo."""
+    from app.simulation.core.results_processing import vars_to_load_from_solution
+
     solution = h.getSolution()
     lp = h.getLp()
     col_names = list(getattr(lp, "col_names_", []) or [])
@@ -332,14 +311,23 @@ def _apply_highspy_solution_to_instance(
             col_map[name] = float(col_values[idx])
             col_map[_lp_name_to_pyomo(name)] = float(col_values[idx])
 
-    for var in instance.component_data_objects(Var, active=True):
-        pyomo_name = var.name
-        lp_name = _pyomo_name_to_lp(pyomo_name)
-        val = col_map.get(pyomo_name)
-        if val is None:
-            val = col_map.get(lp_name)
-        if val is not None:
-            var.set_value(val, skip_validation=True)
+    use_selective = _selective_solution_map_enabled()
+    if use_selective:
+        var_names = vars_to_load_from_solution(instance)
+        for name in var_names:
+            comp = getattr(instance, name, None)
+            if comp is None:
+                continue
+            try:
+                values_iter = comp.values()
+            except AttributeError:
+                _set_var_value_from_col_map(comp, col_map)
+                continue
+            for var in values_iter:
+                _set_var_value_from_col_map(var, col_map)
+    else:
+        for var in instance.component_data_objects(Var, active=True):
+            _set_var_value_from_col_map(var, col_map)
 
     dual_map: dict[str, float] = {}
     for idx, name in enumerate(row_names):
@@ -348,15 +336,12 @@ def _apply_highspy_solution_to_instance(
             dual_map[_lp_name_to_pyomo(name)] = float(row_duals[idx])
 
     if dual_map:
-        _ensure_dual_suffix(instance)
-        for con in instance.component_data_objects(Constraint, active=True):
-            pyomo_name = con.name
-            lp_name = _pyomo_name_to_lp(pyomo_name)
-            dual_val = dual_map.get(pyomo_name)
-            if dual_val is None:
-                dual_val = dual_map.get(lp_name)
-            if dual_val is not None:
-                instance.dual[con] = dual_val
+        if use_selective:
+            _map_reserve_margin_duals(instance, dual_map)
+        else:
+            _ensure_dual_suffix(instance)
+            for con in instance.component_data_objects(Constraint, active=True):
+                _map_dual_value(instance, con, dual_map)
 
     try:
         info = h.getInfo()
@@ -375,9 +360,12 @@ def _solve_with_direct_highspy(
     highs_config: SolverHighsConfig,
     lp_path: Path | None,
     timings: dict[str, float],
+    on_stage: Callable[[str, float], None] | None = None,
 ) -> tuple[str, float, int | None]:
     import highspy
 
+    if on_stage:
+        on_stage("solver_write_lp", 76.0)
     t0 = perf_counter()
     if lp_path is None:
         with tempfile.NamedTemporaryFile(suffix=".lp", delete=False) as tmp:
@@ -391,43 +379,41 @@ def _solve_with_direct_highspy(
         timings["solver_write_lp_seconds"] = perf_counter() - t0
         cleanup_lp = False
 
-    _reset_highspy_scheduler()
     h = highspy.Highs()
+    from app.simulation.core.solver_config import _display_highs_value
+
     threads_used = apply_highs_options_to_model(h, highs_config)
     logger.info(
         "HiGHS directo: method=%s presolve=%s parallel=%s threads=%s crossover=%s",
-        highs_config.method,
-        highs_config.presolve,
-        highs_config.parallel,
+        _display_highs_value(highs_config.method),
+        _display_highs_value(highs_config.presolve),
+        _display_highs_value(highs_config.parallel),
         highs_config.threads or "default",
-        highs_config.run_crossover,
+        _display_highs_value(highs_config.run_crossover),
     )
 
+    if on_stage:
+        on_stage("solver_read_model", 78.0)
     t_read = perf_counter()
-    logger.info("HiGHS readModel() iniciado: %s", lp_path)
-    read_status = h.readModel(str(lp_path))
+    h.readModel(str(lp_path))
     timings["solver_read_model_seconds"] = perf_counter() - t_read
-    logger.info(
-        "HiGHS readModel() terminó en %.2fs con status=%s",
-        timings["solver_read_model_seconds"],
-        read_status,
-    )
-    if _is_highs_status_error(read_status):
-        raise RuntimeError(f"HiGHS no pudo leer el LP {lp_path}: {read_status}")
 
-    _run_highspy_with_retry(h, highs_config=highs_config, timings=timings)
+    if on_stage:
+        on_stage("solver_run", 82.0)
+    t_run = perf_counter()
+    h.run()
+    timings["solver_run_seconds"] = perf_counter() - t_run
 
     raw_status = _highs_status_to_raw(h.getModelStatus())
-    threads_used = _read_highspy_threads_used(h, threads_used)
 
+    if on_stage:
+        on_stage("solver_map_solution", 86.0)
     t_map = perf_counter()
     obj = 0.0
     if "optimal" in raw_status.lower() or raw_status.lower() in {
         "maxtimelimit",
         "maxiterations",
         "objectivelimit",
-        "objectivetarget",
-        "solutionlimit",
     }:
         obj, _ = _apply_highspy_solution_to_instance(instance, h)
     timings["solver_map_solution_seconds"] = perf_counter() - t_map
@@ -442,23 +428,13 @@ def _solve_with_direct_highspy(
     return raw_status, obj, threads_used
 
 
-def _highs_status_has_processable_solution(raw_status: str) -> bool:
-    status = raw_status.lower()
-    return "optimal" in status or status in {
-        "maxtimelimit",
-        "maxiterations",
-        "objectivelimit",
-        "objectivetarget",
-        "solutionlimit",
-    }
-
-
 def _solve_with_appsi_highs(
     instance: pyo.ConcreteModel,
     *,
     highs_config: SolverHighsConfig,
     settings: object,
     timings: dict[str, float],
+    on_stage: Callable[[str, float], None] | None = None,
 ) -> tuple[object, object, str, float, int | None]:
     solver = pyo.SolverFactory("appsi_highs")
     threads_used = _apply_solver_runtime_options(
@@ -470,6 +446,8 @@ def _solve_with_appsi_highs(
         except Exception:  # pragma: no cover
             pass
 
+    if on_stage:
+        on_stage("solver_run", 82.0)
     t0 = perf_counter()
     results = solver.solve(
         instance,
@@ -483,6 +461,8 @@ def _solve_with_appsi_highs(
     raw_status = str(results.solver.termination_condition)
     obj = 0.0
     if "optimal" in raw_status.lower():
+        if on_stage:
+            on_stage("solver_map_solution", 86.0)
         t_load = perf_counter()
         instance.solutions.load_from(results)
         timings["solver_load_solution_seconds"] = perf_counter() - t_load
@@ -492,6 +472,29 @@ def _solve_with_appsi_highs(
             pass
 
     return solver, results, raw_status, obj, threads_used
+
+
+def _validate_hipo_runtime_support(highs_config: SolverHighsConfig) -> None:
+    """Falla temprano si el runtime highspy no fue compilado con soporte HiPO."""
+    if highs_config.method != "hipo":
+        return
+
+    try:
+        import highspy
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError(
+            "SIM_SOLVER_HIGHS_METHOD=hipo requiere highspy instalado."
+        ) from exc
+
+    try:
+        h = highspy.Highs()
+        apply_highs_options_to_model(h, highs_config)
+    except Exception as exc:
+        raise RuntimeError(
+            "SIM_SOLVER_HIGHS_METHOD=hipo está configurado, pero esta imagen "
+            "no tiene HiGHS compilado con soporte HiPO. Reconstruye con "
+            "HIGHS_BUILD_FROM_SOURCE=1 y HIGHS_ENABLE_HIPO=1."
+        ) from exc
 
 
 def _run_infeasibility_diagnostics(instance: pyo.ConcreteModel) -> dict:
@@ -649,6 +652,7 @@ def _solve_highs(
     highs_config: SolverHighsConfig,
     lp_path: Path | None,
     on_solver_finished: Callable[[pyo.ConcreteModel, Any, Any, dict], None] | None,
+    on_stage: Callable[[str, float], None] | None = None,
 ) -> dict:
     solver_timings: dict[str, float] = {}
     solver_obj: object | None = None
@@ -657,6 +661,8 @@ def _solve_highs(
     obj: float
     threads_used: int | None
 
+    _validate_hipo_runtime_support(highs_config)
+
     if highs_config.use_direct:
         try:
             raw_status, obj, threads_used = _solve_with_direct_highspy(
@@ -664,6 +670,7 @@ def _solve_highs(
                 highs_config=highs_config,
                 lp_path=Path(lp_path) if lp_path is not None else None,
                 timings=solver_timings,
+                on_stage=on_stage,
             )
         except Exception:
             logger.exception(
@@ -674,29 +681,15 @@ def _solve_highs(
                 highs_config=highs_config,
                 settings=settings,
                 timings=solver_timings,
+                on_stage=on_stage,
             )
-        else:
-            if (
-                not _highs_status_has_processable_solution(raw_status)
-                and "infeasible" not in raw_status.lower()
-            ):
-                logger.warning(
-                    "HiGHS directo terminó con status no procesable (%s); "
-                    "reintentando con appsi_highs",
-                    raw_status,
-                )
-                solver_obj, results_obj, raw_status, obj, threads_used = _solve_with_appsi_highs(
-                    instance,
-                    highs_config=highs_config,
-                    settings=settings,
-                    timings=solver_timings,
-                )
     else:
         solver_obj, results_obj, raw_status, obj, threads_used = _solve_with_appsi_highs(
             instance,
             highs_config=highs_config,
             settings=settings,
             timings=solver_timings,
+            on_stage=on_stage,
         )
 
     status_display = normalize_solver_status_display(raw_status)
@@ -708,25 +701,11 @@ def _solve_highs(
         solver_timings.get("solver_backend", "unknown"),
     )
 
-    raw_status_lower = raw_status.lower()
-    status_has_solution = _highs_status_has_processable_solution(raw_status)
-    if not status_has_solution and "infeasible" not in raw_status_lower:
-        timings_text = ", ".join(
-            f"{key}={value:.2f}s"
-            for key, value in solver_timings.items()
-            if isinstance(value, (int, float))
-        )
-        detail = f" ({timings_text})" if timings_text else ""
-        raise RuntimeError(
-            "HiGHS terminó sin una solución procesable: "
-            f"status={status_display}, raw={raw_status}{detail}."
-        )
-
     diagnostics: dict | None = None
     reserve_margin_dual: float | None = None
-    if "infeasible" in raw_status_lower:
+    if "infeasible" in raw_status.lower():
         diagnostics = _run_infeasibility_diagnostics(instance)
-    elif "optimal" in raw_status_lower:
+    elif "optimal" in raw_status.lower():
         logger.info("SOLUCIÓN ÓPTIMA ENCONTRADA - Objetivo: %.2f", obj)
         reserve_margin_dual = _extract_reserve_margin_dual(instance)
 
@@ -735,20 +714,16 @@ def _solve_highs(
         "solver_status": status_display,
         "objective_value": obj,
         "solver_threads_used": threads_used,
-        "solver_threads_configured": highs_config.threads,
         "reserve_margin_dual": reserve_margin_dual,
         "infeasibility_diagnostics": diagnostics,
         "solver_timings": solver_timings,
         "solver_highs_config": {
-            "threads": highs_config.threads,
             "method": highs_config.method,
             "presolve": highs_config.presolve,
             "parallel": highs_config.parallel,
             "run_crossover": highs_config.run_crossover,
             "use_direct": highs_config.use_direct,
             "time_limit": highs_config.time_limit,
-            "ipm_optimality_tolerance": highs_config.ipm_optimality_tolerance,
-            "primal_feasibility_tolerance": highs_config.primal_feasibility_tolerance,
         },
     }
 
@@ -770,6 +745,7 @@ def solve_model(
     solver_name: str = "glpk",
     lp_path: str | Path | None = None,
     on_solver_finished: Callable[[pyo.ConcreteModel, Any, Any, dict], None] | None = None,
+    on_stage: Callable[[str, float], None] | None = None,
 ) -> dict:
     """Resuelve el modelo usando Pyomo SolverFactory o highspy directo."""
     settings = get_settings()
@@ -779,13 +755,6 @@ def solve_model(
         write_lp_file(instance, lp_path)
 
     solver_availability = get_solver_availability()
-
-    if solver_name in SOLVER_FACTORIES and not solver_availability.get(solver_name, False):
-        factory_name = SOLVER_FACTORIES[solver_name]
-        raise RuntimeError(
-            f"Solver '{solver_name}' no disponible en el worker "
-            f"(Pyomo SolverFactory('{factory_name}'))."
-        )
 
     fallback_order = (
         [solver_name, *[n for n in SOLVER_FACTORIES if n != solver_name]]
@@ -806,6 +775,7 @@ def solve_model(
                 highs_config=highs_config,
                 lp_path=Path(lp_path) if lp_path is not None else None,
                 on_solver_finished=on_solver_finished,
+                on_stage=on_stage,
             )
 
         logger.info("Resolviendo con %s (SolverFactory('%s'))...", candidate, factory_name)
@@ -814,6 +784,8 @@ def solve_model(
             solver, candidate=candidate, settings=settings, highs_config=highs_config
         )
         solver_timings: dict[str, float] = {}
+        if on_stage:
+            on_stage("solver_run", 82.0)
         t0 = perf_counter()
         results = solver.solve(
             instance,

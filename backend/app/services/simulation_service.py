@@ -363,6 +363,8 @@ class SimulationService:
             "is_public": bool(getattr(job, "is_public", True)),
             "is_favorite": bool(is_favorite),
             "is_infeasible_result": SimulationService._is_infeasible_succeeded_job(job),
+            "stage_times": job.stage_times_json or {},
+            "model_timings": job.model_timings_json or {},
             **SimulationService._diagnostic_info_for(job),
         }
 

@@ -229,6 +229,10 @@ export type SimulationRun = {
   is_public?: boolean;
   /** True si el usuario actual marcó este resultado como favorito. */
   is_favorite?: boolean;
+  /** Tiempos macro del pipeline (extract_data_seconds, solve_seconds, …). */
+  stage_times?: Record<string, number | string>;
+  /** Tiempos granulares medidos en el worker (solver_run_seconds, …). */
+  model_timings?: Record<string, number | string>;
 };
 
 export type SimulationOverview = {

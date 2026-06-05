@@ -15,7 +15,7 @@ import gc
 import logging
 import os
 import tempfile
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -39,29 +39,56 @@ from app.simulation.core.solver import solve_model
 logger = logging.getLogger(__name__)
 
 
-def load_param_defaults_for_simulation(
-    db: Session,
+def _merge_solver_timings(timings: dict[str, float], solver_result: dict) -> None:
+    """Inyecta sub-etapas del solve en ``model_timings`` del job."""
+    st = solver_result.get("solver_timings")
+    if isinstance(st, dict):
+        for key, val in st.items():
+            if isinstance(val, (int, float)):
+                timings[str(key)] = float(val)
+    cfg = solver_result.get("solver_highs_config")
+    if isinstance(cfg, dict):
+        timings["solver_highs_method"] = cfg.get("method")
+        timings["solver_highs_use_direct"] = cfg.get("use_direct")
+
+
+def _maybe_run_constraint_diagnostics(
+    instance,
+    on_stage: Callable[[str, float], None] | None = None,
+) -> None:
+    if os.getenv("OSEMOSYS_CONSTRAINT_DIAGNOSTICS", "0") != "1":
+        return
+    if on_stage:
+        on_stage("constraint_diagnostics", 68.0)
+    try:
+        from app.simulation.core.constraint_diagnostics import diagnose_model_constraints
+        diagnose_model_constraints(instance)
+    except Exception:
+        logger.exception("constraint_diagnostics falló — simulación continúa igual")
+
+
+def _finalize_concrete_instance(
+    model,
+    instance,
     *,
-    version_id: int | None = None,
-) -> tuple[int, dict[str, float]]:
-    """Carga versión activa (o explícita) y mapa de defaults para ``create_abstract_model``."""
-    from app.services.model_parameter_defaults_service import ModelParameterDefaultsService
-
-    vid = (
-        version_id
-        if version_id is not None
-        else ModelParameterDefaultsService.get_active_version_id(db)
-    )
-    return vid, ModelParameterDefaultsService.get_defaults_map(db, vid)
-
-
-def _maybe_run_constraint_diagnostics(instance) -> None:
-    if os.getenv("OSEMOSYS_CONSTRAINT_DIAGNOSTICS", "0") == "1":
-        try:
-            from app.simulation.core.constraint_diagnostics import diagnose_model_constraints
-            diagnose_model_constraints(instance)
-        except Exception:
-            logger.exception("constraint_diagnostics falló — simulación continúa igual")
+    instance_timings: dict[str, float],
+    timings: dict[str, float],
+    t_build_start: float,
+    on_stage: Callable[[str, float], None] | None,
+) -> Any:
+    """Libera el AbstractModel y emite eventos tras ``build_instance``."""
+    timings["create_instance_seconds"] = perf_counter() - t_build_start
+    timings.update(instance_timings)
+    if on_stage:
+        on_stage("create_instance_pyomo", 66.0)
+    del model
+    if on_stage:
+        on_stage("release_model", 68.0)
+    gc.collect()
+    _maybe_run_constraint_diagnostics(instance, on_stage=on_stage)
+    if on_stage:
+        on_stage("instance_ready", 72.0)
+    return instance
 
 
 def run_osemosys_from_db(
@@ -77,8 +104,6 @@ def run_osemosys_from_db(
     run_iis_analysis: bool = False,
     job_id: int | None = None,
     materialize_intermediate: bool = True,
-    param_defaults: Mapping[str, float] | None = None,
-    model_defaults_version_id: int | None = None,
 ) -> dict:
     """Pipeline completo: DB → CSVs temporales → DataPortal → solve → results.
 
@@ -99,18 +124,6 @@ def run_osemosys_from_db(
         dict devuelto en ``infeasibility_diagnostics``. Por defecto ``False``.
     """
     timings: dict[str, float] = {}
-    if param_defaults is not None:
-        defaults_map = dict(param_defaults)
-        if model_defaults_version_id is not None:
-            defaults_version_id = model_defaults_version_id
-        else:
-            defaults_version_id, _ = load_param_defaults_for_simulation(db)
-    else:
-        defaults_version_id, defaults_map = load_param_defaults_for_simulation(
-            db,
-            version_id=model_defaults_version_id,
-        )
-    timings["model_defaults_version_id"] = float(defaults_version_id)
 
     with tempfile.TemporaryDirectory(prefix="osemosys_csv_") as csv_dir:
 
@@ -153,7 +166,6 @@ def run_osemosys_from_db(
         model = create_abstract_model(
             has_storage=proc_result.has_storage,
             has_udc=proc_result.has_udc,
-            param_defaults=defaults_map,
         )
         timings["declare_model_seconds"] = perf_counter() - t
 
@@ -163,27 +175,30 @@ def run_osemosys_from_db(
         # =============================================================
         # 3. DataPortal + create_instance (celda 23 del notebook)
         # =============================================================
+        if on_stage:
+            on_stage("create_instance_start", 50.0)
+
         t = perf_counter()
+        instance_timings: dict[str, float] = {}
         instance = build_instance(
             model,
             csv_dir,
             has_storage=proc_result.has_storage,
             has_udc=proc_result.has_udc,
+            timings_out=instance_timings,
         )
-        timings["create_instance_seconds"] = perf_counter() - t
-        del model
-        gc.collect()
-        _maybe_run_constraint_diagnostics(instance)
-
-        if on_stage:
-            on_stage("create_instance", 70.0)
+        instance = _finalize_concrete_instance(
+            model,
+            instance,
+            instance_timings=instance_timings,
+            timings=timings,
+            t_build_start=t,
+            on_stage=on_stage,
+        )
 
         # =============================================================
         # 4. Solve (celdas 27-28 del notebook)
         # =============================================================
-        if on_stage:
-            on_stage("solver_start", 75.0)
-
         lp_path = None
         if generate_lp:
             effective_lp_dir = Path(lp_dir) if lp_dir else Path(csv_dir)
@@ -197,8 +212,10 @@ def run_osemosys_from_db(
             solver_name=solver_name,
             lp_path=lp_path,
             on_solver_finished=on_solver_finished,
+            on_stage=on_stage,
         )
         timings["solver_seconds"] = perf_counter() - t
+        _merge_solver_timings(timings, solver_result)
 
         # Análisis enriquecido de infactibilidad INLINE solo si el usuario
         # optó por `run_iis_analysis=True` al encolar la simulación. En ese
@@ -266,13 +283,14 @@ def run_osemosys_from_db(
             dailytimebracket_id_by_name=proc_result.dailytimebracket_id_by_name,
             storage_id_by_name=proc_result.storage_id_by_name,
             materialize_intermediate=materialize_intermediate,
+            on_stage=on_stage,
         )
         timings["results_processing_seconds"] = perf_counter() - t
 
         results["model_timings"] = {**timings, **results.get("model_timings", {})}
 
         if on_stage:
-            on_stage("complete", 95.0)
+            on_stage("process_results_complete", 93.0)
 
         return results
 
@@ -289,8 +307,6 @@ def run_osemosys_from_csv_dir(
     run_iis_analysis: bool = False,
     job_id: int | None = None,
     materialize_intermediate: bool = True,
-    param_defaults: Mapping[str, float] | None = None,
-    model_defaults_version_id: int | None = None,
 ) -> dict:
     """Pipeline desde directorio de CSVs: lee sets del directorio y ejecuta solve → results.
 
@@ -320,17 +336,6 @@ def run_osemosys_from_csv_dir(
         dispatch, new_capacity, unmet_demand, annual_emissions, sol, etc.
     """
     timings: dict[str, float] = {}
-    if param_defaults is None:
-        from app.simulation.core.osemosys_defaults import OSEMOSYS_PARAM_DEFAULTS
-
-        defaults_map = dict(OSEMOSYS_PARAM_DEFAULTS)
-        defaults_version_id = model_defaults_version_id or 0
-    else:
-        defaults_map = dict(param_defaults)
-        defaults_version_id = model_defaults_version_id or 0
-    if model_defaults_version_id is not None:
-        timings["model_defaults_version_id"] = float(model_defaults_version_id)
-
     csv_dir = str(Path(csv_dir).resolve())
     if not os.path.isdir(csv_dir):
         return {
@@ -383,27 +388,29 @@ def run_osemosys_from_csv_dir(
     model = create_abstract_model(
         has_storage=proc_result.has_storage,
         has_udc=proc_result.has_udc,
-        param_defaults=defaults_map,
     )
     timings["declare_model_seconds"] = perf_counter() - t
 
+    if on_stage:
+        on_stage("create_instance_start", 50.0)
+
     t = perf_counter()
+    instance_timings: dict[str, float] = {}
     instance = build_instance(
         model,
         csv_dir,
         has_storage=proc_result.has_storage,
         has_udc=proc_result.has_udc,
+        timings_out=instance_timings,
     )
-    timings["create_instance_seconds"] = perf_counter() - t
-    del model
-    gc.collect()
-    _maybe_run_constraint_diagnostics(instance)
-
-    if on_stage:
-        on_stage("create_instance", 70.0)
-
-    if on_stage:
-        on_stage("solver_start", 75.0)
+    instance = _finalize_concrete_instance(
+        model,
+        instance,
+        instance_timings=instance_timings,
+        timings=timings,
+        t_build_start=t,
+        on_stage=on_stage,
+    )
 
     lp_path = None
     if generate_lp:
@@ -417,8 +424,10 @@ def run_osemosys_from_csv_dir(
         solver_name=solver_name,
         lp_path=lp_path,
         on_solver_finished=on_solver_finished,
+        on_stage=on_stage,
     )
     timings["solver_seconds"] = perf_counter() - t
+    _merge_solver_timings(timings, solver_result)
 
     # Análisis enriquecido inline solo si el usuario optó por run_iis_analysis.
     if run_iis_analysis:
@@ -478,13 +487,14 @@ def run_osemosys_from_csv_dir(
         dailytimebracket_id_by_name=proc_result.dailytimebracket_id_by_name,
         storage_id_by_name=proc_result.storage_id_by_name,
         materialize_intermediate=materialize_intermediate,
+        on_stage=on_stage,
     )
     timings["results_processing_seconds"] = perf_counter() - t
 
     results["model_timings"] = {**timings, **results.get("model_timings", {})}
 
     if on_stage:
-        on_stage("complete", 95.0)
+        on_stage("process_results_complete", 93.0)
 
     return results
 
@@ -499,8 +509,6 @@ def run_osemosys_from_excel(
     sheet_name: str = "Parameters",
     div: int = 1,
     materialize_intermediate: bool = True,
-    param_defaults: Mapping[str, float] | None = None,
-    model_defaults_version_id: int | None = None,
 ) -> dict:
     """Pipeline completo desde archivo Excel: Excel → CSVs temporales → solve → results.
 
@@ -533,14 +541,6 @@ def run_osemosys_from_excel(
     """
     timings: dict[str, float] = {}
     excel_path = Path(excel_path)
-    if param_defaults is None:
-        from app.simulation.core.osemosys_defaults import OSEMOSYS_PARAM_DEFAULTS
-
-        defaults_map = dict(OSEMOSYS_PARAM_DEFAULTS)
-    else:
-        defaults_map = dict(param_defaults)
-    if model_defaults_version_id is not None:
-        timings["model_defaults_version_id"] = float(model_defaults_version_id)
 
     with tempfile.TemporaryDirectory(prefix="osemosys_csv_") as csv_dir:
 
@@ -580,30 +580,32 @@ def run_osemosys_from_excel(
         model = create_abstract_model(
             has_storage=proc_result.has_storage,
             has_udc=proc_result.has_udc,
-            param_defaults=defaults_map,
         )
         timings["declare_model_seconds"] = perf_counter() - t
 
         if on_stage:
             on_stage("declare_model", 45.0)
 
+        if on_stage:
+            on_stage("create_instance_start", 50.0)
+
         t = perf_counter()
+        instance_timings: dict[str, float] = {}
         instance = build_instance(
             model,
             csv_dir,
             has_storage=proc_result.has_storage,
             has_udc=proc_result.has_udc,
+            timings_out=instance_timings,
         )
-        timings["create_instance_seconds"] = perf_counter() - t
-        del model
-        gc.collect()
-        _maybe_run_constraint_diagnostics(instance)
-
-        if on_stage:
-            on_stage("create_instance", 70.0)
-
-        if on_stage:
-            on_stage("solver_start", 75.0)
+        instance = _finalize_concrete_instance(
+            model,
+            instance,
+            instance_timings=instance_timings,
+            timings=timings,
+            t_build_start=t,
+            on_stage=on_stage,
+        )
 
         lp_path = None
         if generate_lp:
@@ -613,12 +615,16 @@ def run_osemosys_from_excel(
 
         t = perf_counter()
         solver_result = solve_model(
-            instance, solver_name=solver_name, lp_path=lp_path,
+            instance,
+            solver_name=solver_name,
+            lp_path=lp_path,
+            on_stage=on_stage,
         )
         timings["solver_seconds"] = perf_counter() - t
+        _merge_solver_timings(timings, solver_result)
 
         if on_stage:
-            on_stage("solver", 85.0)
+            on_stage("solver", 88.0)
 
         t = perf_counter()
         sets = proc_result.sets
@@ -642,13 +648,13 @@ def run_osemosys_from_excel(
             dailytimebracket_id_by_name=proc_result.dailytimebracket_id_by_name,
             storage_id_by_name=proc_result.storage_id_by_name,
             materialize_intermediate=materialize_intermediate,
+            on_stage=on_stage,
         )
         timings["results_processing_seconds"] = perf_counter() - t
 
         results["model_timings"] = {**timings, **results.get("model_timings", {})}
 
         if on_stage:
-            on_stage("complete", 95.0)
+            on_stage("process_results_complete", 93.0)
 
         return results
-        

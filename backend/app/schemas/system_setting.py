@@ -8,20 +8,19 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-HighsMethod = Literal["choose", "simplex", "ipm", "ipx"]
-OnOffChoose = Literal["off", "on", "choose"]
+HighsMethod = Literal["default", "choose", "simplex", "ipm", "ipx", "hipo"]
+OnOffChoose = Literal["default", "off", "on", "choose"]
 
 
 class SolverSettingsPublic(BaseModel):
     """Vista pública de la configuración del solver expuesta al admin."""
 
     solver_threads: int = Field(default=0, ge=0, le=512)
-    hardware_thread_limit: int = Field(default=1, ge=1)
-    effective_threads_preview: int = Field(default=1, ge=1)
-    highs_method: HighsMethod = "ipm"
-    highs_presolve: OnOffChoose = "on"
-    highs_parallel: OnOffChoose = "on"
-    highs_run_crossover: OnOffChoose = "choose"
+    highs_method: HighsMethod = "default"
+    highs_presolve: OnOffChoose = "default"
+    highs_parallel: OnOffChoose = "default"
+    highs_hipo_parallel_type: str = ""
+    highs_run_crossover: OnOffChoose = "default"
     highs_use_direct: bool = True
     highs_time_limit: float = Field(default=0.0, ge=0.0)
     highs_ipm_optimality_tolerance: float = Field(default=1e-7, gt=0.0)
@@ -34,11 +33,12 @@ class SolverSettingsUpdate(BaseModel):
     """Payload para actualizar la configuración del solver desde el admin."""
 
     solver_threads: int = Field(ge=0, le=512)
-    highs_method: HighsMethod | None = None
-    highs_presolve: OnOffChoose | None = None
-    highs_parallel: OnOffChoose | None = None
-    highs_run_crossover: OnOffChoose | None = None
-    highs_use_direct: bool | None = None
-    highs_time_limit: float | None = Field(default=None, ge=0.0)
-    highs_ipm_optimality_tolerance: float | None = Field(default=None, gt=0.0)
-    highs_primal_feasibility_tolerance: float | None = Field(default=None, gt=0.0)
+    highs_method: HighsMethod = "default"
+    highs_presolve: OnOffChoose = "default"
+    highs_parallel: OnOffChoose = "default"
+    highs_hipo_parallel_type: str = ""
+    highs_run_crossover: OnOffChoose = "default"
+    highs_use_direct: bool = True
+    highs_time_limit: float = Field(default=0.0, ge=0.0)
+    highs_ipm_optimality_tolerance: float = Field(default=1e-7, gt=0.0)
+    highs_primal_feasibility_tolerance: float = Field(default=1e-7, gt=0.0)

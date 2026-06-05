@@ -991,6 +991,20 @@ def apply_udc_config(db: Session, scenario_id: int, csv_dir: str) -> None:
             logger.warning("No se pudo actualizar UDCTag: %s", e)
 
 
+def apply_light_csv_preprocess(csv_dir: str) -> None:
+    """Preproceso ligero alineado con el notebook (``preprocess_csv_dir``).
+
+    No ejecuta ``completar_Matrix_*`` — esos pasos expanden matrices y solo
+    aplican a escenarios ``STANDARD``. Tras ``export_scenario_to_csv`` en modo
+    ``PREPROCESSED_CSV`` los CSVs necesitan al menos este saneamiento antes de
+    ``build_instance``.
+    """
+    reorder_activity_ratio_csvs_for_dataportal(csv_dir)
+    normalize_mode_of_operation_in_csv_dir(csv_dir)
+    strip_whitespace_in_set_csvs(csv_dir)
+    eliminar_valores_fuera_de_indices(csv_dir)
+
+
 def reorder_activity_ratio_csvs_for_dataportal(csv_dir: str) -> None:
     """Reordena columnas de Input/OutputActivityRatio al orden que espera DataPortal.
 
@@ -1311,10 +1325,11 @@ def run_data_processing(
 
     if _get_scenario_processing_mode(db, scenario_id=scenario_id) == "PREPROCESSED_CSV":
         logger.info(
-            "Escenario %d marcado como PREPROCESSED_CSV; se omite reprocesamiento posterior a la exportación.",
+            "Escenario %d PREPROCESSED_CSV: aplicando preproceso ligero post-exportación.",
             scenario_id,
         )
-        return result
+        apply_light_csv_preprocess(csv_dir)
+        return _build_processing_result_from_csv_dir(csv_dir)
 
     normalize_mode_of_operation_in_csv_dir(csv_dir)
 

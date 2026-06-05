@@ -21,7 +21,9 @@ import { scenariosApi } from "@/features/scenarios/api/scenariosApi";
 import type { UdcConfig, UdcMultiplierEntry } from "@/features/scenarios/api/scenariosApi";
 import { simulationApi } from "@/features/simulation/api/simulationApi";
 import { RunDisplayNameEditor } from "@/features/simulation/components/RunDisplayNameEditor";
+import { SimulationStageTimeline } from "@/features/simulation/components/SimulationStageTimeline";
 import { VisibilityToggle } from "@/features/simulation/components/VisibilityToggle";
+import { resolveStageTimings } from "@/features/simulation/simulationStageTimings";
 import { getSimulationRunStatusDisplay } from "@/features/simulation/simulationRunStatus";
 import { Badge } from "@/shared/components/Badge";
 import { Button } from "@/shared/components/Button";
@@ -45,8 +47,23 @@ import type {
 const ACTIVE_STATUSES = new Set(["QUEUED", "RUNNING"]);
 const CSV_PREVIEW_LIMIT = 50;
 const CRITICAL_SIMULATION_LOG_STAGES = new Set([
+  "create_instance_start",
+  "create_instance_pyomo",
+  "constraint_diagnostics",
+  "instance_ready",
   "create_instance",
+  "solver_write_lp",
+  "solver_read_model",
+  "solver_run",
+  "solver_map_solution",
   "solver",
+  "release_model",
+  "process_results",
+  "process_results_precompute",
+  "process_results_typed",
+  "process_results_intermediate",
+  "process_results_complete",
+  "persist_results",
   "infeasibility_analysis_start",
 ]);
 const CSV_SUBMIT_SPINNER_FRAMES = ["◐", "◓", "◑", "◒"];
@@ -54,15 +71,30 @@ const CSV_SUBMIT_SPINNER_FRAMES = ["◐", "◓", "◑", "◒"];
 const SIMULATION_LOG_STAGE_LABELS: Record<string, string> = {
   extract_data: "Leer insumos",
   build_model: "Preparar modelo",
+  data_loading: "Cargar datos",
   data_loaded: "Datos cargados",
-  declare_model: "Declarar modelo",
-  create_instance: "Crear la instancia",
-  solver_start: "Preparar el solver",
-  solver: "Resolver la optimización",
+  declare_model: "Declarar modelo abstracto",
+  create_instance_start: "Cargar CSVs y crear instancia (Pyomo)",
+  create_instance_pyomo: "Instancia Pyomo creada",
+  constraint_diagnostics: "Diagnóstico de restricciones (debug)",
+  instance_ready: "Instancia lista",
+  create_instance: "Instancia lista",
+  solver_start: "Preparar optimización",
+  solver_write_lp: "Escribir archivo LP",
+  solver_read_model: "HiGHS: cargar LP",
+  solver_run: "HiGHS: resolver modelo",
+  solver_map_solution: "HiGHS: mapear solución",
+  solver: "Optimización finalizada",
+  release_model: "Liberar memoria del modelo",
+  process_results: "Procesar resultados (Pyomo)",
+  process_results_precompute: "Precomputar agregados de actividad",
+  process_results_typed: "Extraer dispatch, capacidad y emisiones",
+  process_results_intermediate: "Extraer variables intermedias Pyomo",
+  process_results_complete: "Resultados extraídos",
   infeasibility_analysis_start: "Analizando infactibilidad",
   infeasibility_analysis_complete: "Análisis de infactibilidad completado",
-  complete: "Cerrar ejecución",
-  persist_results: "Guardar resultados",
+  complete: "Procesamiento completado",
+  persist_results: "Guardar en base de datos",
   end: "Finalizar",
   general: "General",
 };
@@ -125,15 +157,6 @@ function formatReadableDuration(totalSeconds: number) {
   if (hours > 0) return `${hours} h ${minutes} min ${seconds} s`;
   if (minutes > 0) return `${minutes} min ${seconds} s`;
   return `${seconds} s`;
-}
-
-function getSimulationLogDurationSeconds(log: SimulationLog, nextLog?: SimulationLog) {
-  const createdAt = new Date(log.created_at);
-  const nextCreatedAt = nextLog ? new Date(nextLog.created_at) : null;
-  if (!nextCreatedAt || !Number.isFinite(nextCreatedAt.getTime()) || !Number.isFinite(createdAt.getTime())) {
-    return null;
-  }
-  return Math.max(0, (nextCreatedAt.getTime() - createdAt.getTime()) / 1000);
 }
 
 function normalizeSimulationLogStage(stage: string | null) {
@@ -859,9 +882,13 @@ export function SimulationPage() {
     let cancelled = false;
     const poll = async () => {
       try {
-        const res = await simulationApi.listLogs(logsOpenForJob, 100, 1);
+        const [logsRes, runRes] = await Promise.all([
+          simulationApi.listLogs(logsOpenForJob, 100, 1),
+          simulationApi.getRun(logsOpenForJob),
+        ]);
         if (cancelled) return;
-        setLogsByJob((prev) => ({ ...prev, [logsOpenForJob]: res.data }));
+        setLogsByJob((prev) => ({ ...prev, [logsOpenForJob]: logsRes.data }));
+        setRuns((prev) => prev.map((r) => (r.id === logsOpenForJob ? { ...r, ...runRes } : r)));
       } catch {
         // silencioso: errores de red esporádicos no deben cerrar el modal
       }
@@ -875,29 +902,31 @@ export function SimulationPage() {
     };
   }, [logsOpenForJob, selectedLogsJobActive]);
 
-  // Resumen para el banner del modal: tiempo total desde el primer evento y
-  // duración del stage actual (último evento). Si el job ya terminó, congela
-  // los contadores al instante del último evento.
+  const resolvedStageTimings = useMemo(() => {
+    if (!selectedLogsJob || selectedLogs.length === 0) return null;
+    return resolveStageTimings({
+      logs: selectedLogs,
+      stageTimes: selectedLogsJob.stage_times,
+      modelTimings: selectedLogsJob.model_timings,
+      jobStatus: selectedLogsJob.status,
+      liveNowMs,
+      startedAt: selectedLogsJob.started_at,
+      finishedAt: selectedLogsJob.finished_at,
+    });
+  }, [selectedLogs, selectedLogsJob, liveNowMs]);
+
+  // Resumen del banner: tiempo total desde started_at y etapa actual desde timings medidos.
   const logsBanner = useMemo(() => {
     const firstLog = selectedLogs[0];
     const lastLog = selectedLogs[selectedLogs.length - 1];
-    if (!firstLog || !lastLog) return null;
-    const firstMs = new Date(firstLog.created_at).getTime();
+    if (!firstLog || !lastLog || !resolvedStageTimings) return null;
     const lastMs = new Date(lastLog.created_at).getTime();
     const endMs = selectedLogsJobActive ? liveNowMs : lastMs;
-    const totalSeconds = Number.isFinite(firstMs) ? Math.max(0, (endMs - firstMs) / 1000) : 0;
-    const currentStageSeconds = Number.isFinite(lastMs)
-      ? Math.max(0, (endMs - lastMs) / 1000)
-      : 0;
 
-    // Detectar si el análisis de infactibilidad está EN CURSO:
-    // el último evento es "infeasibility_analysis_start" y NO hay aún un
-    // "infeasibility_analysis_complete" posterior.
     const lastStage = normalizeSimulationLogStage(lastLog.stage);
     const infeasAnalysisRunning =
       selectedLogsJobActive && lastStage === "infeasibility_analysis_start";
 
-    // Instante en que comenzó el análisis (si ya empezó, esté corriendo o no).
     const startEvent = [...selectedLogs]
       .reverse()
       .find((l) => normalizeSimulationLogStage(l.stage) === "infeasibility_analysis_start");
@@ -906,17 +935,20 @@ export function SimulationPage() {
       ? Math.max(0, (endMs - infeasStartedAt.getTime()) / 1000)
       : null;
 
+    const current = resolvedStageTimings.currentStage;
+
     return {
-      firstAt: new Date(firstMs),
+      firstAt: new Date(firstLog.created_at),
       lastAt: new Date(lastMs),
-      totalSeconds,
-      currentStageSeconds,
-      currentStageName: lastLog.stage,
+      totalSeconds: resolvedStageTimings.totalSeconds ?? 0,
+      currentStageSeconds: current?.durationSeconds ?? 0,
+      currentStageName: current?.label ?? formatSimulationLogStage(lastLog.stage),
+      currentStageSource: current?.source ?? null,
       infeasAnalysisRunning,
       infeasStartedAt,
       infeasElapsedSeconds,
     };
-  }, [selectedLogs, selectedLogsJobActive, liveNowMs]);
+  }, [selectedLogs, selectedLogsJobActive, liveNowMs, resolvedStageTimings]);
 
   return (
     <section style={{ display: "grid", gap: 14 }}>
@@ -2550,11 +2582,21 @@ export function SimulationPage() {
                       <div>
                         <div style={{ fontSize: 12, opacity: 0.7 }}>Etapa actual</div>
                         <div style={{ fontSize: 18, fontWeight: 700 }}>
-                          {formatSimulationLogStage(logsBanner.currentStageName)}
+                          {logsBanner.currentStageName}
                         </div>
                         <div style={{ fontSize: 13, opacity: 0.8, fontVariantNumeric: "tabular-nums" }}>
                           {formatReadableDuration(logsBanner.currentStageSeconds)}
-                          {selectedLogsJobActive ? " desde su inicio" : ""}
+                          {selectedLogsJobActive
+                            ? logsBanner.currentStageSource === "measured"
+                              ? " (medido)"
+                              : logsBanner.currentStageSource === "inferred"
+                                ? " (estimado)"
+                                : " en curso"
+                            : logsBanner.currentStageSource === "measured"
+                              ? " (medido)"
+                              : logsBanner.currentStageSource === "inferred"
+                                ? " (estimado)"
+                                : ""}
                         </div>
                       </div>
                       {(() => {
@@ -2619,61 +2661,27 @@ export function SimulationPage() {
                   </div>
                 ) : null}
 
-                <div
-                  style={{
-                    display: "grid",
-                    gap: 10,
-                    padding: 12,
-                    borderRadius: 14,
-                    border: "1px solid rgba(96,165,250,0.22)",
-                    background: "linear-gradient(180deg, rgba(37,99,235,0.12), rgba(15,23,42,0.28))",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "grid",
-                      gap: 10,
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    }}
-                  >
-                    {selectedLogs
-                      .map((log, index) => ({
-                        log,
-                        durationSeconds: getSimulationLogDurationSeconds(log, selectedLogs[index + 1]),
-                      }))
-                      .filter(({ log }) => isCriticalSimulationLogStage(log.stage))
-                      .map(({ log, durationSeconds }) => (
-                        <article
-                          key={`critical-${log.id}`}
-                          style={{
-                            display: "grid",
-                            gap: 6,
-                            padding: 12,
-                            borderRadius: 12,
-                            border: "1px solid rgba(96,165,250,0.24)",
-                            background: "rgba(15,23,42,0.56)",
-                          }}
-                        >
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-                            <span style={{ fontWeight: 700 }}>{formatSimulationLogStage(log.stage)}</span>
-                          </div>
-                          <div style={{ fontSize: 24, fontWeight: 800 }}>
-                            {durationSeconds !== null ? formatReadableDuration(durationSeconds) : "En curso"}
-                          </div>
-                          <div style={{ fontSize: 13, opacity: 0.78 }}>
-                            {new Date(log.created_at).toLocaleTimeString()}
-                            {log.progress !== null ? ` · ${Math.round(log.progress)}%` : ""}
-                          </div>
-                          <div style={{ lineHeight: 1.45 }}>{log.message ?? "Sin detalle adicional."}</div>
-                        </article>
-                      ))}
-                  </div>
-                </div>
+                {selectedLogsJob && resolvedStageTimings ? (
+                  <SimulationStageTimeline
+                    logs={selectedLogs}
+                    stageTimes={selectedLogsJob.stage_times}
+                    modelTimings={selectedLogsJob.model_timings}
+                    jobStatus={selectedLogsJob.status}
+                    liveNowMs={liveNowMs}
+                    startedAt={selectedLogsJob.started_at}
+                    finishedAt={selectedLogsJob.finished_at}
+                  />
+                ) : null}
 
                 <div style={{ display: "grid", gap: 10, maxHeight: "48vh", overflow: "auto", paddingRight: 4 }}>
                   {selectedLogs.map((log, index) => {
-                    const durationSeconds = getSimulationLogDurationSeconds(log, selectedLogs[index + 1]);
                     const isCritical = isCriticalSimulationLogStage(log.stage);
+                    const isLastLog = index === selectedLogs.length - 1;
+                    const showLiveDuration =
+                      isLastLog &&
+                      selectedLogsJobActive &&
+                      resolvedStageTimings?.currentStage?.source === "live" &&
+                      resolvedStageTimings.currentStage.durationSeconds !== null;
 
                     return (
                       <article
@@ -2698,9 +2706,13 @@ export function SimulationPage() {
                         >
                           <Badge variant={getSimulationLogVariant(log)}>{formatSimulationLogStage(log.stage)}</Badge>
                           <span style={{ fontSize: 13, opacity: 0.78 }}>{new Date(log.created_at).toLocaleTimeString()}</span>
-                          {durationSeconds !== null ? (
-                            <span style={{ fontSize: 13, opacity: 0.9, fontWeight: isCritical ? 700 : 500 }}>
-                              Duración: {formatReadableDuration(durationSeconds)}
+                          {showLiveDuration &&
+                          resolvedStageTimings?.currentStage?.durationSeconds != null ? (
+                            <span style={{ fontSize: 13, opacity: 0.9, fontWeight: 700 }}>
+                              En curso:{" "}
+                              {formatReadableDuration(
+                                resolvedStageTimings.currentStage.durationSeconds,
+                              )}
                             </span>
                           ) : null}
                           {log.progress !== null ? (

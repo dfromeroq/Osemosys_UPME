@@ -16,6 +16,7 @@ from app.schemas.system_setting import SolverSettingsPublic, SolverSettingsUpdat
 from app.services.system_settings_service import SystemSettingsService
 from app.simulation.core.solver_config import (
     SOLVER_HIGHS_CROSSOVER_KEY,
+    SOLVER_HIGHS_HIPO_PARALLEL_TYPE_KEY,
     SOLVER_HIGHS_IPM_TOL_KEY,
     SOLVER_HIGHS_METHOD_KEY,
     SOLVER_HIGHS_PARALLEL_KEY,
@@ -24,6 +25,7 @@ from app.simulation.core.solver_config import (
     SOLVER_HIGHS_TIME_LIMIT_KEY,
     SOLVER_HIGHS_USE_DIRECT_KEY,
     SOLVER_THREADS_KEY,
+    _display_highs_value,
     resolve_highs_config,
 )
 
@@ -70,33 +72,46 @@ def _latest_updated(db: Session) -> tuple[object | None, object | None]:
     return latest_at, latest_by
 
 
-def _to_public(
-    db: Session,
-    *,
-    value: int | None = None,
-    updated_at=None,
-    updated_by_id=None,
-) -> SolverSettingsPublic:
+def _latest_updated(db: Session) -> tuple[object | None, object | None]:
+    keys = [
+        SOLVER_THREADS_KEY,
+        SOLVER_HIGHS_METHOD_KEY,
+        SOLVER_HIGHS_PRESOLVE_KEY,
+        SOLVER_HIGHS_PARALLEL_KEY,
+        SOLVER_HIGHS_HIPO_PARALLEL_TYPE_KEY,
+        SOLVER_HIGHS_CROSSOVER_KEY,
+        SOLVER_HIGHS_USE_DIRECT_KEY,
+        SOLVER_HIGHS_TIME_LIMIT_KEY,
+        SOLVER_HIGHS_IPM_TOL_KEY,
+        SOLVER_HIGHS_PRIMAL_TOL_KEY,
+    ]
+    latest_at = None
+    latest_by = None
+    for key in keys:
+        row = SystemSettingsService.get_raw(db, key)
+        if row is None or row.updated_at is None:
+            continue
+        if latest_at is None or row.updated_at >= latest_at:
+            latest_at = row.updated_at
+            latest_by = row.updated_by
+    return latest_at, latest_by
+
+
+def _to_public(db: Session) -> SolverSettingsPublic:
     cfg = resolve_highs_config(get_settings())
-    if value is None:
-        solver_threads = cfg.threads
-        latest_at, latest_by = _latest_updated(db)
-    else:
-        solver_threads = value
-        latest_at, latest_by = updated_at, updated_by_id
+    latest_at, latest_by = _latest_updated(db)
     username: str | None = None
     if latest_by is not None:
         user = UserRepository.get_by_id(db, latest_by)
         if user is not None:
             username = user.username
     return SolverSettingsPublic(
-        solver_threads=solver_threads,
-        hardware_thread_limit=_hardware_thread_limit(),
-        effective_threads_preview=_effective_solver_threads(solver_threads),
-        highs_method=cfg.method,  # type: ignore[arg-type]
-        highs_presolve=cfg.presolve,  # type: ignore[arg-type]
-        highs_parallel=cfg.parallel,  # type: ignore[arg-type]
-        highs_run_crossover=cfg.run_crossover,  # type: ignore[arg-type]
+        solver_threads=cfg.threads,
+        highs_method=_display_highs_value(cfg.method),  # type: ignore[arg-type]
+        highs_presolve=_display_highs_value(cfg.presolve),  # type: ignore[arg-type]
+        highs_parallel=_display_highs_value(cfg.parallel),  # type: ignore[arg-type]
+        highs_hipo_parallel_type=cfg.hipo_parallel_type,
+        highs_run_crossover=_display_highs_value(cfg.run_crossover),  # type: ignore[arg-type]
         highs_use_direct=cfg.use_direct,
         highs_time_limit=cfg.time_limit,
         highs_ipm_optimality_tolerance=cfg.ipm_optimality_tolerance,
@@ -127,6 +142,7 @@ def update_solver_settings(
         SOLVER_HIGHS_METHOD_KEY: payload.highs_method,
         SOLVER_HIGHS_PRESOLVE_KEY: payload.highs_presolve,
         SOLVER_HIGHS_PARALLEL_KEY: payload.highs_parallel,
+        SOLVER_HIGHS_HIPO_PARALLEL_TYPE_KEY: payload.highs_hipo_parallel_type,
         SOLVER_HIGHS_CROSSOVER_KEY: payload.highs_run_crossover,
         SOLVER_HIGHS_USE_DIRECT_KEY: payload.highs_use_direct,
         SOLVER_HIGHS_TIME_LIMIT_KEY: payload.highs_time_limit,
@@ -134,8 +150,6 @@ def update_solver_settings(
         SOLVER_HIGHS_PRIMAL_TOL_KEY: payload.highs_primal_feasibility_tolerance,
     }
     for key, value in updates.items():
-        if value is None:
-            continue
         SystemSettingsService.set_value(
             db,
             key=key,

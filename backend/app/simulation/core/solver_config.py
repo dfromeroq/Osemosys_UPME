@@ -12,36 +12,55 @@ SOLVER_THREADS_KEY = "solver.threads"
 SOLVER_HIGHS_METHOD_KEY = "solver.highs.method"
 SOLVER_HIGHS_PRESOLVE_KEY = "solver.highs.presolve"
 SOLVER_HIGHS_PARALLEL_KEY = "solver.highs.parallel"
+SOLVER_HIGHS_HIPO_PARALLEL_TYPE_KEY = "solver.highs.hipo_parallel_type"
 SOLVER_HIGHS_CROSSOVER_KEY = "solver.highs.run_crossover"
 SOLVER_HIGHS_USE_DIRECT_KEY = "solver.highs.use_direct"
 SOLVER_HIGHS_TIME_LIMIT_KEY = "solver.highs.time_limit"
 SOLVER_HIGHS_IPM_TOL_KEY = "solver.highs.ipm_optimality_tolerance"
 SOLVER_HIGHS_PRIMAL_TOL_KEY = "solver.highs.primal_feasibility_tolerance"
 
-VALID_HIGHS_METHODS = frozenset({"choose", "simplex", "ipm", "ipx"})
+VALID_HIGHS_METHODS = frozenset({"choose", "simplex", "ipm", "ipx", "hipo"})
 VALID_ON_OFF_CHOOSE = frozenset({"off", "on", "choose"})
+HIGHS_USE_DEFAULT = ""
 
 
 @dataclass(frozen=True)
 class SolverHighsConfig:
-    """Opciones HiGHS efectivas para una corrida."""
+    """Opciones HiGHS efectivas para una corrida.
+
+    Campos vacíos (``""``) significan *no tocar* el default de HiGHS — el mismo
+    comportamiento que ``highspy.Highs()`` sin ``setOptionValue`` en el notebook.
+    """
 
     threads: int = 0
-    method: str = "ipm"
-    presolve: str = "on"
-    parallel: str = "on"
-    run_crossover: str = "choose"
+    method: str = HIGHS_USE_DEFAULT
+    presolve: str = HIGHS_USE_DEFAULT
+    parallel: str = HIGHS_USE_DEFAULT
+    hipo_parallel_type: str = ""
+    run_crossover: str = HIGHS_USE_DEFAULT
     use_direct: bool = True
     time_limit: float = 0.0
-    ipm_optimality_tolerance: float = 1e-12
+    ipm_optimality_tolerance: float = 1e-7
     primal_feasibility_tolerance: float = 1e-7
-    log_to_console: bool = False
+    log_to_console: bool | None = None
+
+
+def _unset_highs_override(value: str | None) -> str:
+    """``default`` / vacío → no aplicar opción (dejar HiGHS como viene)."""
+    if not value:
+        return HIGHS_USE_DEFAULT
+    normalized = str(value).strip().lower()
+    if normalized in {"", "default"}:
+        return HIGHS_USE_DEFAULT
+    return normalized
 
 
 def _normalize_choice(value: str | None, *, allowed: frozenset[str], default: str) -> str:
     if not value:
         return default
     normalized = str(value).strip().lower()
+    if normalized in {"", "default"}:
+        return HIGHS_USE_DEFAULT
     if normalized in allowed:
         return normalized
     logger.warning("Valor solver inválido %r; usando default=%s", value, default)
@@ -78,13 +97,18 @@ def _read_db_bool(db, key: str, default: bool) -> bool:
 def resolve_highs_config(settings: object) -> SolverHighsConfig:
     """Combina env vars con overrides de BD (admin UI)."""
     threads = int(getattr(settings, "sim_solver_threads", 0) or 0)
-    method = str(getattr(settings, "sim_solver_highs_method", "ipm") or "ipm")
-    presolve = str(getattr(settings, "sim_solver_highs_presolve", "on") or "on")
-    parallel = str(getattr(settings, "sim_solver_highs_parallel", "on") or "on")
-    run_crossover = str(getattr(settings, "sim_solver_highs_crossover", "choose") or "choose")
+    method = _unset_highs_override(getattr(settings, "sim_solver_highs_method", HIGHS_USE_DEFAULT))
+    presolve = _unset_highs_override(getattr(settings, "sim_solver_highs_presolve", HIGHS_USE_DEFAULT))
+    parallel = _unset_highs_override(getattr(settings, "sim_solver_highs_parallel", HIGHS_USE_DEFAULT))
+    hipo_parallel_type = str(
+        getattr(settings, "sim_solver_highs_hipo_parallel_type", "") or ""
+    )
+    run_crossover = _unset_highs_override(
+        getattr(settings, "sim_solver_highs_crossover", HIGHS_USE_DEFAULT)
+    )
     use_direct = bool(getattr(settings, "sim_solver_highs_direct", True))
     time_limit = float(getattr(settings, "sim_solver_highs_time_limit", 0) or 0)
-    ipm_tol = float(getattr(settings, "sim_solver_highs_ipm_tol", 1e-12) or 1e-12)
+    ipm_tol = float(getattr(settings, "sim_solver_highs_ipm_tol", 1e-7) or 1e-7)
     primal_tol = float(getattr(settings, "sim_solver_highs_primal_tol", 1e-7) or 1e-7)
 
     try:
@@ -100,16 +124,22 @@ def resolve_highs_config(settings: object) -> SolverHighsConfig:
                 threads = SystemSettingsService.get_solver_threads(db, fallback=threads)
                 db_method = _read_db_setting(db, SOLVER_HIGHS_METHOD_KEY)
                 if db_method is not None:
-                    method = db_method
+                    method = _unset_highs_override(db_method)
                 db_presolve = _read_db_setting(db, SOLVER_HIGHS_PRESOLVE_KEY)
                 if db_presolve is not None:
-                    presolve = db_presolve
+                    presolve = _unset_highs_override(db_presolve)
                 db_parallel = _read_db_setting(db, SOLVER_HIGHS_PARALLEL_KEY)
                 if db_parallel is not None:
-                    parallel = db_parallel
+                    parallel = _unset_highs_override(db_parallel)
+                db_hipo_parallel_type = _read_db_setting(
+                    db,
+                    SOLVER_HIGHS_HIPO_PARALLEL_TYPE_KEY,
+                )
+                if db_hipo_parallel_type is not None:
+                    hipo_parallel_type = db_hipo_parallel_type
                 db_crossover = _read_db_setting(db, SOLVER_HIGHS_CROSSOVER_KEY)
                 if db_crossover is not None:
-                    run_crossover = db_crossover
+                    run_crossover = _unset_highs_override(db_crossover)
                 use_direct = _read_db_bool(db, SOLVER_HIGHS_USE_DIRECT_KEY, use_direct)
                 time_limit = _read_db_float(db, SOLVER_HIGHS_TIME_LIMIT_KEY, time_limit)
                 ipm_tol = _read_db_float(db, SOLVER_HIGHS_IPM_TOL_KEY, ipm_tol)
@@ -119,37 +149,55 @@ def resolve_highs_config(settings: object) -> SolverHighsConfig:
 
     return SolverHighsConfig(
         threads=threads,
-        method=_normalize_choice(method, allowed=VALID_HIGHS_METHODS, default="ipm"),
-        presolve=_normalize_choice(presolve, allowed=VALID_ON_OFF_CHOOSE, default="on"),
-        parallel=_normalize_choice(parallel, allowed=VALID_ON_OFF_CHOOSE, default="on"),
-        run_crossover=_normalize_choice(run_crossover, allowed=VALID_ON_OFF_CHOOSE, default="choose"),
+        method=_normalize_choice(method, allowed=VALID_HIGHS_METHODS, default=HIGHS_USE_DEFAULT),
+        presolve=_normalize_choice(presolve, allowed=VALID_ON_OFF_CHOOSE, default=HIGHS_USE_DEFAULT),
+        parallel=_normalize_choice(parallel, allowed=VALID_ON_OFF_CHOOSE, default=HIGHS_USE_DEFAULT),
+        hipo_parallel_type=hipo_parallel_type.strip().lower(),
+        run_crossover=_normalize_choice(
+            run_crossover,
+            allowed=VALID_ON_OFF_CHOOSE,
+            default=HIGHS_USE_DEFAULT,
+        ),
         use_direct=use_direct,
         time_limit=max(0.0, time_limit),
         ipm_optimality_tolerance=ipm_tol,
         primal_feasibility_tolerance=primal_tol,
-        log_to_console=False,
+        log_to_console=None,
     )
 
 
+def _display_highs_value(value: str) -> str:
+    return value if value else "default"
+
+
 def apply_highs_options_to_model(h: object, config: SolverHighsConfig) -> int | None:
-    """Aplica ``SolverHighsConfig`` a un ``highspy.Highs`` o dict ``highs_options``."""
-    options: dict[str, object] = {
-        "solver": config.method,
-        "presolve": config.presolve,
-        "parallel": config.parallel,
-        "run_crossover": config.run_crossover,
-        "log_to_console": config.log_to_console,
-        "output_flag": False,
-        "ipm_optimality_tolerance": config.ipm_optimality_tolerance,
-        "primal_feasibility_tolerance": config.primal_feasibility_tolerance,
-    }
+    """Aplica solo overrides explícitos a ``highspy.Highs`` o ``highs_options``.
+
+    Sin overrides, HiGHS conserva sus defaults internos (mismo camino que el notebook).
+    """
+    options: dict[str, object] = {}
+    if config.method:
+        options["solver"] = config.method
+    if config.presolve:
+        options["presolve"] = config.presolve
+    if config.parallel:
+        options["parallel"] = config.parallel
+    if config.run_crossover:
+        options["run_crossover"] = config.run_crossover
+    if config.log_to_console is not None:
+        options["log_to_console"] = config.log_to_console
     if config.threads > 0:
         options["threads"] = config.threads
-    if config.parallel == "on" and config.threads > 1:
-        # HiGHS parallel dual simplex is capped by simplex_max_concurrency (1..8).
-        options["simplex_max_concurrency"] = min(max(int(config.threads), 1), 8)
     if config.time_limit > 0:
         options["time_limit"] = config.time_limit
+    if config.method == "ipm":
+        options["ipm_optimality_tolerance"] = config.ipm_optimality_tolerance
+        options["primal_feasibility_tolerance"] = config.primal_feasibility_tolerance
+    if config.method == "hipo" and config.hipo_parallel_type:
+        options["hipo_parallel_type"] = config.hipo_parallel_type
+
+    if not options:
+        return None
 
     if isinstance(h, dict):
         h.update(options)
@@ -167,9 +215,21 @@ def apply_highs_options_to_model(h: object, config: SolverHighsConfig) -> int | 
             status = set_option(key, value)
         except Exception:  # pragma: no cover - depende de versión highspy
             logger.debug("HiGHS no aceptó opción %s=%s", key, value, exc_info=True)
+            if key == "solver" and value == "hipo":
+                raise ValueError(
+                    "La instalación actual de HiGHS no acepta solver=hipo. "
+                    "Reconstruye la imagen con HIGHS_BUILD_FROM_SOURCE=1 "
+                    "y HIGHS_ENABLE_HIPO=1."
+                )
             continue
         if _is_highs_status_error(status):
             logger.debug("HiGHS rechazó opción %s=%s: %s", key, value, status)
+            if key == "solver" and value == "hipo":
+                raise ValueError(
+                    "La instalación actual de HiGHS no acepta solver=hipo. "
+                    "Reconstruye la imagen con HIGHS_BUILD_FROM_SOURCE=1 "
+                    "y HIGHS_ENABLE_HIPO=1."
+                )
     try:
         if config.threads > 0:
             return int(config.threads)

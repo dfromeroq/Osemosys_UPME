@@ -3,16 +3,21 @@
  */
 import { httpClient } from "@/shared/api/httpClient";
 
-export type HighsMethod = "choose" | "simplex" | "ipm" | "ipx";
-export type OnOffChoose = "off" | "on" | "choose";
+export type HighsMethod =
+  | "default"
+  | "choose"
+  | "simplex"
+  | "ipm"
+  | "ipx"
+  | "hipo";
+export type OnOffChoose = "default" | "off" | "on" | "choose";
 
 export type SolverSettings = {
   solver_threads: number;
-  hardware_thread_limit: number;
-  effective_threads_preview: number;
   highs_method: HighsMethod;
   highs_presolve: OnOffChoose;
   highs_parallel: OnOffChoose;
+  highs_hipo_parallel_type: string;
   highs_run_crossover: OnOffChoose;
   highs_use_direct: boolean;
   highs_time_limit: number;
@@ -24,7 +29,7 @@ export type SolverSettings = {
 
 export type SolverSettingsUpdate = Omit<
   SolverSettings,
-  "hardware_thread_limit" | "effective_threads_preview" | "updated_at" | "updated_by_username"
+  "updated_at" | "updated_by_username"
 >;
 
 async function getSolverSettings(): Promise<SolverSettings> {
@@ -35,12 +40,11 @@ async function getSolverSettings(): Promise<SolverSettings> {
 }
 
 async function updateSolverSettings(
-  payload: SolverSettingsUpdate | number,
+  payload: SolverSettingsUpdate,
 ): Promise<SolverSettings> {
-  const body = typeof payload === "number" ? { solver_threads: payload } : payload;
   const { data } = await httpClient.patch<SolverSettings>(
     "/admin/system-settings/solver",
-    body,
+    payload,
   );
   return data;
 }

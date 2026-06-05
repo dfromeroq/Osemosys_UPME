@@ -25,13 +25,16 @@ function formatUpdatedAt(iso: string | null): string {
 }
 
 const METHOD_OPTIONS: { value: HighsMethod; label: string }[] = [
-  { value: "ipm", label: "IPM (recomendado LP grande)" },
-  { value: "simplex", label: "Simplex" },
-  { value: "ipx", label: "IPX" },
+  { value: "default", label: "Por defecto HiGHS (notebook)" },
   { value: "choose", label: "Automático (choose)" },
+  { value: "simplex", label: "Simplex" },
+  { value: "ipm", label: "IPM" },
+  { value: "ipx", label: "IPX" },
+  { value: "hipo", label: "HiPO (IPM multi-hilo)" },
 ];
 
 const ON_OFF_OPTIONS: { value: OnOffChoose; label: string }[] = [
+  { value: "default", label: "Por defecto HiGHS" },
   { value: "on", label: "On" },
   { value: "off", label: "Off" },
   { value: "choose", label: "Choose" },
@@ -43,6 +46,7 @@ function settingsToDraft(s: SolverSettings): SolverSettingsUpdate {
     highs_method: s.highs_method,
     highs_presolve: s.highs_presolve,
     highs_parallel: s.highs_parallel,
+    highs_hipo_parallel_type: s.highs_hipo_parallel_type,
     highs_run_crossover: s.highs_run_crossover,
     highs_use_direct: s.highs_use_direct,
     highs_time_limit: s.highs_time_limit,
@@ -129,8 +133,9 @@ export function SystemSettingsAdminPage() {
         <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
           <h2 style={{ margin: 0 }}>Solver HiGHS</h2>
           <p className="muted" style={{ margin: 0 }}>
-            HiGHS es el solver open-source por defecto. <strong>0 hilos</strong> =
-            default del servidor. GLPK no usa estas opciones.
+            Por defecto el worker usa las mismas opciones que el notebook (
+            <code>Highs()</code> sin forzar IPM). <strong>0 hilos</strong> = default
+            HiGHS. GLPK no usa estas opciones.
           </p>
 
           {loading || !draft ? (
@@ -206,6 +211,15 @@ export function SystemSettingsAdminPage() {
                     ))}
                   </select>
                 </label>
+
+                <TextField
+                  label="HiPO parallel type"
+                  value={draft.highs_hipo_parallel_type}
+                  onChange={(e) =>
+                    patchDraft({ highs_hipo_parallel_type: e.target.value.trim() })
+                  }
+                  disabled={saving || draft.highs_method !== "hipo"}
+                />
 
                 <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <span>Crossover (IPM→básica)</span>
