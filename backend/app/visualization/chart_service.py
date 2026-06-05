@@ -89,6 +89,14 @@ from app.visualization.configs import (
     TITULOS_VARIABLES_CAPACIDAD,
     NOMBRES_COMBUSTIBLES,
     TECNOLOGIAS_EXPORTACION_CARBON,
+    TECNOLOGIAS_INDUSTRIALES,
+    TECNOLOGIAS_RESIDENCIALES,
+    TECNOLOGIAS_TRANSPORTE,
+    TECNOLOGIAS_TRANSPORTE_CARRETERA,
+    TECNOLOGIAS_TERCIARIO,
+    TEC_RES_URB,
+    TEC_RES_RUR,
+    TEC_RES_ZNI,
     _filtro_recursos_crudo,
     _filtro_recursos_gas,
     _filtro_recursos_carbon,
@@ -651,38 +659,57 @@ def _fuel_to_group(row) -> str:
     return asignar_grupo(fuel) if fuel else "OTRO"
 
 
+_PREFIJO_TECH_LISTS: dict[str, list[str]] = {
+    "DEMIND": TECNOLOGIAS_INDUSTRIALES,
+    "DEMRES": TECNOLOGIAS_RESIDENCIALES,
+    "DEMTRA": TECNOLOGIAS_TRANSPORTE,
+    "DEMTER": TECNOLOGIAS_TERCIARIO,
+}
+
+
+def _resolve_tech_list(prefijo: str | tuple[str, ...]) -> list[str]:
+    if isinstance(prefijo, tuple):
+        combined: list[str] = []
+        for p in prefijo:
+            lst = _PREFIJO_TECH_LISTS.get(p)
+            if lst:
+                combined.extend(lst)
+        return combined
+    return _PREFIJO_TECH_LISTS.get(prefijo, [])
+
+
 def _filtrar_df(
     df: pd.DataFrame,
     prefijo: str | tuple[str, ...],
     sub_filtro: str | None,
     loc: str | None,
 ) -> pd.DataFrame:
-    """Aplica filtro por prefijo de TECHNOLOGY, sub_filtro y localización.
-
-    Port directo de ``graficas_comparacion._filtrar_df``.
+    """Aplica filtro por listas de tecnologías, sub_filtro y localización.
     """
     if df.empty:
         return df
 
-    df = df[df["TECHNOLOGY"].str.startswith(prefijo)].copy()
+    tech_list = _resolve_tech_list(prefijo)
+    if not tech_list:
+        return df.iloc[:0]
+
+    mask = df["TECHNOLOGY"].isin(tech_list)
 
     if sub_filtro == "CARRETERA":
-        from app.visualization.configs import _ROAD_TRANSPORT_PATTERN
-        df = df[df["TECHNOLOGY"].str.contains(_ROAD_TRANSPORT_PATTERN, regex=True)]
+        mask &= df["TECHNOLOGY"].isin(TECNOLOGIAS_TRANSPORTE_CARRETERA)
     elif sub_filtro:
-        df = df[df["TECHNOLOGY"].str.contains(sub_filtro)]
+        mask &= df["TECHNOLOGY"].isin(
+            [t for t in tech_list if sub_filtro in t]
+        )
 
     if loc == "URB":
-        df = df[~df["TECHNOLOGY"].str.contains("RUR")]
-        df = df[~df["TECHNOLOGY"].str.contains("ZNI")]
+        mask &= df["TECHNOLOGY"].isin(TEC_RES_URB)
     elif loc == "RUR":
-        df = df[df["TECHNOLOGY"].str.contains("RUR")]
-        df = df[~df["TECHNOLOGY"].str.contains("ZNI")]
+        mask &= df["TECHNOLOGY"].isin(TEC_RES_RUR)
     elif loc == "ZNI":
-        df = df[~df["TECHNOLOGY"].str.contains("RUR")]
-        df = df[df["TECHNOLOGY"].str.contains("ZNI")]
+        mask &= df["TECHNOLOGY"].isin(TEC_RES_ZNI)
 
-    return df
+    return df[mask].copy()
 
 
 # Mapeo de código de uso de transporte a nombre de grupo
@@ -705,7 +732,7 @@ _TRANSPORTE_USO_A_GRUPO: dict[str, str] = {
 
 def _map_transporte_grupo(tech_code: str) -> str:
     """Clasifica un código DEMTRA en grupo de transporte."""
-    if not isinstance(tech_code, str) or not tech_code.startswith("DEMTRA"):
+    if not isinstance(tech_code, str) or tech_code not in TECNOLOGIAS_TRANSPORTE:
         return "Otros"
     rest = tech_code[len("DEMTRA"):]
 
@@ -753,7 +780,7 @@ _MODOS_TRANSPORTE_MAP: dict[str, str] = {
 
 def _map_transporte_modo(tech_code: str) -> str:
     """Clasifica un código DEMTRA en modo de transporte (CARRETERA, AVI, BOT, MET)."""
-    if not isinstance(tech_code, str) or not tech_code.startswith("DEMTRA"):
+    if not isinstance(tech_code, str) or tech_code not in TECNOLOGIAS_TRANSPORTE:
         return "Otros"
     rest = tech_code[len("DEMTRA"):]
 
