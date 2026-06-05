@@ -486,10 +486,24 @@ def _solve_with_appsi_highs(
     obj = 0.0
     if "optimal" in raw_status.lower():
         if on_stage:
-            on_stage("solver_map_solution", 86.0)
+            on_stage(
+                "solver_map_solution",
+                86.0,
+                timing_key="solver_run_seconds",
+                timing_value=timings["solver_run_seconds"],
+            )
         t_load = perf_counter()
         instance.solutions.load_from(results)
         timings["solver_load_solution_seconds"] = perf_counter() - t_load
+        timings["solver_map_solution_seconds"] = timings["solver_load_solution_seconds"]
+        if on_stage:
+            on_stage(
+                "solver_map_solution",
+                86.0,
+                timing_key="solver_map_solution_seconds",
+                timing_value=timings["solver_map_solution_seconds"],
+                timing_only=True,
+            )
         try:
             obj = float(pyo.value(instance.OBJ))
         except Exception:

@@ -1263,7 +1263,12 @@ def process_results(
     profile.set_count("roa_entries", len(aggregates.roa_raw))
 
     if on_stage:
-        on_stage("process_results_typed", 89.6)
+        on_stage(
+            "process_results_typed",
+            89.6,
+            timing_key="process_results_precompute_seconds",
+            timing_value=timings["process_results_precompute_seconds"],
+        )
     t_typed = perf_counter()
     parallel_tasks = [
         (
@@ -1337,7 +1342,12 @@ def process_results(
     )
 
     if on_stage:
-        on_stage("process_results_intermediate", 91.0)
+        on_stage(
+            "process_results_intermediate",
+            91.0,
+            timing_key="process_results_typed_seconds",
+            timing_value=timings["process_results_typed_seconds"],
+        )
     t_intermediate = perf_counter()
     intermediate_variables: dict[str, list] = {}
     intermediate_entry_iter = None
@@ -1367,6 +1377,14 @@ def process_results(
             )
     timings["process_results_intermediate_seconds"] = perf_counter() - t_intermediate
     timings["intermediate_vars_seconds"] = timings["process_results_intermediate_seconds"]
+    if on_stage:
+        on_stage(
+            "process_results_intermediate",
+            91.0,
+            timing_key="process_results_intermediate_seconds",
+            timing_value=timings["process_results_intermediate_seconds"],
+            timing_only=True,
+        )
     profile.set_count(
         "intermediate_var_names",
         len(intermediate_variables) if materialize_intermediate else len(pyomo_out),

@@ -178,6 +178,18 @@ const EPILOGUE_STAGE_IDS: CanonicalStageId[] = [
   "infeasibility_analysis",
 ];
 
+/** Bloques contiguos del pipeline; entre bloques puede haber marcadores sin tiempo propio. */
+const STAGE_BLOCKS: Array<{ first: number; last: number }> = [
+  { first: 0, last: 3 },
+  { first: 4, last: 7 },
+  { first: 8, last: 10 },
+  { first: 11, last: 12 },
+];
+
+function blockForStageIndex(stageIndex: number): { first: number; last: number } | null {
+  return STAGE_BLOCKS.find((b) => stageIndex >= b.first && stageIndex <= b.last) ?? null;
+}
+
 function getStageIndex(id: CanonicalStageId): number {
   return CANONICAL_STAGES.findIndex((s) => s.id === id);
 }
@@ -329,16 +341,10 @@ function resolveEffectiveReachedIndex(
   return Math.max(fromLogs, fromTimings);
 }
 
-function inferStageStartMs(
+function resolveImmediatePreviousEndMs(
   stageIndex: number,
   input: ResolveStageTimingsInput,
-  def: CanonicalStageDef,
 ): number | null {
-  const fromLog = findEarliestLogMsForStages(input.logs, def.logStages);
-  if (fromLog != null) return fromLog;
-
-  if (stageIndex <= 0) return null;
-
   const prevDef = CANONICAL_STAGES[stageIndex - 1]!;
   const prevDict = prevDef.source === "stage_times" ? input.stageTimes : input.modelTimings;
   const prevMeasured = readMeasuredTiming(prevDict, prevDef);
@@ -346,8 +352,79 @@ function inferStageStartMs(
   if (prevMeasured != null && prevStart != null) {
     return prevStart + prevMeasured * 1000;
   }
-
   return findNextCanonicalStageStartMs(input.logs, stageIndex - 1);
+}
+
+function resolveLastBlockEndMs(
+  stageIndex: number,
+  input: ResolveStageTimingsInput,
+): number | null {
+  const block = blockForStageIndex(stageIndex);
+  if (!block) return null;
+  const blockIdx = STAGE_BLOCKS.indexOf(block);
+  if (blockIdx <= 0) return null;
+
+  const prevBlock = STAGE_BLOCKS[blockIdx - 1]!;
+  const lastDef = CANONICAL_STAGES[prevBlock.last]!;
+  const dict = lastDef.source === "stage_times" ? input.stageTimes : input.modelTimings;
+  const measured = readMeasuredTiming(dict, lastDef);
+  const start = findEarliestLogMsForStages(input.logs, lastDef.logStages);
+  if (measured != null && start != null) {
+    return start + measured * 1000;
+  }
+  return findNextCanonicalStageStartMs(input.logs, prevBlock.last);
+}
+
+/**
+ * Fin de la etapa anterior (ancla mínima del inicio de la etapa actual).
+ * Dentro de un bloque usa la etapa previa inmediata; entre bloques evita heredar
+ * tiempos de bloques no contiguos (p. ej. create_instance → write_lp).
+ */
+function resolvePreviousStageEndMs(
+  stageIndex: number,
+  input: ResolveStageTimingsInput,
+): number | null {
+  if (stageIndex <= 0) return null;
+
+  const block = blockForStageIndex(stageIndex);
+  const prevBlock = blockForStageIndex(stageIndex - 1);
+
+  if (block != null && block.first === stageIndex && block !== prevBlock) {
+    if (stageIndex === 4) {
+      // Tras create_instance hay marcadores (instance_ready, solver, …) sin duración propia.
+      return findEarliestLogMsForStages(input.logs, CANONICAL_STAGES[stageIndex]!.logStages);
+    }
+    return (
+      resolveLastBlockEndMs(stageIndex, input) ??
+      findNextCanonicalStageStartMs(input.logs, stageIndex - 1)
+    );
+  }
+
+  return resolveImmediatePreviousEndMs(stageIndex, input);
+}
+
+/**
+ * Inicio de una etapa para contadores en vivo / inferencia.
+ * Nunca puede ser anterior al fin de la etapa previa (evita heredar 1:17 de write_lp).
+ */
+function resolveStageStartMs(
+  stageIndex: number,
+  input: ResolveStageTimingsInput,
+  def: CanonicalStageDef,
+): number | null {
+  const prevEnd = resolvePreviousStageEndMs(stageIndex, input);
+  const ownLog = findEarliestLogMsForStages(input.logs, def.logStages);
+
+  if (ownLog != null) {
+    if (prevEnd != null && ownLog < prevEnd) {
+      return prevEnd;
+    }
+    return ownLog;
+  }
+
+  if (prevEnd != null) return prevEnd;
+
+  return null;
 }
 
 
@@ -392,7 +469,7 @@ function resolveOneStage(
   const dict = def.source === "stage_times" ? input.stageTimes : input.modelTimings;
   const measured = readMeasuredTiming(dict, def);
   const startLog = findEarliestLogForStage(input.logs, def.logStages);
-  const startMs = inferStageStartMs(stageIndex, input, def);
+  const startMs = resolveStageStartMs(stageIndex, input, def);
   const startedAt =
     startMs != null
       ? new Date(startMs)
@@ -486,14 +563,21 @@ function resolveHighsTotal(
   highsSubStages: ResolvedStage[],
   modelTimings?: Record<string, number | string> | null,
 ): { seconds: number | null; source: "measured" | "derived" | null } {
+  const measuredSubs = highsSubStages
+    .map((s) => (s.source === "measured" ? s.durationSeconds : null))
+    .filter((v): v is number => v !== null);
+  if (measuredSubs.length >= 2) {
+    return {
+      seconds: measuredSubs.reduce((sum, v) => sum + v, 0),
+      source: "derived",
+    };
+  }
+
   const solverSeconds = readTimingValue(modelTimings, "solver_seconds");
   if (solverSeconds !== null) {
     return { seconds: solverSeconds, source: "measured" };
   }
 
-  const measuredSubs = highsSubStages
-    .map((s) => (s.source === "measured" ? s.durationSeconds : null))
-    .filter((v): v is number => v !== null);
   if (measuredSubs.length > 0) {
     return {
       seconds: measuredSubs.reduce((sum, v) => sum + v, 0),
@@ -523,14 +607,21 @@ function resolveResultsTotal(
   resultsSubStages: ResolvedStage[],
   modelTimings?: Record<string, number | string> | null,
 ): { seconds: number | null; source: "measured" | "derived" | null } {
+  const measuredSubs = resultsSubStages
+    .map((s) => (s.source === "measured" ? s.durationSeconds : null))
+    .filter((v): v is number => v !== null);
+  if (measuredSubs.length >= 2) {
+    return {
+      seconds: measuredSubs.reduce((sum, v) => sum + v, 0),
+      source: "derived",
+    };
+  }
+
   const totalSeconds = readTimingValue(modelTimings, "results_processing_seconds");
   if (totalSeconds !== null) {
     return { seconds: totalSeconds, source: "measured" };
   }
 
-  const measuredSubs = resultsSubStages
-    .map((s) => (s.source === "measured" ? s.durationSeconds : null))
-    .filter((v): v is number => v !== null);
   if (measuredSubs.length > 0) {
     return {
       seconds: measuredSubs.reduce((sum, v) => sum + v, 0),

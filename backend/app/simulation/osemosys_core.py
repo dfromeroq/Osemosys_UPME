@@ -87,7 +87,12 @@ def _finalize_concrete_instance(
     gc.collect()
     _maybe_run_constraint_diagnostics(instance, on_stage=on_stage)
     if on_stage:
-        on_stage("instance_ready", 72.0)
+        on_stage(
+            "instance_ready",
+            72.0,
+            timing_key="create_instance_seconds",
+            timing_value=timings["create_instance_seconds"],
+        )
     return instance
 
 
@@ -170,13 +175,23 @@ def run_osemosys_from_db(
         timings["declare_model_seconds"] = perf_counter() - t
 
         if on_stage:
-            on_stage("declare_model", 45.0)
+            on_stage(
+                "declare_model",
+                45.0,
+                timing_key="data_processing_seconds",
+                timing_value=timings["data_processing_seconds"],
+            )
 
         # =============================================================
         # 3. DataPortal + create_instance (celda 23 del notebook)
         # =============================================================
         if on_stage:
-            on_stage("create_instance_start", 50.0)
+            on_stage(
+                "create_instance_start",
+                50.0,
+                timing_key="declare_model_seconds",
+                timing_value=timings["declare_model_seconds"],
+            )
 
         t = perf_counter()
         instance_timings: dict[str, float] = {}
@@ -381,15 +396,20 @@ def run_osemosys_from_csv_dir(
             "intermediate_variables": {},
         }
 
-    if on_stage:
-        on_stage("declare_model", 45.0)
-
     t = perf_counter()
     model = create_abstract_model(
         has_storage=proc_result.has_storage,
         has_udc=proc_result.has_udc,
     )
     timings["declare_model_seconds"] = perf_counter() - t
+
+    if on_stage:
+        on_stage(
+            "declare_model",
+            45.0,
+            timing_key="declare_model_seconds",
+            timing_value=timings["declare_model_seconds"],
+        )
 
     if on_stage:
         on_stage("create_instance_start", 50.0)
@@ -584,10 +604,20 @@ def run_osemosys_from_excel(
         timings["declare_model_seconds"] = perf_counter() - t
 
         if on_stage:
-            on_stage("declare_model", 45.0)
+            on_stage(
+                "declare_model",
+                45.0,
+                timing_key="data_processing_seconds",
+                timing_value=timings["data_processing_seconds"],
+            )
 
         if on_stage:
-            on_stage("create_instance_start", 50.0)
+            on_stage(
+                "create_instance_start",
+                50.0,
+                timing_key="declare_model_seconds",
+                timing_value=timings["declare_model_seconds"],
+            )
 
         t = perf_counter()
         instance_timings: dict[str, float] = {}
