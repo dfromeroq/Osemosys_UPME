@@ -4,6 +4,7 @@ import {
   resolveStageTimings,
   type ResolveStageTimingsInput,
   type ResolvedStage,
+  type StageGroupBlock,
 } from "@/features/simulation/simulationStageTimings";
 
 type Props = ResolveStageTimingsInput & {
@@ -84,7 +85,12 @@ function StageRow({
     >
       <StageStatusIcon status={stage.status} />
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontWeight: stage.status === "running" ? 700 : 500, fontSize: compact ? 12 : 13 }}>
+        <div
+          style={{
+            fontWeight: stage.status === "running" ? 700 : 500,
+            fontSize: compact ? 12 : 13,
+          }}
+        >
           {stage.label}
         </div>
         {!compact && sourceHint ? (
@@ -120,6 +126,64 @@ function StageRow({
   );
 }
 
+function StageGroupSection({
+  group,
+  compact,
+  withBorder,
+}: {
+  group: StageGroupBlock;
+  compact: boolean;
+  withBorder: boolean;
+}) {
+  const hasActivity = group.stages.some((s) => s.status !== "pending");
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: 4,
+        padding: withBorder ? (compact ? "8px 0 0" : "10px 0 0") : 0,
+        borderTop: withBorder ? "1px solid rgba(96,165,250,0.18)" : undefined,
+        opacity: hasActivity ? 1 : 0.88,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          gap: 8,
+          flexWrap: "wrap",
+        }}
+      >
+        <span style={{ fontWeight: 700, fontSize: compact ? 12 : 13 }}>{group.title}</span>
+        {group.totalSeconds !== null ? (
+          <span
+            style={{
+              fontWeight: 800,
+              fontVariantNumeric: "tabular-nums",
+              fontSize: compact ? 13 : 15,
+            }}
+          >
+            {formatReadableDuration(group.totalSeconds)}
+            {group.totalSource === "derived" ? (
+              <span style={{ fontSize: 10, opacity: 0.65, marginLeft: 6 }}>(suma)</span>
+            ) : null}
+          </span>
+        ) : null}
+      </div>
+      {group.solverStatus ? (
+        <div style={{ fontSize: 11, opacity: 0.75 }}>
+          Estado del solver: {group.solverStatus}
+        </div>
+      ) : null}
+      {group.stages.map((stage) => (
+        <StageRow key={stage.id} stage={stage} indent compact={compact} />
+      ))}
+    </div>
+  );
+}
+
 export function SimulationStageTimeline(props: Props) {
   const {
     compact = false,
@@ -145,7 +209,14 @@ export function SimulationStageTimeline(props: Props) {
     [logs, stageTimes, modelTimings, jobStatus, liveNowMs, startedAt, finishedAt],
   );
 
-  if (compact && resolved.totalSeconds === null && resolved.stages.every((s) => s.status === "pending")) {
+  const allStages = [
+    ...resolved.preambleStages,
+    ...resolved.highsGroup.stages,
+    ...resolved.resultsGroup.stages,
+    ...resolved.epilogueStages,
+  ];
+
+  if (compact && resolved.totalSeconds === null && allStages.every((s) => s.status === "pending")) {
     return null;
   }
 
@@ -168,85 +239,18 @@ export function SimulationStageTimeline(props: Props) {
       ) : null}
 
       <div style={{ display: "grid", gap: 2 }}>
-        {resolved.stages.map((stage) => (
+        {resolved.preambleStages.map((stage) => (
+          <StageRow key={stage.id} stage={stage} compact={compact} />
+        ))}
+
+        <StageGroupSection group={resolved.highsGroup} compact={compact} withBorder />
+
+        <StageGroupSection group={resolved.resultsGroup} compact={compact} withBorder />
+
+        {resolved.epilogueStages.map((stage) => (
           <StageRow key={stage.id} stage={stage} compact={compact} />
         ))}
       </div>
-
-      {resolved.resultsSubStages.length > 0 ? (
-        <div
-          style={{
-            display: "grid",
-            gap: 4,
-            padding: compact ? "8px 0 0" : "10px 0 0",
-            borderTop: "1px solid rgba(96,165,250,0.18)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "baseline",
-              gap: 8,
-              flexWrap: "wrap",
-            }}
-          >
-            <span style={{ fontWeight: 700, fontSize: compact ? 12 : 13 }}>
-              Procesamiento de resultados
-            </span>
-            {resolved.resultsTotalSeconds !== null ? (
-              <span style={{ fontWeight: 800, fontVariantNumeric: "tabular-nums", fontSize: compact ? 13 : 15 }}>
-                {formatReadableDuration(resolved.resultsTotalSeconds)}
-                {resolved.resultsTotalSource === "derived" ? (
-                  <span style={{ fontSize: 10, opacity: 0.65, marginLeft: 6 }}>(suma)</span>
-                ) : null}
-              </span>
-            ) : null}
-          </div>
-          {resolved.resultsSubStages.map((stage) => (
-            <StageRow key={stage.id} stage={stage} indent compact={compact} />
-          ))}
-        </div>
-      ) : null}
-
-      {resolved.highsSubStages.length > 0 ? (
-        <div
-          style={{
-            display: "grid",
-            gap: 4,
-            padding: compact ? "8px 0 0" : "10px 0 0",
-            borderTop: "1px solid rgba(96,165,250,0.18)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "baseline",
-              gap: 8,
-              flexWrap: "wrap",
-            }}
-          >
-            <span style={{ fontWeight: 700, fontSize: compact ? 12 : 13 }}>Optimización HiGHS</span>
-            {resolved.highsTotalSeconds !== null ? (
-              <span style={{ fontWeight: 800, fontVariantNumeric: "tabular-nums", fontSize: compact ? 13 : 15 }}>
-                {formatReadableDuration(resolved.highsTotalSeconds)}
-                {resolved.highsTotalSource === "derived" ? (
-                  <span style={{ fontSize: 10, opacity: 0.65, marginLeft: 6 }}>(suma)</span>
-                ) : null}
-              </span>
-            ) : null}
-          </div>
-          {resolved.solverStatus ? (
-            <div style={{ fontSize: 11, opacity: 0.75 }}>
-              Estado del solver: {resolved.solverStatus}
-            </div>
-          ) : null}
-          {resolved.highsSubStages.map((stage) => (
-            <StageRow key={stage.id} stage={stage} indent compact={compact} />
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }

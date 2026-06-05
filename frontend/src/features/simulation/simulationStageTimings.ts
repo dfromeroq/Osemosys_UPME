@@ -166,10 +166,17 @@ for (const stage of CANONICAL_STAGES) {
 
 const ACTIVE_JOB_STATUSES = new Set<RunStatus>(["QUEUED", "RUNNING"]);
 
-const HIGHS_START_INDEX = CANONICAL_STAGES.findIndex((s) => s.id === "solver_write_lp");
-const RESULTS_START_INDEX = CANONICAL_STAGES.findIndex(
-  (s) => s.id === "process_results_precompute",
-);
+const PREAMBLE_STAGE_IDS: CanonicalStageId[] = [
+  "extract_data",
+  "data_processing",
+  "declare_model",
+  "create_instance",
+];
+
+const EPILOGUE_STAGE_IDS: CanonicalStageId[] = [
+  "persist_results",
+  "infeasibility_analysis",
+];
 
 function getStageIndex(id: CanonicalStageId): number {
   return CANONICAL_STAGES.findIndex((s) => s.id === id);
@@ -186,11 +193,28 @@ export type ResolvedStage = {
   resultsSubStage?: boolean | undefined;
 };
 
-export type ResolvedStageTimings = {
+export type StageGroupBlock = {
+  title: string;
   stages: ResolvedStage[];
+  totalSeconds: number | null;
+  totalSource: "measured" | "derived" | null;
+  solverStatus?: string | null;
+};
+
+export type ResolvedStageTimings = {
+  /** Etapas previas al solve (insumos → instancia Pyomo). */
+  preambleStages: ResolvedStage[];
+  highsGroup: StageGroupBlock;
+  resultsGroup: StageGroupBlock;
+  /** Persistencia y análisis posterior. */
+  epilogueStages: ResolvedStage[];
+  /** @deprecated Usar preambleStages + epilogueStages. */
+  stages: ResolvedStage[];
+  /** @deprecated Usar highsGroup.stages. */
   highsSubStages: ResolvedStage[];
   highsTotalSeconds: number | null;
   highsTotalSource: "measured" | "derived" | null;
+  /** @deprecated Usar resultsGroup.stages. */
   resultsSubStages: ResolvedStage[];
   resultsTotalSeconds: number | null;
   resultsTotalSource: "measured" | "derived" | null;
@@ -477,23 +501,17 @@ export function resolveStageTimings(input: ResolveStageTimingsInput): ResolvedSt
     resolveOneStage(def, stageIndex, input, reachedIndex, jobActive, endMs),
   );
 
-  const showHighsSection = reachedIndex >= HIGHS_START_INDEX;
-  const highsSubStages = showHighsSection ? stages.filter((s) => s.highsSubStage) : [];
+  const stageById = new Map(stages.map((s) => [s.id, s]));
+  const preambleStages = PREAMBLE_STAGE_IDS.map((id) => stageById.get(id)!);
+  const epilogueStages = EPILOGUE_STAGE_IDS.map((id) => stageById.get(id)!);
 
-  const highsTotal = showHighsSection
-    ? resolveHighsTotal(highsSubStages, input.modelTimings)
-    : { seconds: null, source: null };
+  const highsSubStages = stages.filter((s) => s.highsSubStage);
+  const highsTotal = resolveHighsTotal(highsSubStages, input.modelTimings);
 
-  const showResultsSection = reachedIndex >= RESULTS_START_INDEX;
-  const resultsSubStages = showResultsSection
-    ? stages.filter((s) => s.resultsSubStage)
-    : [];
+  const resultsSubStages = stages.filter((s) => s.resultsSubStage);
+  const resultsTotal = resolveResultsTotal(resultsSubStages, input.modelTimings);
 
-  const resultsTotal = showResultsSection
-    ? resolveResultsTotal(resultsSubStages, input.modelTimings)
-    : { seconds: null, source: null };
-
-  const nonGroupedStages = stages.filter((s) => !s.highsSubStage && !s.resultsSubStage);
+  const nonGroupedStages = [...preambleStages, ...epilogueStages];
   const currentStage =
     stages.find((s) => s.status === "running") ??
     (reachedIndex >= 0 ? (stages[reachedIndex] ?? null) : null);
@@ -505,6 +523,21 @@ export function resolveStageTimings(input: ResolveStageTimingsInput): ResolvedSt
       : null;
 
   return {
+    preambleStages,
+    highsGroup: {
+      title: "Optimización HiGHS",
+      stages: highsSubStages,
+      totalSeconds: highsTotal.seconds,
+      totalSource: highsTotal.source,
+      solverStatus,
+    },
+    resultsGroup: {
+      title: "Procesamiento de resultados",
+      stages: resultsSubStages,
+      totalSeconds: resultsTotal.seconds,
+      totalSource: resultsTotal.source,
+    },
+    epilogueStages,
     stages: nonGroupedStages,
     highsSubStages,
     highsTotalSeconds: highsTotal.seconds,
