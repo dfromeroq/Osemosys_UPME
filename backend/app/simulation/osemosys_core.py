@@ -261,8 +261,6 @@ def run_osemosys_from_db(
         # =============================================================
         # 5. Procesar resultados (celda 31 del notebook)
         # =============================================================
-        if on_stage:
-            on_stage("process_results", 89.0)
         t = perf_counter()
         sets = proc_result.sets
         results = process_results(
@@ -285,6 +283,7 @@ def run_osemosys_from_db(
             dailytimebracket_id_by_name=proc_result.dailytimebracket_id_by_name,
             storage_id_by_name=proc_result.storage_id_by_name,
             materialize_intermediate=materialize_intermediate,
+            on_stage=on_stage,
         )
         timings["results_processing_seconds"] = perf_counter() - t
 
@@ -466,8 +465,6 @@ def run_osemosys_from_csv_dir(
     if on_stage:
         on_stage("solver", 88.0)
 
-    if on_stage:
-        on_stage("process_results", 89.0)
     sets = proc_result.sets
     t = perf_counter()
     results = process_results(
@@ -490,6 +487,7 @@ def run_osemosys_from_csv_dir(
         dailytimebracket_id_by_name=proc_result.dailytimebracket_id_by_name,
         storage_id_by_name=proc_result.storage_id_by_name,
         materialize_intermediate=materialize_intermediate,
+        on_stage=on_stage,
     )
     timings["results_processing_seconds"] = perf_counter() - t
 
@@ -628,8 +626,6 @@ def run_osemosys_from_excel(
         if on_stage:
             on_stage("solver", 88.0)
 
-        if on_stage:
-            on_stage("process_results", 89.0)
         t = perf_counter()
         sets = proc_result.sets
         results = process_results(
@@ -652,6 +648,7 @@ def run_osemosys_from_excel(
             dailytimebracket_id_by_name=proc_result.dailytimebracket_id_by_name,
             storage_id_by_name=proc_result.storage_id_by_name,
             materialize_intermediate=materialize_intermediate,
+            on_stage=on_stage,
         )
         timings["results_processing_seconds"] = perf_counter() - t
 
@@ -661,4 +658,3 @@ def run_osemosys_from_excel(
             on_stage("process_results_complete", 93.0)
 
         return results
-        

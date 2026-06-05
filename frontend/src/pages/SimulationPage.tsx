@@ -59,6 +59,9 @@ const CRITICAL_SIMULATION_LOG_STAGES = new Set([
   "solver",
   "release_model",
   "process_results",
+  "process_results_precompute",
+  "process_results_typed",
+  "process_results_intermediate",
   "process_results_complete",
   "persist_results",
   "infeasibility_analysis_start",
@@ -84,6 +87,9 @@ const SIMULATION_LOG_STAGE_LABELS: Record<string, string> = {
   solver: "Optimización finalizada",
   release_model: "Liberar memoria del modelo",
   process_results: "Procesar resultados (Pyomo)",
+  process_results_precompute: "Precomputar agregados de actividad",
+  process_results_typed: "Extraer dispatch, capacidad y emisiones",
+  process_results_intermediate: "Extraer variables intermedias Pyomo",
   process_results_complete: "Resultados extraídos",
   infeasibility_analysis_start: "Analizando infactibilidad",
   infeasibility_analysis_complete: "Análisis de infactibilidad completado",
@@ -851,9 +857,13 @@ export function SimulationPage() {
     let cancelled = false;
     const poll = async () => {
       try {
-        const res = await simulationApi.listLogs(logsOpenForJob, 100, 1);
+        const [logsRes, runRes] = await Promise.all([
+          simulationApi.listLogs(logsOpenForJob, 100, 1),
+          simulationApi.getRun(logsOpenForJob),
+        ]);
         if (cancelled) return;
-        setLogsByJob((prev) => ({ ...prev, [logsOpenForJob]: res.data }));
+        setLogsByJob((prev) => ({ ...prev, [logsOpenForJob]: logsRes.data }));
+        setRuns((prev) => prev.map((r) => (r.id === logsOpenForJob ? { ...r, ...runRes } : r)));
       } catch {
         // silencioso: errores de red esporádicos no deben cerrar el modal
       }
@@ -2554,10 +2564,14 @@ export function SimulationPage() {
                           {selectedLogsJobActive
                             ? logsBanner.currentStageSource === "measured"
                               ? " (medido)"
-                              : " en curso"
+                              : logsBanner.currentStageSource === "inferred"
+                                ? " (estimado)"
+                                : " en curso"
                             : logsBanner.currentStageSource === "measured"
                               ? " (medido)"
-                              : ""}
+                              : logsBanner.currentStageSource === "inferred"
+                                ? " (estimado)"
+                                : ""}
                         </div>
                       </div>
                       <div style={{ marginLeft: "auto", fontSize: 12, opacity: 0.7, textAlign: "right" }}>

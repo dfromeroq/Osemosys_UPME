@@ -117,6 +117,18 @@ STAGE_EVENT_MESSAGES: Final[dict[str, tuple[str, str]]] = {
         "Extrayendo resultados del modelo Pyomo (dispatch, capacidades, emisiones…).",
         "STAGE",
     ),
+    "process_results_precompute": (
+        "Precomputando agregados de actividad (RateOfActivity).",
+        "STAGE",
+    ),
+    "process_results_typed": (
+        "Extrayendo variables principales: dispatch, capacidad, demanda no atendida y emisiones.",
+        "STAGE",
+    ),
+    "process_results_intermediate": (
+        "Extrayendo variables intermedias del modelo Pyomo (puede tardar varios minutos).",
+        "STAGE",
+    ),
     "process_results_complete": (
         "Extracción de resultados completada; preparando persistencia en BD.",
         "STAGE",

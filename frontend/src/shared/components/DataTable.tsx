@@ -11,7 +11,8 @@
  * Todos los casos requieren `getValue(row)` (cadena).
  */
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
+import { DataTableColumnFilter } from "@/shared/components/DataTableColumnFilter";
 import { TextField } from "@/shared/components/TextField";
 
 export type ColumnFilterConfig<T> = {
@@ -217,68 +218,23 @@ export function DataTable<T>({
                     color: "var(--muted)",
                   }}
                 >
-                  {c.header}
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    {c.header}
+                    {c.filter ? (
+                      <DataTableColumnFilter
+                        columnLabel={c.header}
+                        config={c.filter}
+                        multiOptions={multiOptionsByKey[c.key] ?? []}
+                        textValue={columnFilters[c.key] ?? ""}
+                        multiSelected={multiFilters[c.key] ?? []}
+                        onTextChange={(v) => setFilter(c.key, v)}
+                        onMultiChange={(vals) => setMulti(c.key, vals)}
+                      />
+                    ) : null}
+                  </span>
                 </th>
               ))}
             </tr>
-            {hasColumnFilters ? (
-              <tr style={{ background: "rgba(255,255,255,0.015)" }}>
-                {columns.map((c) => (
-                  <th
-                    key={`${c.key}-filter`}
-                    style={{ padding: "6px 10px", verticalAlign: "top" }}
-                  >
-                    {c.filter ? (
-                      c.filter.type === "multiselect" ? (
-                        <MultiSelectFilter
-                          options={multiOptionsByKey[c.key] ?? []}
-                          selected={multiFilters[c.key] ?? []}
-                          onChange={(values) => setMulti(c.key, values)}
-                          placeholder={c.filter.placeholder ?? "Filtrar…"}
-                        />
-                      ) : c.filter.type === "select" ? (
-                        <select
-                          value={columnFilters[c.key] ?? ""}
-                          onChange={(e) => setFilter(c.key, e.target.value)}
-                          style={{
-                            width: "100%",
-                            padding: "4px 6px",
-                            borderRadius: 6,
-                            border: "1px solid rgba(255,255,255,0.15)",
-                            background: "rgba(15,23,42,0.6)",
-                            color: "inherit",
-                            fontSize: 12,
-                          }}
-                        >
-                          <option value="">Todos</option>
-                          {(c.filter.options ?? []).map((o) => (
-                            <option key={o.value} value={o.value}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          type="text"
-                          value={columnFilters[c.key] ?? ""}
-                          onChange={(e) => setFilter(c.key, e.target.value)}
-                          placeholder={c.filter.placeholder ?? "Filtrar…"}
-                          style={{
-                            width: "100%",
-                            padding: "4px 6px",
-                            borderRadius: 6,
-                            border: "1px solid rgba(255,255,255,0.15)",
-                            background: "rgba(15,23,42,0.6)",
-                            color: "inherit",
-                            fontSize: 12,
-                          }}
-                        />
-                      )
-                    ) : null}
-                  </th>
-                ))}
-              </tr>
-            ) : null}
           </thead>
           <tbody>
             {paginated.length === 0 ? (
@@ -374,193 +330,6 @@ export function DataTable<T>({
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-/** Dropdown compacto: botón con resumen + popover con búsqueda y checkboxes. */
-function MultiSelectFilter({
-  options,
-  selected,
-  onChange,
-  placeholder,
-}: {
-  options: { value: string; label: string }[];
-  selected: string[];
-  onChange: (next: string[]) => void;
-  placeholder: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const rootRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDocClick(e: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [open]);
-
-  const selectedSet = useMemo(() => new Set(selected), [selected]);
-  const filteredOpts = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter((o) => o.label.toLowerCase().includes(q));
-  }, [options, query]);
-
-  const summary =
-    selected.length === 0
-      ? placeholder
-      : selected.length === 1
-        ? options.find((o) => o.value === selected[0])?.label ?? selected[0]
-        : `${selected.length} seleccionados`;
-
-  const toggle = (value: string) => {
-    if (selectedSet.has(value)) {
-      onChange(selected.filter((v) => v !== value));
-    } else {
-      onChange([...selected, value]);
-    }
-  };
-
-  return (
-    <div ref={rootRef} style={{ position: "relative" }}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 6,
-          padding: "4px 6px",
-          borderRadius: 6,
-          border: "1px solid rgba(255,255,255,0.15)",
-          background: "rgba(15,23,42,0.6)",
-          color: "inherit",
-          fontSize: 12,
-          cursor: "pointer",
-          textAlign: "left",
-        }}
-      >
-        <span
-          style={{
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            opacity: selected.length === 0 ? 0.65 : 1,
-          }}
-        >
-          {summary}
-        </span>
-        <span style={{ opacity: 0.7, fontSize: 10 }}>{open ? "▴" : "▾"}</span>
-      </button>
-      {open ? (
-        <div
-          style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            left: 0,
-            right: 0,
-            minWidth: 180,
-            zIndex: 30,
-            background: "#0f172a",
-            border: "1px solid rgba(255,255,255,0.2)",
-            borderRadius: 10,
-            padding: 6,
-            maxHeight: 280,
-            overflowY: "auto",
-            boxShadow: "0 10px 30px rgba(0,0,0,0.4)",
-          }}
-        >
-          <input
-            autoFocus
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar…"
-            style={{
-              width: "100%",
-              padding: "4px 6px",
-              borderRadius: 6,
-              border: "1px solid rgba(255,255,255,0.15)",
-              background: "rgba(15,23,42,0.85)",
-              color: "inherit",
-              fontSize: 12,
-              marginBottom: 4,
-            }}
-          />
-          <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>
-            <button
-              type="button"
-              className="btn btn--ghost"
-              style={{ flex: 1, fontSize: 11, padding: "2px 6px" }}
-              onClick={() => onChange(filteredOpts.map((o) => o.value))}
-            >
-              Todos
-            </button>
-            <button
-              type="button"
-              className="btn btn--ghost"
-              style={{ flex: 1, fontSize: 11, padding: "2px 6px" }}
-              onClick={() => onChange([])}
-            >
-              Ninguno
-            </button>
-          </div>
-          {filteredOpts.length === 0 ? (
-            <div style={{ fontSize: 12, opacity: 0.6, padding: "6px 4px" }}>
-              Sin coincidencias
-            </div>
-          ) : (
-            filteredOpts.map((o) => {
-              const checked = selectedSet.has(o.value);
-              return (
-                <label
-                  key={o.value}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "4px 6px",
-                    borderRadius: 6,
-                    cursor: "pointer",
-                    fontSize: 12,
-                    background: checked ? "rgba(56,189,248,0.12)" : "transparent",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!checked)
-                      e.currentTarget.style.background = "rgba(255,255,255,0.05)";
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!checked) e.currentTarget.style.background = "transparent";
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggle(o.value)}
-                  />
-                  <span
-                    style={{
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {o.label}
-                  </span>
-                </label>
-              );
-            })
-          )}
-        </div>
-      ) : null}
     </div>
   );
 }

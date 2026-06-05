@@ -1,7 +1,7 @@
 import type { RunStatus, SimulationLog } from "@/types/domain";
 
 export type StageTimingStatus = "pending" | "running" | "done";
-export type StageTimingSource = "measured" | "live" | null;
+export type StageTimingSource = "measured" | "live" | "inferred" | null;
 export type TimingDictSource = "stage_times" | "model_timings";
 
 export type CanonicalStageId =
@@ -13,7 +13,9 @@ export type CanonicalStageId =
   | "solver_read_model"
   | "solver_run"
   | "solver_map_solution"
-  | "process_results"
+  | "process_results_precompute"
+  | "process_results_typed"
+  | "process_results_intermediate"
   | "persist_results"
   | "infeasibility_analysis";
 
@@ -26,6 +28,10 @@ export type CanonicalStageDef = {
   logStages: string[];
   /** Sub-etapa del bloque HiGHS (agrupación visual). */
   highsSubStage?: boolean;
+  /** Sub-etapa del bloque de procesamiento de resultados. */
+  resultsSubStage?: boolean;
+  /** Claves legacy en model_timings si timingKey aún no existe. */
+  fallbackTimingKeys?: string[];
 };
 
 /** Etapas de log que son marcadores (sin duración propia). */
@@ -35,6 +41,7 @@ export const MARKER_LOG_STAGES = new Set([
   "data_loaded",
   "instance_ready",
   "create_instance",
+  "process_results",
   "process_results_complete",
   "release_model",
   "end",
@@ -108,11 +115,31 @@ export const CANONICAL_STAGES: CanonicalStageDef[] = [
     highsSubStage: true,
   },
   {
-    id: "process_results",
-    label: "Extraer resultados Pyomo",
-    timingKey: "results_processing_seconds",
+    id: "process_results_precompute",
+    label: "Precomputar agregados de actividad",
+    timingKey: "process_results_precompute_seconds",
     source: "model_timings",
-    logStages: ["process_results"],
+    logStages: ["process_results_precompute", "process_results"],
+    resultsSubStage: true,
+    fallbackTimingKeys: ["precompute_roa_aggregates_seconds"],
+  },
+  {
+    id: "process_results_typed",
+    label: "Extraer dispatch, capacidad y emisiones",
+    timingKey: "process_results_typed_seconds",
+    source: "model_timings",
+    logStages: ["process_results_typed"],
+    resultsSubStage: true,
+    fallbackTimingKeys: ["extract_results_seconds"],
+  },
+  {
+    id: "process_results_intermediate",
+    label: "Extraer variables intermedias Pyomo",
+    timingKey: "process_results_intermediate_seconds",
+    source: "model_timings",
+    logStages: ["process_results_intermediate"],
+    resultsSubStage: true,
+    fallbackTimingKeys: ["intermediate_vars_seconds"],
   },
   {
     id: "persist_results",
@@ -139,6 +166,15 @@ for (const stage of CANONICAL_STAGES) {
 
 const ACTIVE_JOB_STATUSES = new Set<RunStatus>(["QUEUED", "RUNNING"]);
 
+const HIGHS_START_INDEX = CANONICAL_STAGES.findIndex((s) => s.id === "solver_write_lp");
+const RESULTS_START_INDEX = CANONICAL_STAGES.findIndex(
+  (s) => s.id === "process_results_precompute",
+);
+
+function getStageIndex(id: CanonicalStageId): number {
+  return CANONICAL_STAGES.findIndex((s) => s.id === id);
+}
+
 export type ResolvedStage = {
   id: CanonicalStageId;
   label: string;
@@ -147,6 +183,7 @@ export type ResolvedStage = {
   source: StageTimingSource;
   startedAt?: Date | undefined;
   highsSubStage?: boolean | undefined;
+  resultsSubStage?: boolean | undefined;
 };
 
 export type ResolvedStageTimings = {
@@ -154,6 +191,9 @@ export type ResolvedStageTimings = {
   highsSubStages: ResolvedStage[];
   highsTotalSeconds: number | null;
   highsTotalSource: "measured" | "derived" | null;
+  resultsSubStages: ResolvedStage[];
+  resultsTotalSeconds: number | null;
+  resultsTotalSource: "measured" | "derived" | null;
   solverStatus: string | null;
   currentStage: ResolvedStage | null;
   totalSeconds: number | null;
@@ -188,22 +228,35 @@ function readTimingValue(
   return null;
 }
 
-function findLogStartForStage(logs: SimulationLog[], logStages: string[]): SimulationLog | null {
+function findFirstLogForStage(logs: SimulationLog[], logStages: string[]): SimulationLog | null {
   const wanted = new Set(logStages.map((s) => s.toLowerCase()));
-  for (let i = logs.length - 1; i >= 0; i -= 1) {
-    const log = logs[i];
-    if (!log) continue;
+  for (const log of logs) {
     if (wanted.has(normalizeLogStage(log.stage))) return log;
   }
   return null;
 }
 
-function resolveActiveCanonicalId(logs: SimulationLog[]): CanonicalStageId | null {
-  for (let i = logs.length - 1; i >= 0; i -= 1) {
-    const key = normalizeLogStage(logs[i]?.stage);
-    if (MARKER_LOG_STAGES.has(key)) continue;
-    const canonical = LOG_STAGE_TO_CANONICAL.get(key);
-    if (canonical) return canonical;
+/** Índice más avanzado alcanzado según los logs (ignora marcadores sin mapeo). */
+function resolveReachedStageIndex(logs: SimulationLog[]): number {
+  let maxIdx = -1;
+  for (const log of logs) {
+    const canonical = LOG_STAGE_TO_CANONICAL.get(normalizeLogStage(log.stage));
+    if (!canonical) continue;
+    const idx = getStageIndex(canonical);
+    if (idx > maxIdx) maxIdx = idx;
+  }
+  return maxIdx;
+}
+
+function findFirstLaterStageLogMs(logs: SimulationLog[], stageIndex: number): number | null {
+  for (const log of logs) {
+    const canonical = LOG_STAGE_TO_CANONICAL.get(normalizeLogStage(log.stage));
+    if (!canonical) continue;
+    const idx = getStageIndex(canonical);
+    if (idx > stageIndex) {
+      const ms = new Date(log.created_at).getTime();
+      return Number.isFinite(ms) ? ms : null;
+    }
   }
   return null;
 }
@@ -221,20 +274,36 @@ function buildResolvedStage(
     source: partial.source,
     ...(startedAt ? { startedAt } : {}),
     ...(def.highsSubStage ? { highsSubStage: true } : {}),
+    ...(def.resultsSubStage ? { resultsSubStage: true } : {}),
   };
+}
+
+function readMeasuredTiming(
+  dict: Record<string, number | string> | null | undefined,
+  def: CanonicalStageDef,
+): number | null {
+  const primary = readTimingValue(dict, def.timingKey);
+  if (primary !== null) return primary;
+  for (const key of def.fallbackTimingKeys ?? []) {
+    const fallback = readTimingValue(dict, key);
+    if (fallback !== null) return fallback;
+  }
+  return null;
 }
 
 function resolveOneStage(
   def: CanonicalStageDef,
+  stageIndex: number,
   input: ResolveStageTimingsInput,
-  activeCanonicalId: CanonicalStageId | null,
+  reachedIndex: number,
   jobActive: boolean,
   endMs: number,
 ): ResolvedStage {
   const dict = def.source === "stage_times" ? input.stageTimes : input.modelTimings;
-  const measured = readTimingValue(dict, def.timingKey);
-  const startLog = findLogStartForStage(input.logs, def.logStages);
+  const measured = readMeasuredTiming(dict, def);
+  const startLog = findFirstLogForStage(input.logs, def.logStages);
   const startedAt = startLog ? new Date(startLog.created_at) : undefined;
+  const startMs = startLog ? new Date(startLog.created_at).getTime() : null;
 
   if (measured !== null) {
     return buildResolvedStage(def, startedAt, {
@@ -244,25 +313,54 @@ function resolveOneStage(
     });
   }
 
-  if (jobActive && activeCanonicalId === def.id && startLog) {
-    const startMs = new Date(startLog.created_at).getTime();
-    const liveSeconds =
-      Number.isFinite(startMs) ? Math.max(0, (endMs - startMs) / 1000) : null;
+  if (reachedIndex < 0) {
     return buildResolvedStage(def, startedAt, {
-      status: "running",
-      durationSeconds: liveSeconds,
-      source: "live",
+      status: "pending",
+      durationSeconds: null,
+      source: null,
     });
   }
 
-  if (!jobActive && activeCanonicalId === def.id && startLog) {
-    const startMs = new Date(startLog.created_at).getTime();
-    const frozenSeconds =
-      Number.isFinite(startMs) ? Math.max(0, (endMs - startMs) / 1000) : null;
+  if (stageIndex < reachedIndex) {
+    if (startMs != null && Number.isFinite(startMs)) {
+      const laterMs = findFirstLaterStageLogMs(input.logs, stageIndex);
+      const endPointMs = laterMs ?? endMs;
+      return buildResolvedStage(def, startedAt, {
+        status: "done",
+        durationSeconds: Math.max(0, (endPointMs - startMs) / 1000),
+        source: "inferred",
+      });
+    }
     return buildResolvedStage(def, startedAt, {
       status: "done",
-      durationSeconds: frozenSeconds,
-      source: "live",
+      durationSeconds: null,
+      source: null,
+    });
+  }
+
+  if (stageIndex === reachedIndex) {
+    if (jobActive) {
+      const durationSeconds =
+        startMs != null && Number.isFinite(startMs)
+          ? Math.max(0, (endMs - startMs) / 1000)
+          : null;
+      return buildResolvedStage(def, startedAt, {
+        status: "running",
+        durationSeconds,
+        source: startMs != null ? "live" : null,
+      });
+    }
+    if (startMs != null && Number.isFinite(startMs)) {
+      return buildResolvedStage(def, startedAt, {
+        status: "done",
+        durationSeconds: Math.max(0, (endMs - startMs) / 1000),
+        source: "inferred",
+      });
+    }
+    return buildResolvedStage(def, startedAt, {
+      status: "done",
+      durationSeconds: null,
+      source: null,
     });
   }
 
@@ -292,9 +390,51 @@ function resolveHighsTotal(
     };
   }
 
+  const timedSubs = highsSubStages
+    .map((s) => (s.durationSeconds !== null ? s.durationSeconds : null))
+    .filter((v): v is number => v !== null);
+  if (timedSubs.length > 0) {
+    return {
+      seconds: timedSubs.reduce((sum, v) => sum + v, 0),
+      source: "derived",
+    };
+  }
+
   const runOnly = readTimingValue(modelTimings, "solver_run_seconds");
   if (runOnly !== null) {
     return { seconds: runOnly, source: "measured" };
+  }
+
+  return { seconds: null, source: null };
+}
+
+function resolveResultsTotal(
+  resultsSubStages: ResolvedStage[],
+  modelTimings?: Record<string, number | string> | null,
+): { seconds: number | null; source: "measured" | "derived" | null } {
+  const totalSeconds = readTimingValue(modelTimings, "results_processing_seconds");
+  if (totalSeconds !== null) {
+    return { seconds: totalSeconds, source: "measured" };
+  }
+
+  const measuredSubs = resultsSubStages
+    .map((s) => (s.source === "measured" ? s.durationSeconds : null))
+    .filter((v): v is number => v !== null);
+  if (measuredSubs.length > 0) {
+    return {
+      seconds: measuredSubs.reduce((sum, v) => sum + v, 0),
+      source: "derived",
+    };
+  }
+
+  const timedSubs = resultsSubStages
+    .map((s) => (s.durationSeconds !== null ? s.durationSeconds : null))
+    .filter((v): v is number => v !== null);
+  if (timedSubs.length > 0) {
+    return {
+      seconds: timedSubs.reduce((sum, v) => sum + v, 0),
+      source: "derived",
+    };
   }
 
   return { seconds: null, source: null };
@@ -332,25 +472,31 @@ export function resolveStageTimings(input: ResolveStageTimingsInput): ResolvedSt
         ? new Date(input.logs[input.logs.length - 1]!.created_at).getTime()
         : input.liveNowMs;
 
-  const activeCanonicalId = resolveActiveCanonicalId(input.logs);
-  const stages = CANONICAL_STAGES.map((def) =>
-    resolveOneStage(def, input, activeCanonicalId, jobActive, endMs),
+  const reachedIndex = resolveReachedStageIndex(input.logs);
+  const stages = CANONICAL_STAGES.map((def, stageIndex) =>
+    resolveOneStage(def, stageIndex, input, reachedIndex, jobActive, endMs),
   );
 
-  const highsSubStages = stages.filter((s) => s.highsSubStage);
-  const hasHighsKeys =
-    highsSubStages.some((s) => s.source === "measured") ||
-    readTimingValue(input.modelTimings, "solver_seconds") !== null ||
-    readTimingValue(input.modelTimings, "solver_run_seconds") !== null;
+  const showHighsSection = reachedIndex >= HIGHS_START_INDEX;
+  const highsSubStages = showHighsSection ? stages.filter((s) => s.highsSubStage) : [];
 
-  const highsTotal = hasHighsKeys
+  const highsTotal = showHighsSection
     ? resolveHighsTotal(highsSubStages, input.modelTimings)
     : { seconds: null, source: null };
 
-  const nonHighsStages = stages.filter((s) => !s.highsSubStage);
+  const showResultsSection = reachedIndex >= RESULTS_START_INDEX;
+  const resultsSubStages = showResultsSection
+    ? stages.filter((s) => s.resultsSubStage)
+    : [];
+
+  const resultsTotal = showResultsSection
+    ? resolveResultsTotal(resultsSubStages, input.modelTimings)
+    : { seconds: null, source: null };
+
+  const nonGroupedStages = stages.filter((s) => !s.highsSubStage && !s.resultsSubStage);
   const currentStage =
     stages.find((s) => s.status === "running") ??
-    (activeCanonicalId ? stages.find((s) => s.id === activeCanonicalId) ?? null : null);
+    (reachedIndex >= 0 ? (stages[reachedIndex] ?? null) : null);
 
   const rawSolverStatus = input.modelTimings?.solver_status;
   const solverStatus =
@@ -359,10 +505,13 @@ export function resolveStageTimings(input: ResolveStageTimingsInput): ResolvedSt
       : null;
 
   return {
-    stages: nonHighsStages,
-    highsSubStages: hasHighsKeys ? highsSubStages : [],
+    stages: nonGroupedStages,
+    highsSubStages,
     highsTotalSeconds: highsTotal.seconds,
     highsTotalSource: highsTotal.source,
+    resultsSubStages,
+    resultsTotalSeconds: resultsTotal.seconds,
+    resultsTotalSource: resultsTotal.source,
     solverStatus,
     currentStage,
     totalSeconds: getJobTotalDurationSeconds({
@@ -392,7 +541,11 @@ export function getTopSlowStages(
   resolved: ResolvedStageTimings,
   limit = 3,
 ): Array<{ label: string; durationSeconds: number }> {
-  const all = [...resolved.stages, ...resolved.highsSubStages].filter(
+  const all = [
+    ...resolved.stages,
+    ...resolved.highsSubStages,
+    ...resolved.resultsSubStages,
+  ].filter(
     (s) => s.durationSeconds !== null && s.source === "measured",
   );
   return all

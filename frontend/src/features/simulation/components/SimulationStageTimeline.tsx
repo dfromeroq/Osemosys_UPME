@@ -64,8 +64,12 @@ function StageRow({
     stage.source === "measured"
       ? "medido"
       : stage.source === "live"
-        ? "en curso"
-        : null;
+        ? stage.status === "running"
+          ? "en curso"
+          : "estimado"
+        : stage.source === "inferred"
+          ? "estimado"
+          : null;
 
   return (
     <div
@@ -168,6 +172,42 @@ export function SimulationStageTimeline(props: Props) {
           <StageRow key={stage.id} stage={stage} compact={compact} />
         ))}
       </div>
+
+      {resolved.resultsSubStages.length > 0 ? (
+        <div
+          style={{
+            display: "grid",
+            gap: 4,
+            padding: compact ? "8px 0 0" : "10px 0 0",
+            borderTop: "1px solid rgba(96,165,250,0.18)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <span style={{ fontWeight: 700, fontSize: compact ? 12 : 13 }}>
+              Procesamiento de resultados
+            </span>
+            {resolved.resultsTotalSeconds !== null ? (
+              <span style={{ fontWeight: 800, fontVariantNumeric: "tabular-nums", fontSize: compact ? 13 : 15 }}>
+                {formatReadableDuration(resolved.resultsTotalSeconds)}
+                {resolved.resultsTotalSource === "derived" ? (
+                  <span style={{ fontSize: 10, opacity: 0.65, marginLeft: 6 }}>(suma)</span>
+                ) : null}
+              </span>
+            ) : null}
+          </div>
+          {resolved.resultsSubStages.map((stage) => (
+            <StageRow key={stage.id} stage={stage} indent compact={compact} />
+          ))}
+        </div>
+      ) : null}
 
       {resolved.highsSubStages.length > 0 ? (
         <div

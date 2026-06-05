@@ -1233,6 +1233,7 @@ def process_results(
     storage_id_by_name: dict[str, int] | None = None,
     parallel: bool = True,
     materialize_intermediate: bool = True,
+    on_stage: Callable[[str, float], None] | None = None,
 ) -> dict:
     """Construye el dict de resultados compatible con el pipeline.
 
@@ -1253,11 +1254,17 @@ def process_results(
         if y_num is not None:
             normalized_years.append(y_num)
 
-    t_extract = perf_counter()
+    if on_stage:
+        on_stage("process_results_precompute", 89.3)
+    t_precompute = perf_counter()
     with profile.time_block("precompute_roa_aggregates_seconds"):
         aggregates = _precompute_roa_aggregates(instance)
+    timings["process_results_precompute_seconds"] = perf_counter() - t_precompute
     profile.set_count("roa_entries", len(aggregates.roa_raw))
 
+    if on_stage:
+        on_stage("process_results_typed", 89.6)
+    t_typed = perf_counter()
     parallel_tasks = [
         (
             "dispatch",
@@ -1302,7 +1309,6 @@ def process_results(
     new_capacity = typed["new_capacity"]
     unmet = typed["unmet"]
     annual_emissions = typed["annual_emissions"]
-    timings["extract_results_seconds"] = perf_counter() - t_extract
     profile.set_count("dispatch_rows", len(dispatch))
     profile.set_count("new_capacity_rows", len(new_capacity))
 
@@ -1311,7 +1317,6 @@ def process_results(
     _attach_region_names(unmet, region_name_by_id)
     _attach_region_names(annual_emissions, region_name_by_id)
 
-    t_summary = perf_counter()
     total_dispatch = sum(row["dispatch"] for row in dispatch)
     total_unmet = sum(row["unmet_demand"] for row in unmet)
 
@@ -1326,7 +1331,14 @@ def process_results(
     sol = _build_sol_dict(
         dispatch, new_capacity, unmet, annual_emissions, region_name_by_id,
     )
+    timings["process_results_typed_seconds"] = perf_counter() - t_typed
+    timings["extract_results_seconds"] = (
+        timings["process_results_precompute_seconds"] + timings["process_results_typed_seconds"]
+    )
 
+    if on_stage:
+        on_stage("process_results_intermediate", 91.0)
+    t_intermediate = perf_counter()
     intermediate_variables: dict[str, list] = {}
     intermediate_entry_iter = None
     pyomo_out: dict[str, list] = {}
@@ -1353,7 +1365,8 @@ def process_results(
             intermediate_entry_iter = _iter_intermediate_entries(
                 pyomo_out, tca_entries, anc_entries, prod_entries, use_entries,
             )
-    timings["intermediate_vars_seconds"] = perf_counter() - t_summary
+    timings["process_results_intermediate_seconds"] = perf_counter() - t_intermediate
+    timings["intermediate_vars_seconds"] = timings["process_results_intermediate_seconds"]
     profile.set_count(
         "intermediate_var_names",
         len(intermediate_variables) if materialize_intermediate else len(pyomo_out),
