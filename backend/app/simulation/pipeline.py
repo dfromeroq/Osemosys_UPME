@@ -22,7 +22,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any, Final
 
 from sqlalchemy import func, insert
@@ -157,6 +157,43 @@ def _resolve_stage_event(stage_name: str) -> tuple[str, str]:
         stage_name,
         (f"Bloque {stage_name} ejecutado.", "STAGE"),
     )
+
+
+def _make_on_stage_callback(
+    db: Session,
+    *,
+    job: SimulationJob,
+    job_id: int,
+) -> Callable[..., None]:
+    """Callback de progreso del worker; persiste timings parciales del solver."""
+
+    def _on_stage(
+        stage_name: str,
+        stage_progress: float,
+        *,
+        timing_key: str | None = None,
+        timing_value: float | None = None,
+        timing_only: bool = False,
+    ) -> None:
+        if not timing_only:
+            job.progress = stage_progress
+            msg, evt = _resolve_stage_event(stage_name)
+            SimulationRepository.add_event(
+                db,
+                job_id=job_id,
+                event_type=evt,
+                stage=stage_name,
+                message=msg,
+                progress=stage_progress,
+            )
+        if timing_key is not None and timing_value is not None:
+            mt = dict(job.model_timings_json or {})
+            mt[timing_key] = float(timing_value)
+            job.model_timings_json = mt
+        db.commit()
+        _check_cancel_requested(db, job_id=job_id)
+
+    return _on_stage
 
 
 def _build_csv_inputs_summary(csv_root: str | Path) -> tuple[int, list[dict[str, Any]]]:
@@ -602,19 +639,7 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
     )
     db.commit()
 
-    def _on_stage(stage_name: str, stage_progress: float) -> None:
-        job.progress = stage_progress
-        msg, evt = _resolve_stage_event(stage_name)
-        SimulationRepository.add_event(
-            db,
-            job_id=job_id,
-            event_type=evt,
-            stage=stage_name,
-            message=msg,
-            progress=stage_progress,
-        )
-        db.commit()
-        _check_cancel_requested(db, job_id=job_id)
+    _on_stage = _make_on_stage_callback(db, job=job, job_id=job_id)
 
     _gen_lp = bool(getattr(job, "generate_lp", False))
     _scenario_name = getattr(getattr(job, "scenario", None), "name", None)
@@ -775,19 +800,7 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
     )
     db.commit()
 
-    def _on_stage(stage_name: str, stage_progress: float) -> None:
-        job.progress = stage_progress
-        msg, evt = _resolve_stage_event(stage_name)
-        SimulationRepository.add_event(
-            db,
-            job_id=job_id,
-            event_type=evt,
-            stage=stage_name,
-            message=msg,
-            progress=stage_progress,
-        )
-        db.commit()
-        _check_cancel_requested(db, job_id=job_id)
+    _on_stage = _make_on_stage_callback(db, job=job, job_id=job_id)
 
     _gen_lp = bool(getattr(job, "generate_lp", False))
     _lp_dir_eff = _lp_dir_for_jobs() if _gen_lp else None

@@ -54,30 +54,6 @@ def _latest_updated(db: Session) -> tuple[object | None, object | None]:
         SOLVER_HIGHS_METHOD_KEY,
         SOLVER_HIGHS_PRESOLVE_KEY,
         SOLVER_HIGHS_PARALLEL_KEY,
-        SOLVER_HIGHS_CROSSOVER_KEY,
-        SOLVER_HIGHS_USE_DIRECT_KEY,
-        SOLVER_HIGHS_TIME_LIMIT_KEY,
-        SOLVER_HIGHS_IPM_TOL_KEY,
-        SOLVER_HIGHS_PRIMAL_TOL_KEY,
-    ]
-    latest_at = None
-    latest_by = None
-    for key in keys:
-        row = SystemSettingsService.get_raw(db, key)
-        if row is None or row.updated_at is None:
-            continue
-        if latest_at is None or row.updated_at >= latest_at:
-            latest_at = row.updated_at
-            latest_by = row.updated_by
-    return latest_at, latest_by
-
-
-def _latest_updated(db: Session) -> tuple[object | None, object | None]:
-    keys = [
-        SOLVER_THREADS_KEY,
-        SOLVER_HIGHS_METHOD_KEY,
-        SOLVER_HIGHS_PRESOLVE_KEY,
-        SOLVER_HIGHS_PARALLEL_KEY,
         SOLVER_HIGHS_HIPO_PARALLEL_TYPE_KEY,
         SOLVER_HIGHS_CROSSOVER_KEY,
         SOLVER_HIGHS_USE_DIRECT_KEY,

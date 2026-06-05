@@ -35,7 +35,7 @@ export function JobLogsModal({ jobId, onClose }: Props) {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    Promise.all([simulationApi.listLogs(jobId, 200, 1), simulationApi.getRun(jobId)])
+    Promise.all([simulationApi.listLatestLogs(jobId, 200), simulationApi.getRun(jobId)])
       .then(([logsRes, runRes]) => {
         if (!cancelled) {
           setLogs(logsRes.data);
@@ -69,8 +69,14 @@ export function JobLogsModal({ jobId, onClose }: Props) {
     let cancelled = false;
     const poll = async () => {
       try {
-        const runRes = await simulationApi.getRun(jobId);
-        if (!cancelled) setRun(runRes);
+        const [logsRes, runRes] = await Promise.all([
+          simulationApi.listLatestLogs(jobId, 200),
+          simulationApi.getRun(jobId),
+        ]);
+        if (!cancelled) {
+          setLogs(logsRes.data);
+          setRun(runRes);
+        }
       } catch {
         // ignorar errores esporádicos de red
       }

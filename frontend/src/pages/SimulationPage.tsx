@@ -754,7 +754,7 @@ export function SimulationPage() {
   async function loadLogs(jobId: number) {
     try {
       setLoadingLogs(true);
-      const res = await simulationApi.listLogs(jobId, 100, 1);
+      const res = await simulationApi.listLatestLogs(jobId, 100);
       setLogsByJob((prev) => ({ ...prev, [jobId]: res.data }));
       setLogsOpenForJob(jobId);
     } catch {
@@ -883,7 +883,7 @@ export function SimulationPage() {
     const poll = async () => {
       try {
         const [logsRes, runRes] = await Promise.all([
-          simulationApi.listLogs(logsOpenForJob, 100, 1),
+          simulationApi.listLatestLogs(logsOpenForJob, 100),
           simulationApi.getRun(logsOpenForJob),
         ]);
         if (cancelled) return;

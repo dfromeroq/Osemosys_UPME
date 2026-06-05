@@ -393,13 +393,23 @@ def _solve_with_direct_highspy(
     )
 
     if on_stage:
-        on_stage("solver_read_model", 78.0)
+        on_stage(
+            "solver_read_model",
+            78.0,
+            timing_key="solver_write_lp_seconds",
+            timing_value=timings["solver_write_lp_seconds"],
+        )
     t_read = perf_counter()
     h.readModel(str(lp_path))
     timings["solver_read_model_seconds"] = perf_counter() - t_read
 
     if on_stage:
-        on_stage("solver_run", 82.0)
+        on_stage(
+            "solver_run",
+            82.0,
+            timing_key="solver_read_model_seconds",
+            timing_value=timings["solver_read_model_seconds"],
+        )
     t_run = perf_counter()
     h.run()
     timings["solver_run_seconds"] = perf_counter() - t_run
@@ -407,7 +417,12 @@ def _solve_with_direct_highspy(
     raw_status = _highs_status_to_raw(h.getModelStatus())
 
     if on_stage:
-        on_stage("solver_map_solution", 86.0)
+        on_stage(
+            "solver_map_solution",
+            86.0,
+            timing_key="solver_run_seconds",
+            timing_value=timings["solver_run_seconds"],
+        )
     t_map = perf_counter()
     obj = 0.0
     if "optimal" in raw_status.lower() or raw_status.lower() in {
@@ -418,6 +433,15 @@ def _solve_with_direct_highspy(
         obj, _ = _apply_highspy_solution_to_instance(instance, h)
     timings["solver_map_solution_seconds"] = perf_counter() - t_map
     timings["solver_backend"] = "direct_highspy"
+
+    if on_stage:
+        on_stage(
+            "solver_map_solution",
+            86.0,
+            timing_key="solver_map_solution_seconds",
+            timing_value=timings["solver_map_solution_seconds"],
+            timing_only=True,
+        )
 
     if cleanup_lp:
         try:

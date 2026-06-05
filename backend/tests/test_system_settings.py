@@ -2,26 +2,37 @@
 
 from __future__ import annotations
 
-import app.api.v1.system_settings as system_settings_api
-from app.api.v1.system_settings import _to_public
+from app.api.v1.system_settings import _effective_solver_threads, _hardware_thread_limit, _to_public
 from app.simulation.core.model_definition import _resolve_defaults
 
 
-def test_solver_settings_public_includes_hardware_limits(db_session, monkeypatch) -> None:
-    monkeypatch.setattr(system_settings_api, "_hardware_thread_limit", lambda: 16)
-    monkeypatch.setattr(system_settings_api, "_effective_solver_threads", lambda v: min(v, 16) if v > 0 else 16)
-    public = _to_public(db_session, value=18, updated_at=None, updated_by_id=None)
-    assert public.hardware_thread_limit == 16
-    assert public.effective_threads_preview == 16
-    assert public.solver_threads == 18
+def test_effective_solver_threads_caps_by_hardware(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.api.v1.system_settings._hardware_thread_limit",
+        lambda: 16,
+    )
+    assert _effective_solver_threads(0) == 16
+    assert _effective_solver_threads(18) == 16
+    assert _effective_solver_threads(8) == 8
 
 
-def test_solver_settings_public_zero_uses_all_hardware(db_session, monkeypatch) -> None:
-    monkeypatch.setattr(system_settings_api, "_hardware_thread_limit", lambda: 8)
-    monkeypatch.setattr(system_settings_api, "_effective_solver_threads", lambda v: 8 if v <= 0 else min(v, 8))
-    public = _to_public(db_session, value=0, updated_at=None, updated_by_id=None)
-    assert public.hardware_thread_limit == 8
-    assert public.effective_threads_preview == 8
+def test_effective_solver_threads_zero_uses_all_hardware(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.api.v1.system_settings._hardware_thread_limit",
+        lambda: 8,
+    )
+    assert _effective_solver_threads(0) == 8
+
+
+def test_solver_settings_public_returns_resolved_config(db_session) -> None:
+    public = _to_public(db_session)
+    assert public.solver_threads >= 0
+    assert public.highs_method in ("default", "choose", "simplex", "ipm", "ipx", "hipo")
+    assert public.highs_use_direct is True
+
+
+def test_hardware_thread_limit_is_positive() -> None:
+    assert _hardware_thread_limit() >= 1
 
 
 def test_resolve_defaults_merges_param_defaults_override() -> None:

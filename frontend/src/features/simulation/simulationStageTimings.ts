@@ -252,16 +252,40 @@ function readTimingValue(
   return null;
 }
 
-function findFirstLogForStage(logs: SimulationLog[], logStages: string[]): SimulationLog | null {
+function logTimestampMs(log: SimulationLog): number | null {
+  const ms = new Date(log.created_at).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function findEarliestLogForStage(logs: SimulationLog[], logStages: string[]): SimulationLog | null {
   const wanted = new Set(logStages.map((s) => s.toLowerCase()));
+  let best: SimulationLog | null = null;
+  let bestMs: number | null = null;
   for (const log of logs) {
-    if (wanted.has(normalizeLogStage(log.stage))) return log;
+    if (!wanted.has(normalizeLogStage(log.stage))) continue;
+    const ms = logTimestampMs(log);
+    if (ms == null) continue;
+    if (bestMs == null || ms < bestMs) {
+      best = log;
+      bestMs = ms;
+    }
   }
-  return null;
+  return best;
+}
+
+function findEarliestLogMsForStages(logs: SimulationLog[], logStages: string[]): number | null {
+  const log = findEarliestLogForStage(logs, logStages);
+  return log ? logTimestampMs(log) : null;
+}
+
+function findNextCanonicalStageStartMs(logs: SimulationLog[], stageIndex: number): number | null {
+  const nextDef = CANONICAL_STAGES[stageIndex + 1];
+  if (!nextDef) return null;
+  return findEarliestLogMsForStages(logs, nextDef.logStages);
 }
 
 /** Índice más avanzado alcanzado según los logs (ignora marcadores sin mapeo). */
-function resolveReachedStageIndex(logs: SimulationLog[]): number {
+function resolveReachedStageIndexFromLogs(logs: SimulationLog[]): number {
   let maxIdx = -1;
   for (const log of logs) {
     const canonical = LOG_STAGE_TO_CANONICAL.get(normalizeLogStage(log.stage));
@@ -272,18 +296,60 @@ function resolveReachedStageIndex(logs: SimulationLog[]): number {
   return maxIdx;
 }
 
-function findFirstLaterStageLogMs(logs: SimulationLog[], stageIndex: number): number | null {
-  for (const log of logs) {
-    const canonical = LOG_STAGE_TO_CANONICAL.get(normalizeLogStage(log.stage));
-    if (!canonical) continue;
-    const idx = getStageIndex(canonical);
-    if (idx > stageIndex) {
-      const ms = new Date(log.created_at).getTime();
-      return Number.isFinite(ms) ? ms : null;
+/** Índice de la etapa más avanzada con tiempo medido ya persistido en el worker. */
+function resolveHighestCompletedStageIndexFromTimings(
+  input: Pick<ResolveStageTimingsInput, "stageTimes" | "modelTimings">,
+): number {
+  let maxCompleted = -1;
+  for (let i = 0; i < CANONICAL_STAGES.length; i++) {
+    const def = CANONICAL_STAGES[i]!;
+    const dict = def.source === "stage_times" ? input.stageTimes : input.modelTimings;
+    if (readMeasuredTiming(dict, def) !== null) {
+      maxCompleted = i;
     }
   }
-  return null;
+  return maxCompleted;
 }
+
+/**
+ * Índice efectivo de progreso: combina logs y timings parciales del worker.
+ * Evita que el contador en vivo siga en una etapa cuando la siguiente ya terminó
+ * en el backend pero el log aún no llegó al frontend.
+ */
+function resolveEffectiveReachedIndex(
+  logs: SimulationLog[],
+  input: Pick<ResolveStageTimingsInput, "stageTimes" | "modelTimings">,
+): number {
+  const fromLogs = resolveReachedStageIndexFromLogs(logs);
+  const completedByTiming = resolveHighestCompletedStageIndexFromTimings(input);
+  const fromTimings =
+    completedByTiming >= 0
+      ? Math.min(completedByTiming + 1, CANONICAL_STAGES.length - 1)
+      : -1;
+  return Math.max(fromLogs, fromTimings);
+}
+
+function inferStageStartMs(
+  stageIndex: number,
+  input: ResolveStageTimingsInput,
+  def: CanonicalStageDef,
+): number | null {
+  const fromLog = findEarliestLogMsForStages(input.logs, def.logStages);
+  if (fromLog != null) return fromLog;
+
+  if (stageIndex <= 0) return null;
+
+  const prevDef = CANONICAL_STAGES[stageIndex - 1]!;
+  const prevDict = prevDef.source === "stage_times" ? input.stageTimes : input.modelTimings;
+  const prevMeasured = readMeasuredTiming(prevDict, prevDef);
+  const prevStart = findEarliestLogMsForStages(input.logs, prevDef.logStages);
+  if (prevMeasured != null && prevStart != null) {
+    return prevStart + prevMeasured * 1000;
+  }
+
+  return findNextCanonicalStageStartMs(input.logs, stageIndex - 1);
+}
+
 
 function buildResolvedStage(
   def: CanonicalStageDef,
@@ -325,9 +391,14 @@ function resolveOneStage(
 ): ResolvedStage {
   const dict = def.source === "stage_times" ? input.stageTimes : input.modelTimings;
   const measured = readMeasuredTiming(dict, def);
-  const startLog = findFirstLogForStage(input.logs, def.logStages);
-  const startedAt = startLog ? new Date(startLog.created_at) : undefined;
-  const startMs = startLog ? new Date(startLog.created_at).getTime() : null;
+  const startLog = findEarliestLogForStage(input.logs, def.logStages);
+  const startMs = inferStageStartMs(stageIndex, input, def);
+  const startedAt =
+    startMs != null
+      ? new Date(startMs)
+      : startLog
+        ? new Date(startLog.created_at)
+        : undefined;
 
   if (measured !== null) {
     return buildResolvedStage(def, startedAt, {
@@ -347,12 +418,13 @@ function resolveOneStage(
 
   if (stageIndex < reachedIndex) {
     if (startMs != null && Number.isFinite(startMs)) {
-      const laterMs = findFirstLaterStageLogMs(input.logs, stageIndex);
-      const endPointMs = laterMs ?? endMs;
+      const nextStageMs = findNextCanonicalStageStartMs(input.logs, stageIndex);
+      const endPointMs = nextStageMs ?? endMs;
+      const inferredSeconds = Math.max(0, (endPointMs - startMs) / 1000);
       return buildResolvedStage(def, startedAt, {
         status: "done",
-        durationSeconds: Math.max(0, (endPointMs - startMs) / 1000),
-        source: "inferred",
+        durationSeconds: inferredSeconds > 0 ? inferredSeconds : null,
+        source: inferredSeconds > 0 ? "inferred" : null,
       });
     }
     return buildResolvedStage(def, startedAt, {
@@ -363,6 +435,21 @@ function resolveOneStage(
   }
 
   if (stageIndex === reachedIndex) {
+    const nextStageMs = findNextCanonicalStageStartMs(input.logs, stageIndex);
+    if (
+      nextStageMs != null &&
+      startMs != null &&
+      Number.isFinite(startMs) &&
+      nextStageMs > startMs
+    ) {
+      const inferredSeconds = Math.max(0, (nextStageMs - startMs) / 1000);
+      return buildResolvedStage(def, startedAt, {
+        status: "done",
+        durationSeconds: inferredSeconds > 0 ? inferredSeconds : null,
+        source: inferredSeconds > 0 ? "inferred" : null,
+      });
+    }
+
     if (jobActive) {
       const durationSeconds =
         startMs != null && Number.isFinite(startMs)
@@ -496,7 +583,7 @@ export function resolveStageTimings(input: ResolveStageTimingsInput): ResolvedSt
         ? new Date(input.logs[input.logs.length - 1]!.created_at).getTime()
         : input.liveNowMs;
 
-  const reachedIndex = resolveReachedStageIndex(input.logs);
+  const reachedIndex = resolveEffectiveReachedIndex(input.logs, input);
   const stages = CANONICAL_STAGES.map((def, stageIndex) =>
     resolveOneStage(def, stageIndex, input, reachedIndex, jobActive, endMs),
   );

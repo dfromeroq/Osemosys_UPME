@@ -363,8 +363,8 @@ class SimulationService:
             "is_public": bool(getattr(job, "is_public", True)),
             "is_favorite": bool(is_favorite),
             "is_infeasible_result": SimulationService._is_infeasible_succeeded_job(job),
-            "stage_times": job.stage_times_json or {},
-            "model_timings": job.model_timings_json or {},
+            "stage_times": getattr(job, "stage_times_json", None) or {},
+            "model_timings": getattr(job, "model_timings_json", None) or {},
             **SimulationService._diagnostic_info_for(job),
         }
 
@@ -1199,8 +1199,8 @@ class SimulationService:
             "sol": sol,
             "intermediate_variables": dict(intermediate_variables),
             "osemosys_inputs_summary": job.inputs_summary_json or [],
-            "stage_times": job.stage_times_json or {},
-            "model_timings": job.model_timings_json or {},
+            "stage_times": getattr(job, "stage_times_json", None) or {},
+            "model_timings": getattr(job, "model_timings_json", None) or {},
             "infeasibility_diagnostics": infeasibility_diagnostics,
         }
 

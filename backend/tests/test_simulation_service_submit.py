@@ -63,6 +63,8 @@ def _build_job(user_id: uuid.UUID, *, scenario_id: int | None = 1) -> SimpleName
         finished_at=None,
         celery_task_id=None,
         celery_dispatched_at=None,
+        stage_times_json={},
+        model_timings_json={},
     )
 
 
