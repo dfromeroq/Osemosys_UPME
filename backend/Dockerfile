@@ -1,7 +1,7 @@
 FROM python:3.13-slim
 
 ARG HIGHS_BUILD_FROM_SOURCE=0
-ARG HIGHS_GIT_REF=master
+ARG HIGHS_GIT_REF=v1.14.0
 ARG HIGHS_ENABLE_HIPO=0
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -39,6 +39,9 @@ RUN if [ "${HIGHS_BUILD_FROM_SOURCE}" = "1" ]; then \
       rm -rf /tmp/HiGHS /tmp/requirements-no-highspy.txt; \
     else \
       pip install --no-cache-dir -r /app/requirements.txt; \
+      if [ "${HIGHS_ENABLE_HIPO}" = "1" ]; then \
+        pip install --no-cache-dir "highspy[extras]>=1.14.0"; \
+      fi; \
     fi
 
 COPY . /app

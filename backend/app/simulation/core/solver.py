@@ -219,17 +219,94 @@ def _highs_status_to_raw(status: object) -> str:
         return str(status)
 
     mapping = {
+        getattr(highspy.HighsModelStatus, "kNotset", None): "notset",
         getattr(highspy.HighsModelStatus, "kOptimal", None): "optimal",
         getattr(highspy.HighsModelStatus, "kInfeasible", None): "infeasible",
         getattr(highspy.HighsModelStatus, "kUnbounded", None): "unbounded",
+        getattr(highspy.HighsModelStatus, "kUnknown", None): "unknown",
         getattr(highspy.HighsModelStatus, "kTimeLimit", None): "maxTimeLimit",
         getattr(highspy.HighsModelStatus, "kIterationLimit", None): "maxIterations",
         getattr(highspy.HighsModelStatus, "kObjectiveBound", None): "objectiveLimit",
+        getattr(highspy.HighsModelStatus, "kObjectiveTarget", None): "objectiveTarget",
+        getattr(highspy.HighsModelStatus, "kSolutionLimit", None): "solutionLimit",
     }
     for hs, label in mapping.items():
         if hs is not None and status == hs:
             return label
     return str(status)
+
+
+def _reset_highspy_scheduler() -> None:
+    """Libera el scheduler global de HiGHS antes/después de corridas pesadas."""
+    try:
+        import highspy
+
+        reset = getattr(highspy.Highs, "resetGlobalScheduler", None)
+        if callable(reset):
+            try:
+                reset(True)
+            except TypeError:
+                reset()
+    except Exception:  # pragma: no cover - best effort según versión highspy
+        logger.debug("No fue posible resetear el scheduler global de HiGHS", exc_info=True)
+
+
+def _is_highs_status_error(status: object) -> bool:
+    if status is None:
+        return False
+    if isinstance(status, str):
+        return status.lower().endswith("kerror")
+    try:
+        import highspy
+
+        return status == highspy.HighsStatus.kError
+    except Exception:  # pragma: no cover
+        return str(status).lower().endswith("kerror")
+
+
+def _read_highspy_threads_used(h: object, fallback: int | None) -> int | None:
+    try:
+        result = h.getOptionValue("threads")
+        value = result[1] if isinstance(result, tuple) and len(result) >= 2 else result
+        return int(value) if value is not None else fallback
+    except (AttributeError, TypeError, ValueError):
+        return fallback
+
+
+def _run_highspy_with_retry(
+    h: object,
+    *,
+    highs_config: SolverHighsConfig,
+    timings: dict[str, float],
+) -> None:
+    """Ejecuta HiGHS y reintenta una vez si el scheduler deja estado kNotset."""
+    t_run = perf_counter()
+    logger.info("HiGHS run() iniciado")
+    h.run()
+    elapsed = perf_counter() - t_run
+    timings["solver_run_seconds"] = elapsed
+    raw_status = _highs_status_to_raw(h.getModelStatus())
+    logger.info("HiGHS run() terminó en %.2fs con status=%s", elapsed, raw_status)
+    if raw_status != "notset":
+        return
+
+    logger.warning("HiGHS devolvió kNotset; resetGlobalScheduler() y reintento run()")
+    _reset_highspy_scheduler()
+    if highs_config.threads > 0:
+        try:
+            h.setOptionValue("threads", highs_config.threads)
+        except Exception:  # pragma: no cover
+            logger.debug("No fue posible reaplicar threads a HiGHS", exc_info=True)
+    t_retry = perf_counter()
+    h.run()
+    retry_elapsed = perf_counter() - t_retry
+    timings["solver_retry_run_seconds"] = retry_elapsed
+    timings["solver_run_seconds"] = elapsed + retry_elapsed
+    logger.info(
+        "HiGHS retry run() terminó en %.2fs con status=%s",
+        retry_elapsed,
+        _highs_status_to_raw(h.getModelStatus()),
+    )
 
 
 def _ensure_dual_suffix(instance: pyo.ConcreteModel) -> None:
@@ -314,6 +391,7 @@ def _solve_with_direct_highspy(
         timings["solver_write_lp_seconds"] = perf_counter() - t0
         cleanup_lp = False
 
+    _reset_highspy_scheduler()
     h = highspy.Highs()
     threads_used = apply_highs_options_to_model(h, highs_config)
     logger.info(
@@ -326,14 +404,21 @@ def _solve_with_direct_highspy(
     )
 
     t_read = perf_counter()
-    h.readModel(str(lp_path))
+    logger.info("HiGHS readModel() iniciado: %s", lp_path)
+    read_status = h.readModel(str(lp_path))
     timings["solver_read_model_seconds"] = perf_counter() - t_read
+    logger.info(
+        "HiGHS readModel() terminó en %.2fs con status=%s",
+        timings["solver_read_model_seconds"],
+        read_status,
+    )
+    if _is_highs_status_error(read_status):
+        raise RuntimeError(f"HiGHS no pudo leer el LP {lp_path}: {read_status}")
 
-    t_run = perf_counter()
-    h.run()
-    timings["solver_run_seconds"] = perf_counter() - t_run
+    _run_highspy_with_retry(h, highs_config=highs_config, timings=timings)
 
     raw_status = _highs_status_to_raw(h.getModelStatus())
+    threads_used = _read_highspy_threads_used(h, threads_used)
 
     t_map = perf_counter()
     obj = 0.0
@@ -341,6 +426,8 @@ def _solve_with_direct_highspy(
         "maxtimelimit",
         "maxiterations",
         "objectivelimit",
+        "objectivetarget",
+        "solutionlimit",
     }:
         obj, _ = _apply_highspy_solution_to_instance(instance, h)
     timings["solver_map_solution_seconds"] = perf_counter() - t_map
@@ -353,6 +440,17 @@ def _solve_with_direct_highspy(
             pass
 
     return raw_status, obj, threads_used
+
+
+def _highs_status_has_processable_solution(raw_status: str) -> bool:
+    status = raw_status.lower()
+    return "optimal" in status or status in {
+        "maxtimelimit",
+        "maxiterations",
+        "objectivelimit",
+        "objectivetarget",
+        "solutionlimit",
+    }
 
 
 def _solve_with_appsi_highs(
@@ -602,6 +700,22 @@ def _solve_highs(
                 settings=settings,
                 timings=solver_timings,
             )
+        else:
+            if (
+                not _highs_status_has_processable_solution(raw_status)
+                and "infeasible" not in raw_status.lower()
+            ):
+                logger.warning(
+                    "HiGHS directo terminó con status no procesable (%s); "
+                    "reintentando con appsi_highs",
+                    raw_status,
+                )
+                solver_obj, results_obj, raw_status, obj, threads_used = _solve_with_appsi_highs(
+                    instance,
+                    highs_config=highs_config,
+                    settings=settings,
+                    timings=solver_timings,
+                )
     else:
         solver_obj, results_obj, raw_status, obj, threads_used = _solve_with_appsi_highs(
             instance,
@@ -619,11 +733,25 @@ def _solve_highs(
         solver_timings.get("solver_backend", "unknown"),
     )
 
+    raw_status_lower = raw_status.lower()
+    status_has_solution = _highs_status_has_processable_solution(raw_status)
+    if not status_has_solution and "infeasible" not in raw_status_lower:
+        timings_text = ", ".join(
+            f"{key}={value:.2f}s"
+            for key, value in solver_timings.items()
+            if isinstance(value, (int, float))
+        )
+        detail = f" ({timings_text})" if timings_text else ""
+        raise RuntimeError(
+            "HiGHS terminó sin una solución procesable: "
+            f"status={status_display}, raw={raw_status}{detail}."
+        )
+
     diagnostics: dict | None = None
     reserve_margin_dual: float | None = None
-    if "infeasible" in raw_status.lower():
+    if "infeasible" in raw_status_lower:
         diagnostics = _run_infeasibility_diagnostics(instance)
-    elif "optimal" in raw_status.lower():
+    elif "optimal" in raw_status_lower:
         logger.info("SOLUCIÓN ÓPTIMA ENCONTRADA - Objetivo: %.2f", obj)
         reserve_margin_dual = _extract_reserve_margin_dual(instance)
 
@@ -632,16 +760,21 @@ def _solve_highs(
         "solver_status": status_display,
         "objective_value": obj,
         "solver_threads_used": threads_used,
+        "solver_threads_configured": highs_config.threads,
         "reserve_margin_dual": reserve_margin_dual,
         "infeasibility_diagnostics": diagnostics,
         "solver_timings": solver_timings,
         "solver_highs_config": {
+            "threads": highs_config.threads,
             "method": highs_config.method,
             "presolve": highs_config.presolve,
             "parallel": highs_config.parallel,
+            "hipo_parallel_type": highs_config.hipo_parallel_type,
             "run_crossover": highs_config.run_crossover,
             "use_direct": highs_config.use_direct,
             "time_limit": highs_config.time_limit,
+            "ipm_optimality_tolerance": highs_config.ipm_optimality_tolerance,
+            "primal_feasibility_tolerance": highs_config.primal_feasibility_tolerance,
         },
     }
 

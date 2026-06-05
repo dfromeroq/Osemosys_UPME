@@ -61,6 +61,17 @@ text = str(status)
 if "kError" in text or text.endswith("Error"):
     raise SystemExit(f"highspy rechazo solver=ipm: {status}")
 
+import os
+
+if os.getenv("HIGHS_ENABLE_HIPO", "0") == "1":
+    status = h.setOptionValue("solver", "hipo")
+    text = str(status)
+    if "kError" in text or text.endswith("Error"):
+        raise SystemExit(
+            "HIGHS_ENABLE_HIPO=1 pero highspy rechazo solver=hipo. "
+            "Instala highspy[extras] o reconstruye con HiPO habilitado."
+        )
+
 print("highspy/appsi_highs OK")
 PY
   )

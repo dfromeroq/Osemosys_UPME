@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     sim_solver_highs_crossover: str = Field(default="choose", alias="SIM_SOLVER_HIGHS_CROSSOVER")
     sim_solver_highs_direct: bool = Field(default=True, alias="SIM_SOLVER_HIGHS_DIRECT")
     sim_solver_highs_time_limit: float = Field(default=0.0, alias="SIM_SOLVER_HIGHS_TIME_LIMIT")
-    sim_solver_highs_ipm_tol: float = Field(default=1e-7, alias="SIM_SOLVER_HIGHS_IPM_TOL")
+    sim_solver_highs_ipm_tol: float = Field(default=1e-12, alias="SIM_SOLVER_HIGHS_IPM_TOL")
     sim_solver_highs_primal_tol: float = Field(default=1e-7, alias="SIM_SOLVER_HIGHS_PRIMAL_TOL")
     simulation_artifacts_dir: str = Field(default="/app/tmp", alias="SIMULATION_ARTIFACTS_DIR")
     docker_socket_path: str = Field(default="/var/run/docker.sock", alias="DOCKER_SOCKET_PATH")
