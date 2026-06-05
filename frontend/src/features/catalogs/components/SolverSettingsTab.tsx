@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { useToast } from "@/app/providers/useToast";
 import {
@@ -27,13 +27,16 @@ type SolverSettingsTabProps = {
 };
 
 const METHOD_OPTIONS: { value: HighsMethod; label: string }[] = [
-  { value: "ipm", label: "IPM" },
+  { value: "default", label: "Por defecto HiGHS (notebook)" },
+  { value: "choose", label: "Automático (choose)" },
   { value: "simplex", label: "Simplex" },
+  { value: "ipm", label: "IPM" },
   { value: "ipx", label: "IPX" },
-  { value: "choose", label: "Choose" },
+  { value: "hipo", label: "HiPO (IPM multi-hilo)" },
 ];
 
 const ON_OFF_OPTIONS: { value: OnOffChoose; label: string }[] = [
+  { value: "default", label: "Por defecto HiGHS" },
   { value: "on", label: "On" },
   { value: "off", label: "Off" },
   { value: "choose", label: "Choose" },
@@ -45,6 +48,7 @@ function settingsToDraft(s: SolverSettings): SolverSettingsUpdate {
     highs_method: s.highs_method,
     highs_presolve: s.highs_presolve,
     highs_parallel: s.highs_parallel,
+    highs_hipo_parallel_type: s.highs_hipo_parallel_type,
     highs_run_crossover: s.highs_run_crossover,
     highs_use_direct: s.highs_use_direct,
     highs_time_limit: s.highs_time_limit,
@@ -114,18 +118,6 @@ export function SolverSettingsTab({ canEdit }: SolverSettingsTabProps) {
     draft !== null &&
     JSON.stringify(draft) !== JSON.stringify(settingsToDraft(settings));
 
-  const previewEffective = useMemo(() => {
-    if (settings == null || draft == null) return null;
-    const parsed = draft.solver_threads;
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      return settings.effective_threads_preview;
-    }
-    if (parsed === 0) {
-      return settings.hardware_thread_limit;
-    }
-    return Math.min(parsed, settings.hardware_thread_limit);
-  }, [draft, settings]);
-
   function patchDraft(partial: Partial<SolverSettingsUpdate>) {
     setDraft((prev) => (prev ? { ...prev, ...partial } : prev));
   }
@@ -146,9 +138,9 @@ export function SolverSettingsTab({ canEdit }: SolverSettingsTabProps) {
         <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
           <h2 style={{ margin: 0 }}>Solver</h2>
           <p className="muted" style={{ margin: 0 }}>
-            <strong>0</strong> = usar todos los CPUs disponibles del worker (
-            {settings?.hardware_thread_limit ?? "…"} detectados en este servidor). Si el valor
-            pedido supera el hardware, se aplica el máximo disponible.
+            Por defecto el worker usa las mismas opciones que el notebook (
+            <code>Highs()</code> sin forzar IPM). <strong>0 hilos</strong> = default HiGHS.
+            GLPK no usa estas opciones.
           </p>
 
           {loading || !draft ? (
@@ -194,6 +186,23 @@ export function SolverSettingsTab({ canEdit }: SolverSettingsTabProps) {
                 </label>
 
                 <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <span>Presolve</span>
+                  <select
+                    value={draft.highs_presolve}
+                    onChange={(e) =>
+                      patchDraft({ highs_presolve: e.target.value as OnOffChoose })
+                    }
+                    disabled={saving || !canEdit}
+                  >
+                    {ON_OFF_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <span>Paralelo</span>
                   <select
                     value={draft.highs_parallel}
@@ -210,22 +219,14 @@ export function SolverSettingsTab({ canEdit }: SolverSettingsTabProps) {
                   </select>
                 </label>
 
-                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span>Presolve</span>
-                  <select
-                    value={draft.highs_presolve}
-                    onChange={(e) =>
-                      patchDraft({ highs_presolve: e.target.value as OnOffChoose })
-                    }
-                    disabled={saving || !canEdit}
-                  >
-                    {ON_OFF_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <TextField
+                  label="HiPO parallel type"
+                  value={draft.highs_hipo_parallel_type}
+                  onChange={(e) =>
+                    patchDraft({ highs_hipo_parallel_type: e.target.value.trim() })
+                  }
+                  disabled={saving || !canEdit || draft.highs_method !== "hipo"}
+                />
 
                 <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <span>Crossover</span>
@@ -283,15 +284,6 @@ export function SolverSettingsTab({ canEdit }: SolverSettingsTabProps) {
                   disabled={saving || !canEdit}
                 />
               </div>
-
-              {previewEffective != null ? (
-                <div className="muted" style={{ fontSize: 13 }}>
-                  Hilos efectivos con este valor: <strong>{previewEffective}</strong>
-                  {settings && previewEffective !== draft.solver_threads && draft.solver_threads > 0 ? (
-                    <span> (cap por hardware)</span>
-                  ) : null}
-                </div>
-              ) : null}
 
               <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <input
