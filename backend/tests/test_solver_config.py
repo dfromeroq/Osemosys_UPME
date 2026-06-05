@@ -45,7 +45,7 @@ def _fake_settings(**overrides: object) -> SimpleNamespace:
         sim_solver_highs_crossover="choose",
         sim_solver_highs_direct=False,
         sim_solver_highs_time_limit=0.0,
-        sim_solver_highs_ipm_tol=1e-7,
+        sim_solver_highs_ipm_tol=1e-12,
         sim_solver_highs_primal_tol=1e-7,
     )
     base.update(overrides)
@@ -90,6 +90,7 @@ def test_apply_highs_options_to_dict() -> None:
     assert opts["solver"] == "ipm"
     assert opts["presolve"] == "on"
     assert opts["parallel"] == "on"
+    assert opts["simplex_max_concurrency"] == 4
     assert opts["log_to_console"] is False
 
 
@@ -225,6 +226,86 @@ def test_solve_model_routes_to_direct_highspy(monkeypatch, tmp_path) -> None:
     assert calls.get("direct") is True
     assert result["objective_value"] == 123.0
     assert result["solver_timings"]["solver_backend"] == "direct_highspy"
+
+
+def test_solve_model_retries_appsi_when_direct_highs_status_is_unknown(monkeypatch) -> None:
+    fake_solver = _FakeSolver(status="optimal")
+
+    def _fake_direct(instance, *, highs_config, lp_path, timings):  # noqa: ARG001
+        timings["solver_backend"] = "direct_highspy"
+        timings["solver_run_seconds"] = 12.3
+        return "HighsModelStatus.kUnknown", 0.0, 12
+
+    monkeypatch.setattr(solver_module, "_solve_with_direct_highspy", _fake_direct)
+    monkeypatch.setattr(
+        solver_module,
+        "get_settings",
+        lambda: _fake_settings(sim_solver_highs_direct=True),
+    )
+    monkeypatch.setattr(
+        solver_module,
+        "resolve_highs_config",
+        lambda _settings: SolverHighsConfig(threads=12, use_direct=True),
+    )
+    monkeypatch.setattr(
+        solver_module,
+        "get_solver_availability",
+        lambda: {"glpk": False, "highs": True},
+    )
+    monkeypatch.setattr(
+        solver_module.pyo,
+        "SolverFactory",
+        lambda _factory_name: fake_solver,
+    )
+    monkeypatch.setattr(solver_module.pyo, "value", lambda _obj: 456.0)
+
+    result = solver_module.solve_model(_FakeInstance(), solver_name="highs")
+
+    assert result["solver_status"] == "optimal"
+    assert result["objective_value"] == 456.0
+    assert result["solver_timings"]["solver_backend"] == "appsi_highs"
+    assert fake_solver.last_kwargs is not None
+    assert fake_solver.last_kwargs["load_solutions"] is False
+
+
+def test_solve_model_rejects_unprocessable_highs_status_after_retry(monkeypatch) -> None:
+    fake_solver = _FakeSolver(status="unknown")
+
+    def _fake_direct(instance, *, highs_config, lp_path, timings):  # noqa: ARG001
+        timings["solver_backend"] = "direct_highspy"
+        timings["solver_run_seconds"] = 12.3
+        return "HighsModelStatus.kUnknown", 0.0, 12
+
+    monkeypatch.setattr(solver_module, "_solve_with_direct_highspy", _fake_direct)
+    monkeypatch.setattr(
+        solver_module,
+        "get_settings",
+        lambda: _fake_settings(sim_solver_highs_direct=True),
+    )
+    monkeypatch.setattr(
+        solver_module,
+        "resolve_highs_config",
+        lambda _settings: SolverHighsConfig(threads=12, use_direct=True),
+    )
+    monkeypatch.setattr(
+        solver_module,
+        "get_solver_availability",
+        lambda: {"glpk": False, "highs": True},
+    )
+    monkeypatch.setattr(
+        solver_module.pyo,
+        "SolverFactory",
+        lambda _factory_name: fake_solver,
+    )
+
+    try:
+        solver_module.solve_model(_FakeInstance(), solver_name="highs")
+    except RuntimeError as exc:
+        assert "HiGHS terminó sin una solución procesable" in str(exc)
+        assert "unknown" in str(exc)
+        assert "solver_run_seconds=" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("Expected RuntimeError for unprocessable HiGHS status")
 
 
 def test_solve_model_fails_when_requested_solver_is_unavailable(monkeypatch) -> None:

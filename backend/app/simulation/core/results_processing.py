@@ -1347,6 +1347,9 @@ def process_results(
     profile.record_memory_peak()
     profile.log_summary()
     timings.update(profile.timings)
+    solver_timings = solver_result.get("solver_timings")
+    if isinstance(solver_timings, dict):
+        timings.update(solver_timings)
     for key in (
         "read_model_seconds",
         "highs_run_seconds",

@@ -36,7 +36,7 @@ class SolverHighsConfig:
     run_crossover: str = "choose"
     use_direct: bool = True
     time_limit: float = 0.0
-    ipm_optimality_tolerance: float = 1e-7
+    ipm_optimality_tolerance: float = 1e-12
     primal_feasibility_tolerance: float = 1e-7
     log_to_console: bool = False
 
@@ -90,7 +90,7 @@ def resolve_highs_config(settings: object) -> SolverHighsConfig:
     run_crossover = str(getattr(settings, "sim_solver_highs_crossover", "choose") or "choose")
     use_direct = bool(getattr(settings, "sim_solver_highs_direct", True))
     time_limit = float(getattr(settings, "sim_solver_highs_time_limit", 0) or 0)
-    ipm_tol = float(getattr(settings, "sim_solver_highs_ipm_tol", 1e-7) or 1e-7)
+    ipm_tol = float(getattr(settings, "sim_solver_highs_ipm_tol", 1e-12) or 1e-12)
     primal_tol = float(getattr(settings, "sim_solver_highs_primal_tol", 1e-7) or 1e-7)
 
     try:
@@ -162,9 +162,12 @@ def apply_highs_options_to_model(h: object, config: SolverHighsConfig) -> int | 
     }
     if config.threads > 0:
         options["threads"] = config.threads
+    if config.parallel == "on" and config.threads > 1:
+        # HiGHS parallel dual simplex is capped by simplex_max_concurrency (1..8).
+        options["simplex_max_concurrency"] = min(max(int(config.threads), 1), 8)
     if config.time_limit > 0:
         options["time_limit"] = config.time_limit
-    if config.method == "hipo" and config.hipo_parallel_type:
+    if config.method in {"hipo", "ipm"} and config.hipo_parallel_type:
         options["hipo_parallel_type"] = config.hipo_parallel_type
 
     if isinstance(h, dict):
