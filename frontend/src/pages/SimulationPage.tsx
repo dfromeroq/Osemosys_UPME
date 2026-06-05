@@ -510,7 +510,28 @@ export function SimulationPage() {
         offset: 1,
       };
       const [res, overviewRes] = await Promise.all([simulationApi.listRuns(params), simulationApi.getOverview()]);
-      setRuns(res.data);
+      setRuns((prev) => {
+        if (logsOpenForJob === null) return res.data;
+        const prevById = new Map(prev.map((run) => [run.id, run]));
+        return res.data.map((run) => {
+          if (run.id !== logsOpenForJob) return run;
+          const existing = prevById.get(run.id);
+          if (!existing) return run;
+          return {
+            ...run,
+            // El modal hace polling detallado por job; preservamos esos timings
+            // para evitar saltos visuales cuando el poll general llega desfasado.
+            stage_times: {
+              ...(run.stage_times ?? {}),
+              ...(existing.stage_times ?? {}),
+            },
+            model_timings: {
+              ...(run.model_timings ?? {}),
+              ...(existing.model_timings ?? {}),
+            },
+          };
+        });
+      });
       setOverview(overviewRes);
     } catch (error) {
       const message =
@@ -522,7 +543,7 @@ export function SimulationPage() {
     } finally {
       if (!silent) setLoadingRuns(false);
     }
-  }, [push]);
+  }, [logsOpenForJob, push]);
 
   useEffect(() => {
     if (!user) return;

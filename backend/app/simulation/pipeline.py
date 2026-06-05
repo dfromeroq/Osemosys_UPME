@@ -27,6 +27,7 @@ from typing import Any, Final
 
 from sqlalchemy import func, insert
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.config import get_settings
 from app.models import OsemosysParamValue, OsemosysOutputParamValue, SimulationJob
@@ -507,7 +508,9 @@ def _persist_solution(
     job.total_unmet = solution.get("total_unmet")
     job.records_used = records_used
     job.osemosys_param_records = records_used
-    job.stage_times_json = stage_times
+    # Copia defensiva: evita aliasing entre el dict local y el estado ORM.
+    # Sin esto, una mutación posterior puede quedar "invisible" para SQLAlchemy.
+    job.stage_times_json = dict(stage_times)
     _model_timings = dict(solution.get("model_timings", {}))
     _model_timings["solver_status"] = solution.get("solver_status", "unknown")
     job.model_timings_json = _model_timings
@@ -721,6 +724,7 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
 
     stage_times[f"{STAGE_PERSIST_RESULTS}_seconds"] = perf_counter() - t3
     job.stage_times_json = dict(stage_times)
+    flag_modified(job, "stage_times_json")
     db.commit()
 
     logger.info(
@@ -871,6 +875,7 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
     )
     stage_times[f"{STAGE_PERSIST_RESULTS}_seconds"] = perf_counter() - t3
     job.stage_times_json = dict(stage_times)
+    flag_modified(job, "stage_times_json")
     db.commit()
 
     logger.info(

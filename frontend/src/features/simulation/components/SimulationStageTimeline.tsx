@@ -209,11 +209,24 @@ export function SimulationStageTimeline(props: Props) {
     [logs, stageTimes, modelTimings, jobStatus, liveNowMs, startedAt, finishedAt],
   );
 
+  const isSolverInfeasible =
+    typeof resolved.solverStatus === "string" &&
+    /(infeasible|infactible)/i.test(resolved.solverStatus);
+  const shouldHideInfeasibilityPendingRow = (stage: ResolvedStage): boolean =>
+    stage.id === "infeasibility_analysis" &&
+    stage.status === "pending" &&
+    jobStatus === "SUCCEEDED" &&
+    !isSolverInfeasible;
+
+  const visibleEpilogueStages = resolved.epilogueStages.filter(
+    (stage) => !shouldHideInfeasibilityPendingRow(stage),
+  );
+
   const allStages = [
     ...resolved.preambleStages,
     ...resolved.highsGroup.stages,
     ...resolved.resultsGroup.stages,
-    ...resolved.epilogueStages,
+    ...visibleEpilogueStages,
   ];
 
   if (compact && resolved.totalSeconds === null && allStages.every((s) => s.status === "pending")) {
@@ -247,7 +260,7 @@ export function SimulationStageTimeline(props: Props) {
 
         <StageGroupSection group={resolved.resultsGroup} compact={compact} withBorder />
 
-        {resolved.epilogueStages.map((stage) => (
+        {visibleEpilogueStages.map((stage) => (
           <StageRow key={stage.id} stage={stage} compact={compact} />
         ))}
       </div>
