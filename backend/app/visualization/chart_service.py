@@ -88,6 +88,18 @@ from app.visualization.configs import (
     PWR_TECH_ALIASES,
     TITULOS_VARIABLES_CAPACIDAD,
     NOMBRES_COMBUSTIBLES,
+    TECNOLOGIAS_EXPORTACION_CARBON,
+    TECNOLOGIAS_INDUSTRIALES,
+    TECNOLOGIAS_RESIDENCIALES,
+    TECNOLOGIAS_TRANSPORTE,
+    TECNOLOGIAS_TRANSPORTE_CARRETERA,
+    TECNOLOGIAS_TERCIARIO,
+    TEC_RES_URB,
+    TEC_RES_RUR,
+    TEC_RES_ZNI,
+    _filtro_recursos_crudo,
+    _filtro_recursos_gas,
+    _filtro_recursos_carbon,
     _map_electrolisis_verde,
     _map_h2_verde_azul_gris,
     _map_h2_consumo_grupo,
@@ -647,38 +659,57 @@ def _fuel_to_group(row) -> str:
     return asignar_grupo(fuel) if fuel else "OTRO"
 
 
+_PREFIJO_TECH_LISTS: dict[str, list[str]] = {
+    "DEMIND": TECNOLOGIAS_INDUSTRIALES,
+    "DEMRES": TECNOLOGIAS_RESIDENCIALES,
+    "DEMTRA": TECNOLOGIAS_TRANSPORTE,
+    "DEMTER": TECNOLOGIAS_TERCIARIO,
+}
+
+
+def _resolve_tech_list(prefijo: str | tuple[str, ...]) -> list[str]:
+    if isinstance(prefijo, tuple):
+        combined: list[str] = []
+        for p in prefijo:
+            lst = _PREFIJO_TECH_LISTS.get(p)
+            if lst:
+                combined.extend(lst)
+        return combined
+    return _PREFIJO_TECH_LISTS.get(prefijo, [])
+
+
 def _filtrar_df(
     df: pd.DataFrame,
     prefijo: str | tuple[str, ...],
     sub_filtro: str | None,
     loc: str | None,
 ) -> pd.DataFrame:
-    """Aplica filtro por prefijo de TECHNOLOGY, sub_filtro y localización.
-
-    Port directo de ``graficas_comparacion._filtrar_df``.
+    """Aplica filtro por listas de tecnologías, sub_filtro y localización.
     """
     if df.empty:
         return df
 
-    df = df[df["TECHNOLOGY"].str.startswith(prefijo)].copy()
+    tech_list = _resolve_tech_list(prefijo)
+    if not tech_list:
+        return df.iloc[:0]
+
+    mask = df["TECHNOLOGY"].isin(tech_list)
 
     if sub_filtro == "CARRETERA":
-        from app.visualization.configs import _ROAD_TRANSPORT_PATTERN
-        df = df[df["TECHNOLOGY"].str.contains(_ROAD_TRANSPORT_PATTERN, regex=True)]
+        mask &= df["TECHNOLOGY"].isin(TECNOLOGIAS_TRANSPORTE_CARRETERA)
     elif sub_filtro:
-        df = df[df["TECHNOLOGY"].str.contains(sub_filtro)]
+        mask &= df["TECHNOLOGY"].isin(
+            [t for t in tech_list if sub_filtro in t]
+        )
 
     if loc == "URB":
-        df = df[~df["TECHNOLOGY"].str.contains("RUR")]
-        df = df[~df["TECHNOLOGY"].str.contains("ZNI")]
+        mask &= df["TECHNOLOGY"].isin(TEC_RES_URB)
     elif loc == "RUR":
-        df = df[df["TECHNOLOGY"].str.contains("RUR")]
-        df = df[~df["TECHNOLOGY"].str.contains("ZNI")]
+        mask &= df["TECHNOLOGY"].isin(TEC_RES_RUR)
     elif loc == "ZNI":
-        df = df[~df["TECHNOLOGY"].str.contains("RUR")]
-        df = df[df["TECHNOLOGY"].str.contains("ZNI")]
+        mask &= df["TECHNOLOGY"].isin(TEC_RES_ZNI)
 
-    return df
+    return df[mask].copy()
 
 
 # Mapeo de código de uso de transporte a nombre de grupo
@@ -701,7 +732,7 @@ _TRANSPORTE_USO_A_GRUPO: dict[str, str] = {
 
 def _map_transporte_grupo(tech_code: str) -> str:
     """Clasifica un código DEMTRA en grupo de transporte."""
-    if not isinstance(tech_code, str) or not tech_code.startswith("DEMTRA"):
+    if not isinstance(tech_code, str) or tech_code not in TECNOLOGIAS_TRANSPORTE:
         return "Otros"
     rest = tech_code[len("DEMTRA"):]
 
@@ -749,7 +780,7 @@ _MODOS_TRANSPORTE_MAP: dict[str, str] = {
 
 def _map_transporte_modo(tech_code: str) -> str:
     """Clasifica un código DEMTRA en modo de transporte (CARRETERA, AVI, BOT, MET)."""
-    if not isinstance(tech_code, str) or not tech_code.startswith("DEMTRA"):
+    if not isinstance(tech_code, str) or tech_code not in TECNOLOGIAS_TRANSPORTE:
         return "Otros"
     rest = tech_code[len("DEMTRA"):]
 
@@ -1109,17 +1140,14 @@ def _build_recursos_production_total(
         if df_use.empty:
             return None
         df_use = _apply_regional_transform(db, job_id, df_use)
-        df_coa = df_use[df_use["FUEL"] == "COA"].copy()
-        df_domestic = df_coa[~df_coa["TECHNOLOGY"].str.startswith("EXPCOA")]
-        domestic = df_domestic.groupby("YEAR")["VALUE"].sum().to_dict()
+        df_use = _filtro_recursos_carbon(df_use)
+        domestic = df_use[df_use["FUEL"] == "COA"].groupby("YEAR")["VALUE"].sum().to_dict()
 
         df_prod = _load_variable_data(db, job_id, "ProductionByTechnology")
         if not df_prod.empty:
             df_prod = _apply_regional_transform(db, job_id, df_prod)
-            df_export = df_prod[
-                df_prod["TECHNOLOGY"].str.startswith("EXPCOA")
-            ].copy()
-            export = df_export.groupby("YEAR")["VALUE"].sum().to_dict()
+            df_prod = _filtro_recursos_carbon(df_prod)
+            export = df_prod[df_prod["TECHNOLOGY"].isin(TECNOLOGIAS_EXPORTACION_CARBON)].groupby("YEAR")["VALUE"].sum().to_dict()
         else:
             export = {}
 
@@ -1149,7 +1177,7 @@ def _build_recursos_vs_demanda_gas_df(
         return None
 
     df = _apply_regional_transform(db, job_id, df)
-    df_gas = df[df["TECHNOLOGY"].str.startswith("MINNGS")].copy()
+    df_gas = _filtro_recursos_gas(df)
     if df_gas.empty:
         return None
 
@@ -1283,20 +1311,20 @@ def build_recursos_vs_demanda_carbon_data(
             categories=[], series=[], title=title, yAxisLabel=un
         )
     df_use = _apply_regional_transform(db, job_id, df_use)
-    df_coa = df_use[df_use["FUEL"] == "COA"].copy()
-    df_domestic = df_coa[~df_coa["TECHNOLOGY"].str.startswith("EXPCOA")]
+    df_use = _filtro_recursos_carbon(df_use)
     domestic_by_year = (
-        df_domestic.groupby("YEAR")["VALUE"].sum().to_dict()
+        df_use[df_use["FUEL"] == "COA"].groupby("YEAR")["VALUE"].sum().to_dict()
     )
 
     # 2. Exportaciones: ProductionByTechnology(EXPCOA)
     df_prod = _load_variable_data(db, job_id, "ProductionByTechnology")
     if not df_prod.empty:
         df_prod = _apply_regional_transform(db, job_id, df_prod)
-        df_export = df_prod[
-            df_prod["TECHNOLOGY"].str.startswith("EXPCOA")
-        ].copy()
-        export_by_year = df_export.groupby("YEAR")["VALUE"].sum().to_dict()
+        df_prod = _filtro_recursos_carbon(df_prod)
+        export_by_year = (
+            df_prod[df_prod["TECHNOLOGY"].isin(TECNOLOGIAS_EXPORTACION_CARBON)]
+            .groupby("YEAR")["VALUE"].sum().to_dict()
+        )
     else:
         export_by_year = {}
 
@@ -1393,7 +1421,7 @@ def build_recursos_vs_demanda_data(
     df = _apply_regional_transform(db, job_id, df)
 
     # Filtrar solo tecnologías MINOIL
-    df_minoil = df[df["TECHNOLOGY"].str.startswith("MINOIL")].copy()
+    df_minoil = _filtro_recursos_crudo(df)
     if df_minoil.empty:
         return ChartDataResponse(
             categories=[], series=[], title=title, yAxisLabel=un
