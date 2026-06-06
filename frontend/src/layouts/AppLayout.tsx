@@ -46,6 +46,7 @@ export function AppLayout() {
     ...(canAccessCatalogsArea(user) ? [{ to: paths.catalogs, label: "Catálogos" }] : []),
     ...(user?.can_manage_users ? [{ to: paths.usersAdmin, label: "Usuarios y permisos" }] : []),
     { to: paths.simulation, label: "Simulación" },
+    ...(user?.can_manage_system_settings ? [{ to: paths.simulationOps, label: "Operación" }] : []),
     { to: paths.results, label: "Resultados" },
     { to: paths.reports, label: "Reportes" },
     { to: paths.history, label: "Historial" },

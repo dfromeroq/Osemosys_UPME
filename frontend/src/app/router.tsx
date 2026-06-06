@@ -12,6 +12,7 @@ import { RequireAuth } from "@/routes/RequireAuth";
 import { RequireCatalogsArea } from "@/routes/RequireCatalogsArea";
 import { RequireCatalogManager } from "@/routes/RequireCatalogManager";
 import { RequireOfficialDataImporter } from "@/routes/RequireOfficialDataImporter";
+import { RequireSystemSettingsManager } from "@/routes/RequireSystemSettingsManager";
 import { RequireUserManager } from "@/routes/RequireUserManager";
 import { paths } from "@/routes/paths";
 import { LoginPage } from "@/pages/LoginPage";
@@ -24,6 +25,7 @@ const ScenarioDetailPage = lazy(() => import("@/pages/ScenarioDetailPage").then(
 const ScenarioHistoryPage = lazy(() => import("@/pages/ScenarioHistoryPage").then((m) => ({ default: m.ScenarioHistoryPage })));
 const CatalogsPage = lazy(() => import("@/pages/CatalogsPage").then((m) => ({ default: m.CatalogsPage })));
 const SimulationPage = lazy(() => import("@/pages/SimulationPage").then((m) => ({ default: m.SimulationPage })));
+const SimulationOpsPage = lazy(() => import("@/pages/SimulationOpsPage").then((m) => ({ default: m.SimulationOpsPage })));
 const ResultsPage = lazy(() => import("@/pages/ResultsPage").then((m) => ({ default: m.ResultsPage })));
 const ResultDetailPage = lazy(() => import("@/pages/ResultDetailPage").then((m) => ({ default: m.ResultDetailPage })));
 const ResultDataExplorerPage = lazy(() => import("@/pages/ResultDataExplorerPage").then((m) => ({ default: m.ResultDataExplorerPage })));
@@ -101,6 +103,12 @@ export const router = createBrowserRouter([
               { path: "scenarios/:id/history", element: <SuspenseWrapper><ScenarioHistoryPage /></SuspenseWrapper> },
               { path: "change-requests", element: <SuspenseWrapper><ChangeRequestsPage /></SuspenseWrapper> },
               { path: "simulation", element: <SuspenseWrapper><SimulationPage /></SuspenseWrapper> },
+              {
+                element: <RequireSystemSettingsManager />,
+                children: [
+                  { path: "simulation-ops", element: <SuspenseWrapper><SimulationOpsPage /></SuspenseWrapper> },
+                ],
+              },
               { path: "results", element: <SuspenseWrapper><ResultsPage /></SuspenseWrapper> },
               { path: "results/:runId", element: <SuspenseWrapper><ResultDetailRoute /></SuspenseWrapper> },
               { path: "results/:runId/data", element: <SuspenseWrapper><ResultDataExplorerPage /></SuspenseWrapper> },
@@ -145,4 +153,3 @@ export const router = createBrowserRouter([
     ],
   },
 ]);
-

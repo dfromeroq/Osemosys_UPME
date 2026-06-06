@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -120,7 +120,7 @@ class SimulationJobPublic(BaseModel):
     #: Tiempos macro del pipeline (extract_data_seconds, solve_seconds, …).
     stage_times: dict[str, float | str] = Field(default_factory=dict)
     #: Tiempos granulares medidos en el worker (solver_run_seconds, …).
-    model_timings: dict[str, float | str] = Field(default_factory=dict)
+    model_timings: dict[str, Any] = Field(default_factory=dict)
 
 
 class SimulationOverviewPublic(BaseModel):

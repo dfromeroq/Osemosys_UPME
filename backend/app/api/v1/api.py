@@ -24,6 +24,7 @@ from app.api.v1 import (
     scenario_tag_assignments,
     scenario_tag_categories,
     scenario_tags,
+    simulation_ops,
     scenarios,
     simulations,
     solvers,
@@ -62,6 +63,7 @@ router.include_router(visualization_catalog.router, tags=["visualization_catalog
 router.include_router(saved_chart_templates.router, tags=["saved_chart_templates"])
 router.include_router(saved_chart_templates.reports_router, tags=["saved_reports"])
 router.include_router(simulations.router, tags=["simulations"])
+router.include_router(simulation_ops.router, tags=["simulation_ops"])
 router.include_router(deletion_log.router, tags=["deletion_log"])
 router.include_router(system_settings.router, tags=["system_settings"])
 router.include_router(
@@ -85,4 +87,3 @@ router.include_router(
 #
 # Escalabilidad:
 # - Sin impacto directo de performance; afecta mantenibilidad y trazabilidad de API.
-
