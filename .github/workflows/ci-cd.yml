@@ -191,6 +191,7 @@ jobs:
           VITE_SIMULATION_MODE: ${{ vars.VITE_SIMULATION_MODE }}
           SIMULATION_OPS_ENVIRONMENT_NAME: ${{ vars.SIMULATION_OPS_ENVIRONMENT_NAME }}
           SIMULATION_OPS_REMOTE_ENVIRONMENTS: ${{ secrets.SIMULATION_OPS_REMOTE_ENVIRONMENTS }}
+          SIMULATION_OPS_SHARED_TOKEN: ${{ secrets.SIMULATION_OPS_SHARED_TOKEN }}
         run: |
           chmod +x scripts/deploy-local.sh
           COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-osemosys-public-stg}" \
@@ -237,6 +238,7 @@ jobs:
           VITE_SIMULATION_MODE="${VITE_SIMULATION_MODE:-api}" \
           SIMULATION_OPS_ENVIRONMENT_NAME="${SIMULATION_OPS_ENVIRONMENT_NAME:-stage}" \
           SIMULATION_OPS_REMOTE_ENVIRONMENTS="${SIMULATION_OPS_REMOTE_ENVIRONMENTS:-}" \
+          SIMULATION_OPS_SHARED_TOKEN="${SIMULATION_OPS_SHARED_TOKEN:-}" \
           ./scripts/deploy-local.sh
 
       - name: Smoke Checks
@@ -371,6 +373,7 @@ jobs:
           VITE_SIMULATION_MODE: ${{ vars.VITE_SIMULATION_MODE }}
           SIMULATION_OPS_ENVIRONMENT_NAME: ${{ vars.SIMULATION_OPS_ENVIRONMENT_NAME }}
           SIMULATION_OPS_REMOTE_ENVIRONMENTS: ${{ secrets.SIMULATION_OPS_REMOTE_ENVIRONMENTS }}
+          SIMULATION_OPS_SHARED_TOKEN: ${{ secrets.SIMULATION_OPS_SHARED_TOKEN }}
         run: |
           normalize_unified_monorepo_env() {
             if grep -Eq '^  frontend:$' docker-compose.yml && [ "${COMPOSE_PROJECT_NAME:-}" = "osemosys-backend" ]; then
@@ -436,6 +439,7 @@ jobs:
           VITE_SIMULATION_MODE="${VITE_SIMULATION_MODE:-api}" \
           SIMULATION_OPS_ENVIRONMENT_NAME="${SIMULATION_OPS_ENVIRONMENT_NAME:-prod}" \
           SIMULATION_OPS_REMOTE_ENVIRONMENTS="${SIMULATION_OPS_REMOTE_ENVIRONMENTS:-}" \
+          SIMULATION_OPS_SHARED_TOKEN="${SIMULATION_OPS_SHARED_TOKEN:-}" \
           ./scripts/deploy-local.sh
 
       - name: Smoke Checks

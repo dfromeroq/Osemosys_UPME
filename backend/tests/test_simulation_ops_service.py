@@ -2,12 +2,39 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+from fastapi import HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
+
+import app.api.v1.simulation_ops as ops_api
 import app.services.simulation_ops_service as ops_module
 from app.models import SimulationJob
 from app.services.simulation_service import SimulationService
 from app.services.simulation_ops_service import SimulationOpsService
 
 from factories import create_scenario, create_user
+
+
+def test_simulation_ops_access_allows_shared_token(db_session, monkeypatch) -> None:
+    class Settings:
+        simulation_ops_shared_token = "ops-secret"
+
+    monkeypatch.setattr(ops_api, "get_settings", lambda: Settings())
+    credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="ops-secret")
+
+    assert ops_api.require_simulation_ops_access(db_session, credentials) is None
+
+
+def test_simulation_ops_access_requires_bearer_token(db_session, monkeypatch) -> None:
+    class Settings:
+        simulation_ops_shared_token = "ops-secret"
+
+    monkeypatch.setattr(ops_api, "get_settings", lambda: Settings())
+
+    with pytest.raises(HTTPException) as exc:
+        ops_api.require_simulation_ops_access(db_session, None)
+
+    assert exc.value.status_code == 401
 
 
 def test_simulation_ops_dashboard_counts_and_resources(db_session, monkeypatch) -> None:
