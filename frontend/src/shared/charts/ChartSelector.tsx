@@ -14,6 +14,7 @@
  */
 
 import React, { useMemo } from 'react';
+import { useChartMenu } from '@/shared/charts/useChartMenu';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -276,7 +277,7 @@ interface Module {
   charts?: ChartItem[];
 }
 
-const MENU: Module[] = [
+const STATIC_MENU: Module[] = [
   {
     id: 'electrico',
     emoji: '⚡',
@@ -472,27 +473,32 @@ const MENU: Module[] = [
   },
 ];
 
-const FIRST_MODULE = MENU[0] as Module;
+import { getChartMenuCache } from '@/shared/charts/chartMenuCache';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+function activeMenu(): Module[] {
+  const cached = getChartMenuCache();
+  return (cached.length > 0 ? cached : []) as Module[];
+}
+
 /** Etiqueta legible de una gráfica (para mostrar en UI fuera del selector). */
 export function getChartLabel(tipo: string): string | undefined {
-  return findChartItem(tipo)?.label;
+  return findChartItem(tipo, activeMenu())?.label;
 }
 
 export type ChartLocation = { moduleId: string; subsectorId?: string };
 
 /** Devuelve módulo (y subsector si aplica, sólo Demanda Final) para un chart `tipo`. */
 export function getChartLocation(tipo: string): ChartLocation {
-  return findLocation(tipo);
+  return findLocation(tipo, activeMenu());
 }
 
 /** Subsectores definidos para un módulo (vacío si no aplica). */
 export function getChartSubsectors(
   moduleId: string,
 ): { id: string; label: string }[] {
-  const mod = MENU.find((m) => m.id === moduleId);
+  const mod = activeMenu().find((m) => m.id === moduleId);
   if (!mod || !mod.subsectors) return [];
   return mod.subsectors.map((s) => ({ id: s.id, label: s.label }));
 }
@@ -501,18 +507,19 @@ export type ChartModuleInfo = { id: string; label: string; emoji: string };
 
 /** Módulos (primer nivel) del menú — para agrupar plantillas en UI externas. */
 export function getChartModules(): ChartModuleInfo[] {
-  return MENU.map((m) => ({ id: m.id, label: m.label, emoji: m.emoji }));
+  return activeMenu().map((m) => ({ id: m.id, label: m.label, emoji: m.emoji }));
 }
 
 /** Módulo al que pertenece una gráfica (primer nivel de agrupación). */
 export function getChartModule(tipo: string): ChartModuleInfo | undefined {
-  const { moduleId } = findLocation(tipo);
-  const mod = MENU.find((m) => m.id === moduleId);
+  const menu = activeMenu();
+  const { moduleId } = findLocation(tipo, menu);
+  const mod = menu.find((m) => m.id === moduleId);
   return mod ? { id: mod.id, label: mod.label, emoji: mod.emoji } : undefined;
 }
 
-function findChartItem(tipo: string): ChartItem | undefined {
-  for (const mod of MENU) {
+function findChartItem(tipo: string, menu: Module[]): ChartItem | undefined {
+  for (const mod of menu) {
     const inFlat = mod.charts?.find((c) => c.id === tipo);
     if (inFlat) return inFlat;
     if (mod.subsectors) {
@@ -525,8 +532,11 @@ function findChartItem(tipo: string): ChartItem | undefined {
   return undefined;
 }
 
-function findLocation(tipo: string): { moduleId: string; subsectorId?: string } {
-  for (const mod of MENU) {
+function findLocation(
+  tipo: string,
+  menu: Module[],
+): { moduleId: string; subsectorId?: string } {
+  for (const mod of menu) {
     if (mod.charts?.some((c) => c.id === tipo)) return { moduleId: mod.id };
     if (mod.subsectors) {
       for (const sub of mod.subsectors) {
@@ -536,11 +546,12 @@ function findLocation(tipo: string): { moduleId: string; subsectorId?: string } 
       }
     }
   }
-  return { moduleId: FIRST_MODULE.id };
+  const first = menu[0];
+  return { moduleId: first?.id ?? 'demanda' };
 }
 
-function chartTipoBelongsToModule(tipo: string, moduleId: string): boolean {
-  const mod = MENU.find((m) => m.id === moduleId);
+function chartTipoBelongsToModule(tipo: string, moduleId: string, menu: Module[]): boolean {
+  const mod = menu.find((m) => m.id === moduleId);
   if (!mod) return false;
   if (mod.charts?.some((c) => c.id === tipo)) return true;
   if (mod.subsectors) {
@@ -568,28 +579,33 @@ export function ChartSelector({
   isRegionalJob = false,
   availableTimeslices,
 }: Props) {
-  const loc = findLocation(value.tipo);
+  const { menu: apiMenu, loading: menuLoading, error: menuError } = useChartMenu();
+  const MENU = apiMenu as Module[];
+  const menuReady = !menuLoading && !menuError && MENU.length > 0;
+
+  const loc = findLocation(value.tipo, menuReady ? MENU : []);
   const activeModule = loc.moduleId;
   const activeSubsector = loc.subsectorId ?? '';
 
-  const currentModule: Module =
-    MENU.find((m) => m.id === activeModule) ?? FIRST_MODULE;
+  const currentModule: Module | undefined = menuReady
+    ? (MENU.find((m) => m.id === activeModule) ?? MENU[0])
+    : undefined;
 
-  const currentItem = findChartItem(value.tipo);
-
-  const subsectors: Subsector[] = currentModule.subsectors ?? [];
-  const flatCharts: ChartItem[] = currentModule.charts ?? [];
+  const subsectors: Subsector[] = currentModule?.subsectors ?? [];
+  const flatCharts: ChartItem[] = currentModule?.charts ?? [];
 
   const subsectorCharts: ChartItem[] = useMemo(() => {
-    const mod = MENU.find((m) => m.id === activeModule) ?? FIRST_MODULE;
+    if (!menuReady || !currentModule) return [];
+    const mod = MENU.find((m) => m.id === activeModule) ?? currentModule;
     const subs = mod.subsectors;
     if (!subs || subs.length === 0) return [];
     const sub = subs.find((s) => s.id === activeSubsector) ?? subs[0];
     if (!sub) return [];
     return sub.charts ?? [];
-  }, [activeModule, activeSubsector]);
+  }, [menuReady, currentModule, MENU, activeModule, activeSubsector]);
 
   const chartsToShow = useMemo(() => {
+    if (!menuReady || !currentModule) return [];
     // Para Sector Eléctrico: filtrar por tipo_electrico
     if (currentModule.id === 'electrico') {
       const tipoMap: Record<string, string[]> = {
@@ -607,7 +623,21 @@ export function ChartSelector({
     }
     // Comportamiento normal para outros módulos
     return subsectors.length > 0 ? subsectorCharts : flatCharts;
-  }, [currentModule, subsectors, subsectorCharts, flatCharts, value.tipo_electrico]);
+  }, [menuReady, currentModule, subsectors, subsectorCharts, flatCharts, value.tipo_electrico]);
+
+  if (menuLoading) {
+    return <p className="text-sm text-gray-500">Cargando catálogo de gráficas…</p>;
+  }
+  if (menuError || MENU.length === 0) {
+    return (
+      <p className="text-sm text-red-600">
+        {menuError ?? 'Catálogo de gráficas no disponible. Verifique la conexión con el API.'}
+      </p>
+    );
+  }
+
+  const resolvedModule = currentModule as Module;
+  const currentItem = findChartItem(value.tipo, MENU);
 
   // Valores derivados seguros
   const activeVariable: string = value.variable ?? '';
@@ -684,7 +714,7 @@ export function ChartSelector({
   function handleModuleChange(moduleId: string): void {
     const mod = MENU.find((m) => m.id === moduleId);
     if (!mod) return;
-    if (chartTipoBelongsToModule(value.tipo, moduleId)) return;
+    if (chartTipoBelongsToModule(value.tipo, moduleId, MENU)) return;
 
     if (mod.subsectors && mod.subsectors.length > 0) {
       const firstSub: Subsector | undefined = mod.subsectors[0];
@@ -698,7 +728,7 @@ export function ChartSelector({
   }
 
   function handleSubsectorChange(subsectorId: string): void {
-    const sub = currentModule.subsectors?.find((s) => s.id === subsectorId);
+    const sub = resolvedModule.subsectors?.find((s) => s.id === subsectorId);
     if (!sub) return;
     if (sub.charts.some((c) => c.id === value.tipo)) {
       return;

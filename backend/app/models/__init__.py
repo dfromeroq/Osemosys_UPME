@@ -5,6 +5,21 @@ from .change_request_value import ChangeRequestValue
 from .catalog_change_log import CatalogChangeLog
 from .categorie import Categorie
 from .chart_series_config import ChartSeriesConfig
+from .catalog_meta import (
+    CatalogMetaAudit,
+    CatalogMetaChartConfig,
+    CatalogMetaChartModule,
+    CatalogMetaChartSubfilter,
+    CatalogMetaChartSubfilterGroup,
+    CatalogMetaChartSubmodule,
+    CatalogMetaColorPalette,
+    CatalogMetaFilterGroup,
+    CatalogMetaFilterMember,
+    CatalogMetaLabel,
+    CatalogMetaSectorMapping,
+    CatalogMetaTechFamily,
+    CatalogMetaVariableUnit,
+)
 from .deletion_log import DeletionLog
 from .dailytimebracket import Dailytimebracket
 from .daytype import Daytype
@@ -83,6 +98,19 @@ __all__ = [
     "ChangeRequestValue",
     "CatalogChangeLog",
     "ChartSeriesConfig",
+    "CatalogMetaAudit",
+    "CatalogMetaChartConfig",
+    "CatalogMetaChartModule",
+    "CatalogMetaChartSubfilter",
+    "CatalogMetaChartSubfilterGroup",
+    "CatalogMetaChartSubmodule",
+    "CatalogMetaColorPalette",
+    "CatalogMetaFilterGroup",
+    "CatalogMetaFilterMember",
+    "CatalogMetaLabel",
+    "CatalogMetaSectorMapping",
+    "CatalogMetaTechFamily",
+    "CatalogMetaVariableUnit",
     "Categorie",
     "DeletionLog",
     "ModelParameterCatalog",

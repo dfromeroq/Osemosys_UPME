@@ -489,6 +489,34 @@ def _persist_infeasibility_event(
         )
 
 
+def _warn_empty_dispatch_if_optimal(
+    db: Session,
+    *,
+    job_id: int,
+    solution: dict[str, Any],
+) -> None:
+    """Alerta si el solve fue optimal pero no se extrajo dispatch."""
+    status = str(solution.get("solver_status", "")).lower()
+    if "optimal" not in status:
+        return
+    total_demand = float(solution.get("total_demand") or 0.0)
+    total_dispatch = float(solution.get("total_dispatch") or 0.0)
+    if total_demand <= 0 or total_dispatch > 0:
+        return
+    SimulationRepository.add_event(
+        db,
+        job_id=job_id,
+        event_type="WARNING",
+        stage="process_results",
+        message=(
+            "Post-proceso: dispatch vacío pese a solve optimal y demanda > 0. "
+            "Revise mapeo de solución HiGHS / extracción de RateOfActivity."
+        ),
+        progress=95.0,
+    )
+    db.commit()
+
+
 def _persist_solution(
     db: Session,
     *,
@@ -713,6 +741,8 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
     )
     db.commit()
 
+    _warn_empty_dispatch_if_optimal(db, job_id=job_id, solution=solution)
+
     output_count = _persist_solution(
         db,
         job=job,
@@ -864,6 +894,8 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
         progress=96.0,
     )
     db.commit()
+
+    _warn_empty_dispatch_if_optimal(db, job_id=job_id, solution=solution)
 
     output_count = _persist_solution(
         db,

@@ -32,13 +32,30 @@ if (-not (Test-Path $backendEnv)) {
 Push-Location $repoRoot
 try {
   if ($SkipBuild) {
-    Invoke-Checked -Command "docker" -Arguments @("compose", "up", "-d")
+    Invoke-Checked -Command "docker" -Arguments @("compose", "up", "-d", "db", "redis")
   } else {
     Invoke-Checked -Command "docker" -Arguments @("compose", "build", "--no-cache")
-    Invoke-Checked -Command "docker" -Arguments @("compose", "up", "-d")
+    Invoke-Checked -Command "docker" -Arguments @("compose", "up", "-d", "db", "redis")
   }
 
-  Invoke-Checked -Command "docker" -Arguments @("compose", "exec", "api", "alembic", "upgrade", "head")
+  Write-Host "==> Esperando PostgreSQL..." -ForegroundColor Cyan
+  Invoke-Checked -Command "docker" -Arguments @("compose", "exec", "-T", "db", "pg_isready", "-U", "osemosys", "-d", "osemosys")
+
+  Invoke-Checked -Command "docker" -Arguments @("compose", "run", "--rm", "--no-deps", "api", "alembic", "upgrade", "head")
+
+  if (-not $SkipSeed) {
+    Write-Host "==> Sembrando catálogo de visualización..." -ForegroundColor Cyan
+    Invoke-Checked -Command "docker" -Arguments @(
+      "compose", "run", "--rm", "--no-deps", "api", "python", "-c",
+      "from app.db.session import SessionLocal; from app.visualization.catalog_seed import seed_visualization_catalog; db=SessionLocal(); seed_visualization_catalog(db); db.close()"
+    )
+  }
+
+  if ($SkipBuild) {
+    Invoke-Checked -Command "docker" -Arguments @("compose", "up", "-d")
+  } else {
+    Invoke-Checked -Command "docker" -Arguments @("compose", "up", "-d")
+  }
 
   if (-not $SkipSeed) {
     Invoke-Checked -Command "docker" -Arguments @("compose", "exec", "api", "python", "scripts/seed.py")

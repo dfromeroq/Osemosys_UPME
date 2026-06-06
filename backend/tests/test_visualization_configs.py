@@ -6,12 +6,12 @@ import pandas as pd
 import pytest
 
 from app.visualization.chart_service import get_chart_catalog
-from app.visualization.configs import CONFIGS, _filtro_solidos_import, _filtro_solidos_flujos
-from app.visualization.configs import _filtro_solidos_extraccion, _filtro_ref_total
-from app.visualization.configs import _filtro_construccion, _filtro_agroforestal
-from app.visualization.configs import _filtro_mineria, _filtro_coquerias
-from app.visualization.configs import _filtro_extraccion_min, _filtro_saf_produccion
-from app.visualization.configs import (
+from app.visualization.configs_legacy import CONFIGS, _filtro_solidos_import, _filtro_solidos_flujos
+from app.visualization.configs_legacy import _filtro_solidos_extraccion, _filtro_ref_total
+from app.visualization.configs_legacy import _filtro_construccion, _filtro_agroforestal
+from app.visualization.configs_legacy import _filtro_mineria, _filtro_coquerias
+from app.visualization.configs_legacy import _filtro_extraccion_min, _filtro_saf_produccion
+from app.visualization.configs_legacy import (
     _filtro_h2,
     _filtro_ups_refinacion,
     _filtro_min_hidrocarburos,
@@ -61,21 +61,21 @@ def _make_df(technologies: list[str], years: list[int] | None = None) -> pd.Data
 class TestChartCatalog:
     """Tests para get_chart_catalog."""
 
-    def test_catalog_includes_fase1_configs(self) -> None:
+    def test_catalog_includes_fase1_configs(self, db_session) -> None:
         """El catálogo debe exponer todos los configs de Fase 1."""
         catalog = get_chart_catalog()
         ids = {item.id for item in catalog}
         for config_id in CONFIGS_FASE1:
             assert config_id in ids, f"Config '{config_id}' no está en el catálogo"
 
-    def test_catalog_includes_plan_v3_configs(self) -> None:
+    def test_catalog_includes_plan_v3_configs(self, db_session) -> None:
         """El catálogo debe exponer los 10 configs nuevos del plan v3."""
         catalog = get_chart_catalog()
         ids = {item.id for item in catalog}
         for config_id in CONFIGS_PLAN_V3:
             assert config_id in ids, f"Config '{config_id}' no está en el catálogo"
 
-    def test_catalog_items_have_required_fields(self) -> None:
+    def test_catalog_items_have_required_fields(self, db_session) -> None:
         """Cada ítem del catálogo debe tener id, label, variable_default."""
         catalog = get_chart_catalog()
         for item in catalog:

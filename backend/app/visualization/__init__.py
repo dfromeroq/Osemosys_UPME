@@ -17,7 +17,7 @@ from .colors import (
     COLOR_BASE_FAMILIA,
     COLOR_MAP_PWR,
 )
-from .configs import CONFIGS, TITULOS_VARIABLES_CAPACIDAD
+from .configs import CONFIGS
 from .configs_comparacion import CONFIGS_COMPARACION, MAPA_SECTOR, COLORES_SECTOR
 from .chart_service import (
     build_chart_data,

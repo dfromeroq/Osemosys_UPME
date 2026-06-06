@@ -200,19 +200,49 @@ def _apply_solver_runtime_options(
     return None
 
 
+def _strip_pyomo_index_token(token: str) -> str:
+    t = token.strip()
+    if len(t) >= 2 and t[0] == t[-1] and t[0] in ("'", '"'):
+        return t[1:-1]
+    return t
+
+
+def _pyomo_index_inner_to_lp(inner: str) -> str:
+    """Convierte índices Pyomo ``a,b,'c'`` al segmento LP ``a_b_c`` de HiGHS."""
+    return "_".join(_strip_pyomo_index_token(part) for part in inner.split(","))
+
+
 def _pyomo_name_to_lp(name: str) -> str:
-    """Normaliza nombres Pyomo ``Var[...]`` al formato LP ``Var(...)``."""
+    """Normaliza nombres Pyomo ``Var[...]`` al formato LP de HiGHS ``Var(...)``.
+
+    HiGHS reemplaza comas entre índices por guiones bajos al leer el LP
+    (p. ej. ``RateOfActivity[RE1,S101,T,1,2022]`` → ``RateOfActivity(RE1_S101_T_1_2022)``).
+    """
     if "[" in name and name.endswith("]"):
         base, rest = name.split("[", 1)
-        return f"{base}({rest[:-1]})"
+        return f"{base}({_pyomo_index_inner_to_lp(rest[:-1])})"
     return name
 
 
 def _lp_name_to_pyomo(name: str) -> str:
+    """Convierte nombre de columna LP a formato bracket Pyomo (aproximado)."""
     if "(" in name and name.endswith(")"):
         base, rest = name.split("(", 1)
         return f"{base}[{rest[:-1]}]"
     return name
+
+
+def _var_lookup_names(pyomo_name: str) -> tuple[str, ...]:
+    """Variantes de nombre para buscar una Var en el mapa de columnas HiGHS."""
+    if "[" not in pyomo_name or not pyomo_name.endswith("]"):
+        return (pyomo_name,)
+    base, rest = pyomo_name.split("[", 1)
+    inner = rest[:-1]
+    return (
+        pyomo_name,
+        _pyomo_name_to_lp(pyomo_name),
+        f"{base}({inner})",
+    )
 
 
 def _highs_status_to_raw(status: object) -> str:
@@ -249,13 +279,58 @@ def _set_var_value_from_col_map(
     var: Var,
     col_map: dict[str, float],
 ) -> None:
-    pyomo_name = var.name
-    lp_name = _pyomo_name_to_lp(pyomo_name)
-    val = col_map.get(pyomo_name)
-    if val is None:
-        val = col_map.get(lp_name)
+    val = None
+    for candidate in _var_lookup_names(var.name):
+        val = col_map.get(candidate)
+        if val is not None:
+            break
     if val is not None:
         var.set_value(val, skip_validation=True)
+
+
+def _count_nonzero_var_values(var_comp: object) -> int:
+    """Cuenta índices con valor no-cero en un Var indexado o escalar."""
+    count = 0
+    try:
+        values_iter = var_comp.values()  # type: ignore[union-attr]
+    except AttributeError:
+        val = getattr(var_comp, "value", None)
+        if val is not None and abs(float(val)) >= 1e-10:
+            return 1
+        return 0
+    for var in values_iter:
+        val = var.value
+        if val is not None and abs(float(val)) >= 1e-10:
+            count += 1
+    return count
+
+
+def _map_all_vars_from_col_map(
+    instance: pyo.ConcreteModel,
+    col_map: dict[str, float],
+) -> None:
+    for var in instance.component_data_objects(Var, active=True):
+        _set_var_value_from_col_map(var, col_map)
+
+
+def _ensure_rate_of_activity_mapped(
+    instance: pyo.ConcreteModel,
+    col_map: dict[str, float],
+    *,
+    selective_was_used: bool,
+) -> None:
+    """Si el mapeo selectivo no cargó RateOfActivity, remapea todas las Var."""
+    if not selective_was_used:
+        return
+    roa = getattr(instance, "RateOfActivity", None)
+    if roa is None:
+        return
+    if _count_nonzero_var_values(roa) > 0:
+        return
+    logger.warning(
+        "Mapeo selectivo dejó RateOfActivity vacío; remapeando todas las Var desde LP"
+    )
+    _map_all_vars_from_col_map(instance, col_map)
 
 
 def _map_dual_value(
@@ -325,6 +400,9 @@ def _apply_highspy_solution_to_instance(
                 continue
             for var in values_iter:
                 _set_var_value_from_col_map(var, col_map)
+        _ensure_rate_of_activity_mapped(
+            instance, col_map, selective_was_used=True
+        )
     else:
         for var in instance.component_data_objects(Var, active=True):
             _set_var_value_from_col_map(var, col_map)

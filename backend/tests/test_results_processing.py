@@ -10,6 +10,7 @@ import pytest
 from app.simulation.core.model_definition import create_abstract_model
 from app.simulation.core.results_processing import (
     RoaAggregates,
+    _apply_dense_ratio_fallback_if_needed,
     _coerce_number,
     _coerce_year,
     _collect_intermediate_parts,
@@ -174,6 +175,21 @@ class TestSafeExtract:
         second = _safe_extract(mini_instance.NewCapacity)
         assert first is second
 
+    def test_safe_extract_falls_back_to_dot_value_when_private_value_none(
+        self,
+    ) -> None:
+        """Simula VarData con _value=None pero .value poblado (post-HiGHS)."""
+        from unittest.mock import MagicMock, PropertyMock
+
+        mock_var = MagicMock(spec=pyo.Var)
+        mock_vd = MagicMock()
+        mock_vd._value = None
+        type(mock_vd).value = PropertyMock(return_value=99.0)
+        key = ("R1", "TS1", "T1", "1", 2020)
+        mock_var._data = {key: mock_vd}
+        raw = _safe_extract(mock_var, use_cache=False)
+        assert raw[key] == pytest.approx(99.0)
+
 
 class TestAggregates:
     def test_loop_and_pandas_match(self, mini_instance) -> None:
@@ -189,6 +205,19 @@ class TestAggregates:
         agg = _precompute_roa_aggregates(mini_instance)
         assert agg.activity_by_rlty[("R1", "TS1", "T1", 2020)] == pytest.approx(5.0)
         assert agg.activity_by_rlty[("R1", "TS2", "T1", 2020)] == pytest.approx(10.0)
+
+    def test_dense_ratio_fallback_when_sparse_oar_empty(self, mini_instance) -> None:
+        agg = RoaAggregates(
+            roa_raw={("R1", "TS1", "T1", "1", 2020): 10.0},
+            ys_data={("TS1", 2020): 0.5},
+            activity_by_rlty={("R1", "TS1", "T1", 2020): 5.0},
+            oar_data={},
+            iar_data={},
+            prod_by_rftly={},
+        )
+        fixed = _apply_dense_ratio_fallback_if_needed(mini_instance, agg)
+        assert fixed.prod_by_rftly
+        assert fixed.oar_data
 
 
 class TestExtractDispatch:

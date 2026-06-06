@@ -334,6 +334,7 @@ def _safe_extract(var_component, *, use_cache: bool = True) -> dict:
             comp_name = None
 
     if isinstance(var_component, pyo.Var) and hasattr(var_component, "_data"):
+        raw: dict = {}
         try:
             raw = {
                 k: vv
@@ -342,10 +343,21 @@ def _safe_extract(var_component, *, use_cache: bool = True) -> dict:
             }
         except AttributeError:
             raw = {}
+        if not raw and var_component._data:
             for k, v in var_component._data.items():
                 val = v.value
                 if val is not None and abs(val) >= _EPS:
                     raw[k] = val
+        if not raw:
+            try:
+                extracted = var_component.extract_values()
+                raw = {
+                    k: float(v)
+                    for k, v in extracted.items()
+                    if v is not None and abs(float(v)) >= _EPS
+                }
+            except Exception:
+                raw = {}
         if cache is not None and comp_name:
             with _safe_extract_cache_lock:
                 cache[comp_name] = raw
@@ -409,6 +421,19 @@ def _safe_extract_param(instance: pyo.ConcreteModel, param_name: str) -> dict:
     if param is None or not hasattr(param, "extract_values"):
         return {}
     return _safe_extract_sparse_param(param)
+
+
+def _safe_extract_param_dense(instance: pyo.ConcreteModel, param_name: str) -> dict:
+    """Extracción densa de un Param (fallback cuando sparse devuelve vacío)."""
+    param = getattr(instance, param_name, None)
+    if param is None or not hasattr(param, "extract_values"):
+        return {}
+    raw = param.extract_values()
+    return {
+        k: float(v)
+        for k, v in raw.items()
+        if v is not None and abs(float(v)) >= _EPS
+    }
 
 
 # Legacy helper conservado comentado para notebooks/debug futuro.
@@ -712,18 +737,91 @@ def _precompute_roa_aggregates_pd(instance: pyo.ConcreteModel) -> RoaAggregates:
     )
 
 
+def _recompute_prod_use_aggregates(
+    agg: RoaAggregates,
+    oar_data: dict[tuple, float],
+    iar_data: dict[tuple, float],
+) -> RoaAggregates:
+    """Recalcula prod/use a partir de roa_raw ya cargado y ratios densos."""
+    ys_data = agg.ys_data
+    oar_idx = _index_ratio_by_rtmoy(oar_data)
+    iar_idx = _index_ratio_by_rtmoy(iar_data)
+    prod_by_rftly: dict[tuple, float] = defaultdict(float)
+    use_by_rftly: dict[tuple, float] = defaultdict(float)
+    prod_by_rfy: dict[tuple, float] = defaultdict(float)
+    best_fuel = dict(agg.best_fuel)
+    for (r, l, t, mo, y), roa in agg.roa_raw.items():
+        if abs(roa) < _EPS:
+            continue
+        ys = ys_data.get((l, y), 1.0) if ys_data else 1.0
+        for f, oar_val in oar_idx.get((r, t, mo, y), ()):
+            prod = roa * oar_val * ys
+            prod_by_rftly[(r, t, f, l, y)] += prod
+            prod_by_rfy[(r, f, y)] += prod
+        for f, iar_val in iar_idx.get((r, t, mo, y), ()):
+            use_by_rftly[(r, t, f, l, y)] += roa * iar_val * ys
+    for (r, t, f, mo, y), oar_val in oar_data.items():
+        if oar_val > 0:
+            key = (r, t, y)
+            if key not in best_fuel:
+                best_fuel[key] = f
+    return RoaAggregates(
+        roa_raw=agg.roa_raw,
+        ys_data=agg.ys_data,
+        vc_data=agg.vc_data,
+        oar_data=oar_data,
+        iar_data=iar_data,
+        demand_data=agg.demand_data,
+        oar_idx=oar_idx,
+        iar_idx=iar_idx,
+        activity_by_rlty=agg.activity_by_rlty,
+        cost_by_rlty=agg.cost_by_rlty,
+        best_fuel=best_fuel,
+        prod_by_rftly={k: v for k, v in prod_by_rftly.items() if abs(v) >= _EPS},
+        use_by_rftly={k: v for k, v in use_by_rftly.items() if abs(v) >= _EPS},
+        prod_by_rfy={k: v for k, v in prod_by_rfy.items() if abs(v) >= _EPS},
+        demand_by_rfy=agg.demand_by_rfy,
+    )
+
+
+def _apply_dense_ratio_fallback_if_needed(
+    instance: pyo.ConcreteModel,
+    agg: RoaAggregates,
+) -> RoaAggregates:
+    """Si hay actividad pero prod vacío por ratios sparse, re-extrae OAR/IAR denso."""
+    if not agg.activity_by_rlty or agg.prod_by_rftly:
+        return agg
+    oar_data = agg.oar_data
+    iar_data = agg.iar_data
+    if not oar_data:
+        logger.warning(
+            "OutputActivityRatio sparse vacío con actividad > 0; fallback extracción densa"
+        )
+        oar_data = _safe_extract_param_dense(instance, "OutputActivityRatio")
+    if not iar_data:
+        logger.warning(
+            "InputActivityRatio sparse vacío con actividad > 0; fallback extracción densa"
+        )
+        iar_data = _safe_extract_param_dense(instance, "InputActivityRatio")
+    if not oar_data and not iar_data:
+        return agg
+    return _recompute_prod_use_aggregates(agg, oar_data, iar_data)
+
+
 def _precompute_roa_aggregates(instance: pyo.ConcreteModel) -> RoaAggregates:
     """Punto de entrada: pandas para datasets no triviales, loop para casos mínimos."""
     roa_raw = _safe_extract(instance.RateOfActivity)
     if len(roa_raw) < 32:
-        return _precompute_roa_aggregates_loop(instance)
-    try:
-        return _precompute_roa_aggregates_pd(instance)
-    except Exception:
-        logger.exception(
-            "Fallo precompute pandas; usando fallback Python para RateOfActivity"
-        )
-        return _precompute_roa_aggregates_loop(instance)
+        agg = _precompute_roa_aggregates_loop(instance)
+    else:
+        try:
+            agg = _precompute_roa_aggregates_pd(instance)
+        except Exception:
+            logger.exception(
+                "Fallo precompute pandas; usando fallback Python para RateOfActivity"
+            )
+            agg = _precompute_roa_aggregates_loop(instance)
+    return _apply_dense_ratio_fallback_if_needed(instance, agg)
 
 
 def _format_dispatch_from_aggregates(

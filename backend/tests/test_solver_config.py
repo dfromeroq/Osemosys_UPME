@@ -134,11 +134,11 @@ def test_apply_highs_options_raises_when_hipo_is_rejected() -> None:
         raise AssertionError("Expected ValueError when HiGHS rejects hipo")
 
 
-def test_pyomo_lp_name_roundtrip() -> None:
+def test_pyomo_lp_name_highs_underscore_format() -> None:
     pyomo = "RateOfActivity[COL,1,AN_PWRSOL,1,2030]"
     lp = solver_module._pyomo_name_to_lp(pyomo)
-    assert lp == "RateOfActivity(COL,1,AN_PWRSOL,1,2030)"
-    assert solver_module._lp_name_to_pyomo(lp) == pyomo
+    assert lp == "RateOfActivity(COL_1_AN_PWRSOL_1_2030)"
+    assert solver_module._lp_name_to_pyomo(lp) == "RateOfActivity[COL_1_AN_PWRSOL_1_2030]"
 
 
 def test_solve_model_uses_settings_for_tee_and_keepfiles(monkeypatch) -> None:

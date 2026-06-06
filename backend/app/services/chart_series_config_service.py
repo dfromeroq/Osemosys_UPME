@@ -19,8 +19,12 @@ from app.visualization.colors import (
     _color_electricidad,
     asignar_grupo,
 )
-from app.visualization.configs import CONFIGS
-from app.visualization.configs_comparacion import CONFIGS_COMPARACION, COLORES_SECTOR, MAPA_SECTOR
+from app.visualization.catalog_reader import (
+    get_colores_sector,
+    get_configs,
+    get_configs_comparacion,
+    get_mapa_sector,
+)
 from app.visualization.data_explorer_filters import get_data_explorer_filters
 from app.visualization.labels import get_label
 from app.visualization.regional import REGION_COLORS
@@ -110,7 +114,7 @@ def _initial_group_for_tech(code: str) -> str | None:
 
 
 def _sector_label_codes() -> list[str]:
-    names = sorted(set(MAPA_SECTOR.values()) | {"Generación Electricidad", "Otros"})
+    names = sorted(set(get_mapa_sector().values()) | {"Generación Electricidad", "Otros"})
     return names
 
 
@@ -121,14 +125,15 @@ def _resolve_metadata(
 ) -> tuple[dict[str, Any] | None, dict[str, Any], str | None]:
     """Metadata de CONFIGS o CONFIGS_COMPARACION + dict tipo DATA_EXPLORER_FILTERS."""
     t = tipo.strip()
-    cfg = CONFIGS.get(t)
+    configs = get_configs()
+    cfg = configs.get(t)
     if cfg is not None:
         var_default = (
             variable if (variable and str(variable).strip()) else cfg.get("variable_default")
         )
         de = get_data_explorer_filters(t, var_default)
         return cfg, de, var_default
-    ccomp = CONFIGS_COMPARACION.get(t)
+    ccomp = get_configs_comparacion().get(t)
     if ccomp is not None:
         var_default = str(ccomp.get("variable_default") or "")
         prefijo = ccomp["prefijo"]
@@ -163,7 +168,7 @@ def _iter_populate_rows(
             .where(or_(*conds))
         )
         codes = [str(c) for c in db.scalars(stmt).all()]
-        single_cfg = CONFIGS.get(tipo.strip())
+        single_cfg = get_configs().get(tipo.strip())
         use_elec = bool(single_cfg and _uses_pwr_family_order(single_cfg))
         if use_elec:
             ordered = _order_electric_techs(codes)
@@ -242,7 +247,7 @@ def _iter_populate_rows(
 
     elif ap == "SECTOR":
         for i, name in enumerate(_sector_label_codes()):
-            col = COLORES_SECTOR.get(name, "#999999")
+            col = get_colores_sector().get(name, "#999999")
             yield (name, name, col, None, i * 10)
 
     elif ap == "EMISION":
@@ -310,8 +315,9 @@ def populate_chart_type(
 ) -> int:
     """Inserta filas faltantes. No modifica las existentes. Retorna N insertadas."""
     t = tipo.strip()
-    cfg = CONFIGS.get(t)
-    ccomp = CONFIGS_COMPARACION.get(t)
+    configs = get_configs()
+    cfg = configs.get(t)
+    ccomp = get_configs_comparacion().get(t)
     if cfg is None and ccomp is None:
         raise ValueError(f"tipo desconocido: {tipo}")
     if cfg is not None:
@@ -355,16 +361,17 @@ def populate_chart_type(
 
 def populate_all_chart_types(db: Session) -> int:
     total = 0
-    for tipo in CONFIGS.keys():
+    configs = get_configs()
+    for tipo in configs.keys():
         if tipo in ("recursos_vs_demanda", "recursos_vs_demanda_gas", "recursos_vs_demanda_carbon"):
             continue
-        cfg = CONFIGS[tipo]
+        cfg = configs[tipo]
         ap = normalize_agrupar_por(None, cfg.get("agrupar_por"))
         try:
             total += populate_chart_type(db, tipo=tipo, agrupar_por=ap)
         except ValueError:
             continue
-    for tipo, ccfg in CONFIGS_COMPARACION.items():
+    for tipo, ccfg in get_configs_comparacion().items():
         ap_raw = ccfg.get("agrupacion_fija") or ccfg.get(
             "agrupacion_default", "TECNOLOGIA"
         )
@@ -466,7 +473,8 @@ def create_config(
 
 def chart_types_catalog() -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
-    for tipo, cfg in CONFIGS.items():
+    configs = get_configs()
+    for tipo, cfg in configs.items():
         if tipo in ("recursos_vs_demanda", "recursos_vs_demanda_gas", "recursos_vs_demanda_carbon"):
             continue
         out.append(
@@ -476,7 +484,7 @@ def chart_types_catalog() -> list[dict[str, Any]]:
                 "source": "single",
             }
         )
-    for tipo, cfg in CONFIGS_COMPARACION.items():
+    for tipo, cfg in get_configs_comparacion().items():
         ap_raw = cfg.get("agrupacion_fija") or cfg.get("agrupacion_default", "TECNOLOGIA")
         out.append(
             {

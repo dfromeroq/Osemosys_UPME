@@ -13,8 +13,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models import Emission, Fuel, Region, Technology
-from app.visualization.configs import CONFIGS
-from app.visualization.configs_comparacion import MAPA_SECTOR
+from app.visualization.catalog_reader import get_configs, get_mapa_sector
 from app.visualization.data_explorer_filters import get_data_explorer_filters
 from app.visualization.labels import get_label
 
@@ -43,7 +42,7 @@ def build_result_table_presentation_options(
     variable: str | None = None,
 ) -> dict[str, Any]:
     tipo_key = tipo.strip()
-    cfg = CONFIGS.get(tipo_key) or {}
+    cfg = get_configs().get(tipo_key) or {}
     variable_default = variable if (variable and variable.strip()) else cfg.get(
         "variable_default"
     )
@@ -87,7 +86,7 @@ def build_result_table_presentation_options(
                 )
 
     elif ap == "SECTOR":
-        for code, sector_name in MAPA_SECTOR.items():
+        for code, sector_name in get_mapa_sector().items():
             raw_options.append({"value": sector_name, "code": code})
         raw_options.sort(key=lambda x: x["value"])
 

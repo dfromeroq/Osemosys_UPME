@@ -291,12 +291,16 @@ DATA_EXPLORER_FILTERS: dict[str, dict[str, Any]] = {
 
 
 def get_data_explorer_filters(chart_type: str, variable_default: str | None = None) -> dict[str, Any]:
-    """Devuelve los filtros para abrir el Data Explorer desde un chart.
+    """Devuelve los filtros para abrir el Data Explorer desde un chart."""
+    try:
+        from app.visualization.catalog_reader import get_data_explorer_filters as _from_db
 
-    Si no hay entrada explícita para ``chart_type``, retorna un dict con
-    ``variable_names = [variable_default]`` (si se pasó). El frontend siempre
-    recibe al menos la lista de variables que el chart consume.
-    """
+        entry = _from_db(chart_type)
+        if entry is not None:
+            return entry
+    except RuntimeError:
+        pass
+
     entry = DATA_EXPLORER_FILTERS.get(chart_type)
     if entry is not None:
         return entry

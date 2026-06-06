@@ -29,15 +29,16 @@ from app.services.chart_series_config_service import (
     require_reports_admin,
     update_config,
 )
-from app.visualization.configs import CONFIGS
+from app.visualization.catalog_reader import get_configs
 from app.visualization.configs_comparacion import CONFIGS_COMPARACION
 
 router = APIRouter(prefix="/chart-series-config")
 
 
 def _default_agrupar_for_tipo(tipo_key: str) -> str | None:
-    if tipo_key in CONFIGS:
-        return CONFIGS[tipo_key].get("agrupar_por")
+    configs = get_configs()
+    if tipo_key in configs:
+        return configs[tipo_key].get("agrupar_por")
     if tipo_key in CONFIGS_COMPARACION:
         c = CONFIGS_COMPARACION[tipo_key]
         return c.get("agrupacion_fija") or c.get("agrupacion_default")

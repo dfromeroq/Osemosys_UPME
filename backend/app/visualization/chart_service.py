@@ -88,15 +88,6 @@ from app.visualization.configs import (
     PWR_TECH_ALIASES,
     TITULOS_VARIABLES_CAPACIDAD,
     NOMBRES_COMBUSTIBLES,
-    TECNOLOGIAS_EXPORTACION_CARBON,
-    TECNOLOGIAS_INDUSTRIALES,
-    TECNOLOGIAS_RESIDENCIALES,
-    TECNOLOGIAS_TRANSPORTE,
-    TECNOLOGIAS_TRANSPORTE_CARRETERA,
-    TECNOLOGIAS_TERCIARIO,
-    TEC_RES_URB,
-    TEC_RES_RUR,
-    TEC_RES_ZNI,
     _filtro_recursos_crudo,
     _filtro_recursos_gas,
     _filtro_recursos_carbon,
@@ -109,6 +100,7 @@ from app.visualization.catalog_reader import (
     get_colores_emisiones,
     get_colores_grupos,
     get_colores_sector,
+    get_configs_comparacion,
     get_mapa_sector,
 )
 
@@ -659,23 +651,29 @@ def _fuel_to_group(row) -> str:
     return asignar_grupo(fuel) if fuel else "OTRO"
 
 
-_PREFIJO_TECH_LISTS: dict[str, list[str]] = {
-    "DEMIND": TECNOLOGIAS_INDUSTRIALES,
-    "DEMRES": TECNOLOGIAS_RESIDENCIALES,
-    "DEMTRA": TECNOLOGIAS_TRANSPORTE,
-    "DEMTER": TECNOLOGIAS_TERCIARIO,
+_PREFIJO_TECH_LISTS: dict[str, str] = {
+    "DEMIND": "TECNOLOGIAS_INDUSTRIALES",
+    "DEMRES": "TECNOLOGIAS_RESIDENCIALES",
+    "DEMTRA": "TECNOLOGIAS_TRANSPORTE",
+    "DEMTER": "TECNOLOGIAS_TERCIARIO",
 }
 
 
 def _resolve_tech_list(prefijo: str | tuple[str, ...]) -> list[str]:
+    from app.visualization.catalog_cache import get_catalog_cache
+
+    resolver = get_catalog_cache().filter_resolver
     if isinstance(prefijo, tuple):
         combined: list[str] = []
         for p in prefijo:
-            lst = _PREFIJO_TECH_LISTS.get(p)
-            if lst:
-                combined.extend(lst)
+            code = _PREFIJO_TECH_LISTS.get(p)
+            if code:
+                combined.extend(resolver.tech(code))
         return combined
-    return _PREFIJO_TECH_LISTS.get(prefijo, [])
+    code = _PREFIJO_TECH_LISTS.get(prefijo)
+    if code:
+        return list(resolver.tech(code))
+    return []
 
 
 def _filtrar_df(
@@ -696,18 +694,32 @@ def _filtrar_df(
     mask = df["TECHNOLOGY"].isin(tech_list)
 
     if sub_filtro == "CARRETERA":
-        mask &= df["TECHNOLOGY"].isin(TECNOLOGIAS_TRANSPORTE_CARRETERA)
+        from app.visualization.catalog_cache import get_catalog_cache
+
+        carretera = get_catalog_cache().filter_resolver.tech(
+            "TECNOLOGIAS_TRANSPORTE_CARRETERA"
+        )
+        mask &= df["TECHNOLOGY"].isin(carretera)
     elif sub_filtro:
         mask &= df["TECHNOLOGY"].isin(
             [t for t in tech_list if sub_filtro in t]
         )
 
     if loc == "URB":
-        mask &= df["TECHNOLOGY"].isin(TEC_RES_URB)
+        from app.visualization.catalog_cache import get_catalog_cache
+
+        resolver = get_catalog_cache().filter_resolver
+        mask &= df["TECHNOLOGY"].isin(resolver.tech("TEC_RES_URB"))
     elif loc == "RUR":
-        mask &= df["TECHNOLOGY"].isin(TEC_RES_RUR)
+        from app.visualization.catalog_cache import get_catalog_cache
+
+        resolver = get_catalog_cache().filter_resolver
+        mask &= df["TECHNOLOGY"].isin(resolver.tech("TEC_RES_RUR"))
     elif loc == "ZNI":
-        mask &= df["TECHNOLOGY"].isin(TEC_RES_ZNI)
+        from app.visualization.catalog_cache import get_catalog_cache
+
+        resolver = get_catalog_cache().filter_resolver
+        mask &= df["TECHNOLOGY"].isin(resolver.tech("TEC_RES_ZNI"))
 
     return df[mask].copy()
 
@@ -730,9 +742,21 @@ _TRANSPORTE_USO_A_GRUPO: dict[str, str] = {
 }
 
 
+def _transporte_techs() -> frozenset[str]:
+    from app.visualization.catalog_cache import get_catalog_cache
+
+    return get_catalog_cache().filter_resolver.tech("TECNOLOGIAS_TRANSPORTE")
+
+
+def _export_carbon_techs() -> frozenset[str]:
+    from app.visualization.catalog_cache import get_catalog_cache
+
+    return get_catalog_cache().filter_resolver.tech("TECNOLOGIAS_EXPORTACION_CARBON")
+
+
 def _map_transporte_grupo(tech_code: str) -> str:
     """Clasifica un código DEMTRA en grupo de transporte."""
-    if not isinstance(tech_code, str) or tech_code not in TECNOLOGIAS_TRANSPORTE:
+    if not isinstance(tech_code, str) or tech_code not in _transporte_techs():
         return "Otros"
     rest = tech_code[len("DEMTRA"):]
 
@@ -780,7 +804,7 @@ _MODOS_TRANSPORTE_MAP: dict[str, str] = {
 
 def _map_transporte_modo(tech_code: str) -> str:
     """Clasifica un código DEMTRA en modo de transporte (CARRETERA, AVI, BOT, MET)."""
-    if not isinstance(tech_code, str) or tech_code not in TECNOLOGIAS_TRANSPORTE:
+    if not isinstance(tech_code, str) or tech_code not in _transporte_techs():
         return "Otros"
     rest = tech_code[len("DEMTRA"):]
 
@@ -1147,7 +1171,7 @@ def _build_recursos_production_total(
         if not df_prod.empty:
             df_prod = _apply_regional_transform(db, job_id, df_prod)
             df_prod = _filtro_recursos_carbon(df_prod)
-            export = df_prod[df_prod["TECHNOLOGY"].isin(TECNOLOGIAS_EXPORTACION_CARBON)].groupby("YEAR")["VALUE"].sum().to_dict()
+            export = df_prod[df_prod["TECHNOLOGY"].isin(_export_carbon_techs())].groupby("YEAR")["VALUE"].sum().to_dict()
         else:
             export = {}
 
@@ -1322,7 +1346,7 @@ def build_recursos_vs_demanda_carbon_data(
         df_prod = _apply_regional_transform(db, job_id, df_prod)
         df_prod = _filtro_recursos_carbon(df_prod)
         export_by_year = (
-            df_prod[df_prod["TECHNOLOGY"].isin(TECNOLOGIAS_EXPORTACION_CARBON)]
+            df_prod[df_prod["TECHNOLOGY"].isin(_export_carbon_techs())]
             .groupby("YEAR")["VALUE"].sum().to_dict()
         )
     else:
