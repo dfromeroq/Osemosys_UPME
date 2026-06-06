@@ -89,6 +89,10 @@ class Settings(BaseSettings):
         default="",
         alias="SIMULATION_OPS_REMOTE_ENVIRONMENTS",
     )
+    simulation_ops_shared_token: str = Field(
+        default="",
+        alias="SIMULATION_OPS_SHARED_TOKEN",
+    )
 
     # Auth
     secret_key: str = Field(default="change-me", alias="SECRET_KEY")
