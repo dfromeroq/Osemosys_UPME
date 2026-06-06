@@ -304,6 +304,15 @@ export type SimulationOpsEnvironment = {
     limits?: Record<string, number>;
   };
   runtime_env: Record<string, string | null>;
+  system_resources?: {
+    cpu_logical_count?: number | null;
+    cpu_percent?: number | null;
+    cpu_used_cores?: number | null;
+    memory_total_bytes?: number | null;
+    memory_available_bytes?: number | null;
+    memory_used_bytes?: number | null;
+    memory_used_percent?: number | null;
+  };
   services_memory: Array<{ service_name: string; memory_usage_bytes: number }>;
   services_memory_total_bytes: number;
   active_jobs: SimulationOpsJob[];

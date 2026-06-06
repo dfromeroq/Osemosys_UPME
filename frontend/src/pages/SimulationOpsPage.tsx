@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { simulationOpsApi } from "@/features/simulation/api/simulationOpsApi";
+import type { ResourceTimelineCapacity } from "@/features/simulation/components/ResourceTimeline";
 import { ResourceTimeline } from "@/features/simulation/components/ResourceTimeline";
 import type { SimulationOpsDashboard, SimulationOpsEnvironment, SimulationOpsJob } from "@/types/domain";
 
@@ -29,15 +30,31 @@ function shortCommit(value: string | null | undefined): string {
   return value ? value.slice(0, 7) : "—";
 }
 
+function bytesToGb(value: number | null | undefined): number | null {
+  const bytes = Number(value ?? Number.NaN);
+  return Number.isFinite(bytes) ? bytes / (1024 ** 3) : null;
+}
+
+function formatGb(value: number | null | undefined): string {
+  const gb = Number(value ?? Number.NaN);
+  if (!Number.isFinite(gb)) return "—";
+  return `${gb.toLocaleString("es-CO", { maximumFractionDigits: 1 })} GB`;
+}
+
 function JobTable({
   environment,
   jobs,
   onCancel,
+  capacity,
 }: {
   environment: string;
   jobs: SimulationOpsJob[];
   onCancel: (environment: string, jobId: number) => void;
+  capacity?: ResourceTimelineCapacity;
 }) {
+  const firstWithSamples = jobs.find((job) => (job.runtime?.resource_samples?.length ?? 0) > 1)?.id ?? null;
+  const [selectedJobId, setSelectedJobId] = useState<number | null>(firstWithSamples);
+
   if (jobs.length === 0) {
     return <div className="text-sm text-slate-500">Sin ejecuciones activas.</div>;
   }
@@ -63,9 +80,13 @@ function JobTable({
           {jobs.map((job) => {
             const sample = job.runtime?.last_resource_sample;
             const samples = job.runtime?.resource_samples ?? [];
+            const selected = selectedJobId === job.id;
             return (
               <Fragment key={job.id}>
-                <tr className="border-t border-slate-800/70">
+                <tr
+                  className="border-t border-slate-800/70"
+                  style={{ background: selected ? "rgba(14,165,233,0.07)" : undefined }}
+                >
                   <td className="py-2 pr-3 font-mono text-slate-200">{job.id}</td>
                   <td className="py-2 pr-3 text-slate-200">{job.status}</td>
                   <td className="py-2 pr-3 text-slate-300">{job.simulation_type}</td>
@@ -88,6 +109,16 @@ function JobTable({
                     {shortCommit(job.runtime?.commit)}
                   </td>
                   <td className="py-2 text-right">
+                    {samples.length > 1 ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => setSelectedJobId(selected ? null : job.id)}
+                        style={{ padding: "5px 9px", fontSize: 12, marginRight: 6 }}
+                      >
+                        {selected ? "Ocultar" : "Ver"}
+                      </button>
+                    ) : null}
                     {job.status === "QUEUED" || job.status === "RUNNING" ? (
                       <button
                         type="button"
@@ -100,10 +131,14 @@ function JobTable({
                     ) : null}
                   </td>
                 </tr>
-                {samples.length > 1 ? (
+                {selected && samples.length > 1 ? (
                   <tr key={`${job.id}-resource-timeline`} className="border-t border-slate-900/70">
                     <td colSpan={10} className="py-3">
-                      <ResourceTimeline samples={samples} title={`Recursos por paso · ejecución ${job.id}`} />
+                      <ResourceTimeline
+                        samples={samples}
+                        title={`Recursos por paso · ejecución ${job.id}`}
+                        capacity={capacity}
+                      />
                     </td>
                   </tr>
                 ) : null}
@@ -125,6 +160,15 @@ function EnvironmentPanel({
 }) {
   const statusCounts = env.queue.counts_by_status_type ?? {};
   const limits = env.queue.limits ?? {};
+  const system = env.system_resources;
+  const totalRamGb = bytesToGb(system?.memory_total_bytes);
+  const usedRamGb = bytesToGb(system?.memory_used_bytes);
+  const capacity: ResourceTimelineCapacity = {
+    cpuCores: system?.cpu_logical_count,
+    totalRamGb,
+    currentCpuPercent: system?.cpu_percent,
+    currentRamUsedGb: usedRamGb,
+  };
   return (
     <section
       style={{
@@ -142,7 +186,7 @@ function EnvironmentPanel({
             {new Date(env.generated_at).toLocaleString("es-CO")}
           </div>
         </div>
-        <div className="grid grid-cols-4 gap-3 text-right">
+        <div className="grid grid-cols-5 gap-3 text-right">
           <div>
             <div className="text-xs text-slate-500">En cola</div>
             <div className="font-mono text-lg">{env.queue.queued_count ?? 0}</div>
@@ -158,6 +202,12 @@ function EnvironmentPanel({
           <div>
             <div className="text-xs text-slate-500">RAM servicios</div>
             <div className="font-mono text-lg">{formatBytes(env.services_memory_total_bytes)}</div>
+          </div>
+          <div>
+            <div className="text-xs text-slate-500">Máquina</div>
+            <div className="font-mono text-lg">
+              {system?.cpu_percent != null ? `${system.cpu_percent.toFixed(0)}%` : "—"} · {formatGb(usedRamGb)}
+            </div>
           </div>
         </div>
       </div>
@@ -190,6 +240,19 @@ function EnvironmentPanel({
           <div className="text-xs text-slate-500">Solver threads</div>
           <div className="font-mono">{env.runtime_env.SIM_SOLVER_THREADS ?? "—"}</div>
         </div>
+        <div className="text-sm text-slate-300">
+          <div className="text-xs text-slate-500">Capacidad máquina</div>
+          <div className="font-mono">
+            {system?.cpu_logical_count ?? "—"} cores · {formatGb(totalRamGb)}
+          </div>
+        </div>
+        <div className="text-sm text-slate-300">
+          <div className="text-xs text-slate-500">Uso actual máquina</div>
+          <div className="font-mono">
+            CPU {system?.cpu_percent != null ? `${system.cpu_percent.toFixed(1)}%` : "—"} · RAM{" "}
+            {formatGb(usedRamGb)}
+          </div>
+        </div>
       </div>
 
       {env.services_memory.length > 0 ? (
@@ -205,7 +268,7 @@ function EnvironmentPanel({
         </div>
       ) : null}
 
-      <JobTable environment={env.name} jobs={env.active_jobs} onCancel={onCancel} />
+      <JobTable environment={env.name} jobs={env.active_jobs} onCancel={onCancel} capacity={capacity} />
     </section>
   );
 }
