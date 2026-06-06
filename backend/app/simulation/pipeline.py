@@ -35,6 +35,7 @@ from app.repositories.simulation_repository import SimulationRepository
 from app.simulation.core.data_processing import PARAM_INDEX
 from app.simulation.core.results_processing import VARIABLE_INDEX_NAMES
 from app.simulation.osemosys_core import run_osemosys_from_csv_dir, run_osemosys_from_db
+from app.simulation.runtime_observability import ResourceTrace, collect_runtime_context
 
 
 def _safe_slug(text: str | None, *, max_len: int = 60) -> str:
@@ -165,6 +166,7 @@ def _make_on_stage_callback(
     *,
     job: SimulationJob,
     job_id: int,
+    resource_trace: ResourceTrace | None = None,
 ) -> Callable[..., None]:
     """Callback de progreso del worker; persiste timings parciales del solver."""
 
@@ -190,11 +192,30 @@ def _make_on_stage_callback(
         if timing_key is not None and timing_value is not None:
             mt = dict(job.model_timings_json or {})
             mt[timing_key] = float(timing_value)
+            if resource_trace is not None and not timing_only:
+                mt["runtime_resource_samples"] = resource_trace.sample(stage_name)
+            job.model_timings_json = mt
+        elif resource_trace is not None and not timing_only:
+            mt = dict(job.model_timings_json or {})
+            mt["runtime_resource_samples"] = resource_trace.sample(stage_name)
             job.model_timings_json = mt
         db.commit()
         _check_cancel_requested(db, job_id=job_id)
 
     return _on_stage
+
+
+def _record_runtime_context(job: SimulationJob, resource_trace: ResourceTrace) -> None:
+    mt = dict(job.model_timings_json or {})
+    mt.setdefault("runtime_context", collect_runtime_context())
+    mt["runtime_resource_samples"] = resource_trace.sample("pipeline_start")
+    job.model_timings_json = mt
+
+
+def _record_resource_sample(job: SimulationJob, resource_trace: ResourceTrace, stage: str) -> None:
+    mt = dict(job.model_timings_json or {})
+    mt["runtime_resource_samples"] = resource_trace.sample(stage)
+    job.model_timings_json = mt
 
 
 def _build_csv_inputs_summary(csv_root: str | Path) -> tuple[int, list[dict[str, Any]]]:
@@ -539,7 +560,10 @@ def _persist_solution(
     # Copia defensiva: evita aliasing entre el dict local y el estado ORM.
     # Sin esto, una mutación posterior puede quedar "invisible" para SQLAlchemy.
     job.stage_times_json = dict(stage_times)
-    _model_timings = dict(solution.get("model_timings", {}))
+    _model_timings = {
+        **dict(job.model_timings_json or {}),
+        **dict(solution.get("model_timings", {})),
+    }
     _model_timings["solver_status"] = solution.get("solver_status", "unknown")
     job.model_timings_json = _model_timings
     job.inputs_summary_json = inputs_summary
@@ -565,7 +589,10 @@ def _persist_critical_solver_metadata(
     aunque el worker muera durante la etapa posterior de persistencia pesada.
     """
     job.infeasibility_diagnostics_json = solution.get("infeasibility_diagnostics")
-    model_timings = dict(solution.get("model_timings", {}))
+    model_timings = {
+        **dict(job.model_timings_json or {}),
+        **dict(solution.get("model_timings", {})),
+    }
     model_timings["solver_status"] = solution.get("solver_status", "unknown")
     job.model_timings_json = model_timings
     db.commit()
@@ -577,10 +604,13 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
     Persiste resultados en BD (simulation_job + osemosys_output_param_value).
     """
     stage_times: dict[str, float] = {}
+    resource_trace = ResourceTrace()
     t0 = perf_counter()
     job = SimulationRepository.get_job_by_id(db, job_id=job_id)
     if not job:
         raise RuntimeError("SIMULATION_JOB_NOT_FOUND")
+    _record_runtime_context(job, resource_trace)
+    db.commit()
 
     # ------------------------------------------------------------------
     # ETAPA 1: EXTRACCION DE DATOS DE ENTRADA
@@ -633,6 +663,7 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
     db.commit()
     stage_times[f"{STAGE_EXTRACT_DATA}_seconds"] = perf_counter() - t0
     job.stage_times_json = dict(stage_times)
+    _record_resource_sample(job, resource_trace, f"{STAGE_EXTRACT_DATA}_complete")
     db.commit()
 
     # ------------------------------------------------------------------
@@ -654,6 +685,8 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
     job.progress = 40.0
     db.commit()
     stage_times[f"{STAGE_BUILD_MODEL}_seconds"] = perf_counter() - t1
+    _record_resource_sample(job, resource_trace, f"{STAGE_BUILD_MODEL}_complete")
+    db.commit()
 
     # ------------------------------------------------------------------
     # ETAPA 3: RESOLUCION DEL MODELO (SOLVE)
@@ -670,7 +703,12 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
     )
     db.commit()
 
-    _on_stage = _make_on_stage_callback(db, job=job, job_id=job_id)
+    _on_stage = _make_on_stage_callback(
+        db,
+        job=job,
+        job_id=job_id,
+        resource_trace=resource_trace,
+    )
 
     _gen_lp = bool(getattr(job, "generate_lp", False))
     _scenario_name = getattr(getattr(job, "scenario", None), "name", None)
@@ -723,6 +761,7 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
     _persist_critical_solver_metadata(db, job=job, solution=solution)
     stage_times[f"{STAGE_SOLVE}_seconds"] = perf_counter() - t2
     job.stage_times_json = dict(stage_times)
+    _record_resource_sample(job, resource_trace, f"{STAGE_SOLVE}_complete")
     db.commit()
 
     # ------------------------------------------------------------------
@@ -754,7 +793,9 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
 
     stage_times[f"{STAGE_PERSIST_RESULTS}_seconds"] = perf_counter() - t3
     job.stage_times_json = dict(stage_times)
+    _record_resource_sample(job, resource_trace, f"{STAGE_PERSIST_RESULTS}_complete")
     flag_modified(job, "stage_times_json")
+    flag_modified(job, "model_timings_json")
     db.commit()
 
     logger.info(
@@ -770,12 +811,15 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
 def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
     """Ejecuta una corrida completa de simulación a partir de un directorio CSV persistido."""
     stage_times: dict[str, float] = {}
+    resource_trace = ResourceTrace()
     t0 = perf_counter()
     job = SimulationRepository.get_job_by_id(db, job_id=job_id)
     if not job:
         raise RuntimeError("SIMULATION_JOB_NOT_FOUND")
     if not job.input_ref:
         raise RuntimeError("SIMULATION_CSV_INPUT_NOT_FOUND")
+    _record_runtime_context(job, resource_trace)
+    db.commit()
 
     csv_root = Path(str(job.input_ref)).resolve()
     if not csv_root.is_dir():
@@ -805,6 +849,7 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
     db.commit()
     stage_times[f"{STAGE_EXTRACT_DATA}_seconds"] = perf_counter() - t0
     job.stage_times_json = dict(stage_times)
+    _record_resource_sample(job, resource_trace, f"{STAGE_EXTRACT_DATA}_complete")
     db.commit()
 
     t1 = perf_counter()
@@ -821,6 +866,8 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
     job.progress = 40.0
     db.commit()
     stage_times[f"{STAGE_BUILD_MODEL}_seconds"] = perf_counter() - t1
+    _record_resource_sample(job, resource_trace, f"{STAGE_BUILD_MODEL}_complete")
+    db.commit()
 
     t2 = perf_counter()
     _check_cancel_requested(db, job_id=job_id)
@@ -834,7 +881,12 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
     )
     db.commit()
 
-    _on_stage = _make_on_stage_callback(db, job=job, job_id=job_id)
+    _on_stage = _make_on_stage_callback(
+        db,
+        job=job,
+        job_id=job_id,
+        resource_trace=resource_trace,
+    )
 
     _gen_lp = bool(getattr(job, "generate_lp", False))
     _lp_dir_eff = _lp_dir_for_jobs() if _gen_lp else None
@@ -880,6 +932,7 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
     _persist_critical_solver_metadata(db, job=job, solution=solution)
     stage_times[f"{STAGE_SOLVE}_seconds"] = perf_counter() - t2
     job.stage_times_json = dict(stage_times)
+    _record_resource_sample(job, resource_trace, f"{STAGE_SOLVE}_complete")
     db.commit()
 
     t3 = perf_counter()
@@ -907,7 +960,9 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
     )
     stage_times[f"{STAGE_PERSIST_RESULTS}_seconds"] = perf_counter() - t3
     job.stage_times_json = dict(stage_times)
+    _record_resource_sample(job, resource_trace, f"{STAGE_PERSIST_RESULTS}_complete")
     flag_modified(job, "stage_times_json")
+    flag_modified(job, "model_timings_json")
     db.commit()
 
     logger.info(

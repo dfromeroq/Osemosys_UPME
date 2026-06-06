@@ -1,4 +1,4 @@
-import type { RunStatus, SimulationLog } from "@/types/domain";
+import type { JsonValue, RunStatus, SimulationLog } from "@/types/domain";
 
 export type StageTimingStatus = "pending" | "running" | "done";
 export type StageTimingSource = "measured" | "live" | "inferred" | null;
@@ -239,7 +239,7 @@ export type ResolvedStageTimings = {
 export type ResolveStageTimingsInput = {
   logs: SimulationLog[];
   stageTimes?: Record<string, number | string> | null | undefined;
-  modelTimings?: Record<string, number | string> | null | undefined;
+  modelTimings?: Record<string, JsonValue> | null | undefined;
   jobStatus: RunStatus;
   liveNowMs: number;
   startedAt?: string | null | undefined;
@@ -251,7 +251,7 @@ function normalizeLogStage(stage: string | null | undefined): string {
 }
 
 function readTimingValue(
-  dict: Record<string, number | string> | null | undefined,
+  dict: Record<string, JsonValue> | Record<string, number | string> | null | undefined,
   key: string,
 ): number | null {
   if (!dict) return null;
@@ -446,7 +446,7 @@ function buildResolvedStage(
 }
 
 function readMeasuredTiming(
-  dict: Record<string, number | string> | null | undefined,
+  dict: Record<string, JsonValue> | Record<string, number | string> | null | undefined,
   def: CanonicalStageDef,
 ): number | null {
   const primary = readTimingValue(dict, def.timingKey);
@@ -561,7 +561,7 @@ function resolveOneStage(
 
 function resolveHighsTotal(
   highsSubStages: ResolvedStage[],
-  modelTimings?: Record<string, number | string> | null,
+  modelTimings?: Record<string, JsonValue> | null,
 ): { seconds: number | null; source: "measured" | "derived" | null } {
   const measuredSubs = highsSubStages
     .map((s) => (s.source === "measured" ? s.durationSeconds : null))
@@ -605,7 +605,7 @@ function resolveHighsTotal(
 
 function resolveResultsTotal(
   resultsSubStages: ResolvedStage[],
-  modelTimings?: Record<string, number | string> | null,
+  modelTimings?: Record<string, JsonValue> | null,
 ): { seconds: number | null; source: "measured" | "derived" | null } {
   const measuredSubs = resultsSubStages
     .map((s) => (s.source === "measured" ? s.durationSeconds : null))

@@ -10,6 +10,13 @@ export type ScenarioPermissionScope = "mine" | "readable" | "editable" | "readon
 export type RunStatus = "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
 export type SimulationSolver = "highs" | "glpk" | "gurobi";
 export type SimulationInputMode = "SCENARIO" | "CSV_UPLOAD";
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
 
 export type CatalogEntity =
   | "parameter"
@@ -232,7 +239,7 @@ export type SimulationRun = {
   /** Tiempos macro del pipeline (extract_data_seconds, solve_seconds, …). */
   stage_times?: Record<string, number | string>;
   /** Tiempos granulares medidos en el worker (solver_run_seconds, …). */
-  model_timings?: Record<string, number | string>;
+  model_timings?: Record<string, JsonValue>;
 };
 
 export type SimulationOverview = {
@@ -379,7 +386,7 @@ export type RunResult = {
     total_value: number;
   }>;
   stage_times: Record<string, number | string>;
-  model_timings: Record<string, number | string>;
+  model_timings: Record<string, JsonValue>;
   /** Diccionario de solución por variable: lista de { index, value } (tipo HiGHS). */
   sol?: Record<string, Array<{ index: (string | number)[]; value: number }>>;
   /** Variables intermedias: ProductionByTechnology, UseByTechnology, etc. */
@@ -409,7 +416,7 @@ export type CsvSimulationResult = {
   new_capacity: Array<Record<string, unknown>>;
   annual_emissions: Array<Record<string, unknown>>;
   stage_times: Record<string, number | string>;
-  model_timings: Record<string, number | string>;
+  model_timings: Record<string, JsonValue>;
   sol?: Record<string, Array<{ index: (string | number)[]; value: number }>>;
   intermediate_variables?: Record<string, Array<{ index: (string | number)[]; value: number }>>;
   infeasibility_diagnostics?: InfeasibilityDiagnostics | null;
