@@ -53,6 +53,7 @@ def test_simulation_ops_dashboard_counts_and_resources(db_session, monkeypatch) 
     assert env["services_memory_total_bytes"] == 300
     assert env["active_jobs"][0]["runtime"]["commit"] == "abcdef123456"
     assert env["active_jobs"][0]["runtime"]["last_resource_sample"]["stage"] == "solver_run"
+    assert env["active_jobs"][0]["runtime"]["resource_samples"][0]["rss_mb"] == 1024.0
 
 
 def test_simulation_ops_cancel_local_running_job(db_session, monkeypatch) -> None:

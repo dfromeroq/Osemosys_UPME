@@ -250,6 +250,20 @@ export type SimulationOverview = {
   services_memory_total_bytes: number;
 };
 
+export type RuntimeResourceSample = {
+  stage?: string;
+  elapsed_seconds?: number;
+  delta_seconds?: number;
+  process_cpu_percent?: number;
+  rss_mb?: number | null;
+  vms_mb?: number | null;
+  peak_rss_mb?: number | null;
+  threads?: number | null;
+  open_fds?: number | null;
+  cgroup_memory_current_mb?: number | null;
+  cgroup_memory_max_mb?: number | null;
+};
+
 export type SimulationOpsJob = {
   id: number;
   status: RunStatus;
@@ -271,14 +285,8 @@ export type SimulationOpsJob = {
     branch?: string | null;
     deploy_env?: string | null;
     cpu_visible?: number | null;
-    last_resource_sample?: {
-      stage?: string;
-      elapsed_seconds?: number;
-      process_cpu_percent?: number;
-      rss_mb?: number | null;
-      peak_rss_mb?: number | null;
-      threads?: number | null;
-    } | null;
+    last_resource_sample?: RuntimeResourceSample | null;
+    resource_samples?: RuntimeResourceSample[];
   };
 };
 
