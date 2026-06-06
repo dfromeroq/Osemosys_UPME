@@ -167,6 +167,19 @@ wait_celery_ping() {
   return 1
 }
 
+wait_db_healthy() {
+  local retries="$1"
+  local sleep_seconds="$2"
+
+  for _ in $(seq 1 "${retries}"); do
+    if docker compose exec -T db sh -lc 'pg_isready -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"' >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "${sleep_seconds}"
+  done
+  return 1
+}
+
 ensure_writable_backup_dir() {
   local desired_dir="$1"
   local fallback_dir="${REPO_ROOT}/backups"
@@ -353,8 +366,34 @@ upsert_env_key backend/.env MKL_NUM_THREADS "${MKL_NUM_THREADS}"
 
 capture_previous_images
 
-log "Levantando stack con Docker Compose (build + up, workers=${SIM_WORKER_REPLICAS})"
-docker compose up -d --build --scale "simulation-worker=${SIM_WORKER_REPLICAS}"
+log "Construyendo imágenes Docker"
+docker compose build api simulation-worker frontend
+
+log "Levantando dependencias base (db + redis)"
+docker compose up -d db redis
+
+log "Esperando PostgreSQL"
+if ! wait_db_healthy 60 2; then
+  echo "PostgreSQL no quedó listo en el tiempo esperado." >&2
+  exit 1
+fi
+
+if [[ "${BACKUP_BEFORE_MIGRATIONS}" == "1" ]]; then
+  BACKUP_DIR="$(ensure_writable_backup_dir "${BACKUP_DIR}")"
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  LAST_BACKUP_FILE="${BACKUP_DIR}/osemosys_${timestamp}.sql.gz"
+  log "Generando backup de base de datos en ${LAST_BACKUP_FILE}"
+  docker compose exec -T db sh -lc 'pg_dump -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"' | gzip -c > "${LAST_BACKUP_FILE}"
+  if [[ "${BACKUP_RETENTION_DAYS}" =~ ^[0-9]+$ ]]; then
+    find "${BACKUP_DIR}" -type f -name 'osemosys_*.sql.gz' -mtime +"${BACKUP_RETENTION_DAYS}" -delete || true
+  fi
+fi
+
+log "Ejecutando migraciones Alembic (antes de levantar API)"
+docker compose run --rm --no-deps api alembic upgrade head
+
+log "Levantando stack completo (workers=${SIM_WORKER_REPLICAS})"
+docker compose up -d --scale "simulation-worker=${SIM_WORKER_REPLICAS}"
 
 # Forzar recreación de simulation-worker para evitar mounts stale del bind
 # secrets/gurobi.lic. Si el contenedor anterior arrancó cuando ese path era
@@ -372,20 +411,8 @@ if ! wait_http_ok "http://127.0.0.1:${API_PORT}/api/v1/health" 60 2; then
   exit 1
 fi
 
-if [[ "${BACKUP_BEFORE_MIGRATIONS}" == "1" ]]; then
-  BACKUP_DIR="$(ensure_writable_backup_dir "${BACKUP_DIR}")"
-  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-  LAST_BACKUP_FILE="${BACKUP_DIR}/osemosys_${timestamp}.sql.gz"
-  log "Generando backup de base de datos en ${LAST_BACKUP_FILE}"
-  docker compose exec -T db sh -lc 'pg_dump -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"' | gzip -c > "${LAST_BACKUP_FILE}"
-  if [[ "${BACKUP_RETENTION_DAYS}" =~ ^[0-9]+$ ]]; then
-    find "${BACKUP_DIR}" -type f -name 'osemosys_*.sql.gz' -mtime +"${BACKUP_RETENTION_DAYS}" -delete || true
-  fi
-fi
-
-log "Ejecutando migraciones y seed"
-docker compose exec -T api alembic upgrade head
 if [[ "${RUN_SEED}" == "1" ]]; then
+  log "Ejecutando seed"
   docker compose exec -T api python scripts/seed.py
 fi
 
