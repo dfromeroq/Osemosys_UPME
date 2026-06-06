@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -24,6 +25,7 @@ from app.simulation.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 ACTIVE_STATUSES = ("QUEUED", "RUNNING")
+_LAST_CPU_SAMPLE: tuple[float, int, int] | None = None
 
 
 def _utc_now() -> str:
@@ -41,6 +43,97 @@ def _safe_float(value: Any) -> float | None:
         return float(value) if value is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def _read_text(path: str) -> str | None:
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def _read_meminfo() -> dict[str, int]:
+    raw = _read_text("/proc/meminfo")
+    if not raw:
+        return {}
+    values: dict[str, int] = {}
+    for line in raw.splitlines():
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        parts = value.strip().split()
+        if not parts:
+            continue
+        try:
+            values[key] = int(parts[0]) * 1024
+        except ValueError:
+            continue
+    return values
+
+
+def _read_cpu_totals() -> tuple[int, int] | None:
+    raw = _read_text("/proc/stat")
+    if not raw:
+        return None
+    first = raw.splitlines()[0].split()
+    if not first or first[0] != "cpu":
+        return None
+    try:
+        values = [int(part) for part in first[1:]]
+    except ValueError:
+        return None
+    idle = values[3] + (values[4] if len(values) > 4 else 0)
+    total = sum(values)
+    return total, idle
+
+
+def _system_resources() -> dict[str, Any]:
+    """Current host/container-visible CPU and memory snapshot for ops UI."""
+    global _LAST_CPU_SAMPLE
+
+    meminfo = _read_meminfo()
+    total_bytes = meminfo.get("MemTotal")
+    available_bytes = meminfo.get("MemAvailable")
+    used_bytes = (
+        total_bytes - available_bytes
+        if total_bytes is not None and available_bytes is not None
+        else None
+    )
+
+    cpu_percent: float | None = None
+    now = time.monotonic()
+    totals = _read_cpu_totals()
+    if totals is not None:
+        total, idle = totals
+        if _LAST_CPU_SAMPLE is not None:
+            _last_wall, last_total, last_idle = _LAST_CPU_SAMPLE
+            total_delta = max(0, total - last_total)
+            idle_delta = max(0, idle - last_idle)
+            wall_delta = max(0.0, now - _last_wall)
+            if total_delta > 0 and wall_delta > 0:
+                cpu_percent = round((1 - idle_delta / total_delta) * 100, 2)
+        _LAST_CPU_SAMPLE = (now, total, idle)
+
+    cpu_count = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count()
+    if cpu_percent is None and cpu_count:
+        try:
+            cpu_percent = round(min(100.0, (os.getloadavg()[0] / cpu_count) * 100), 2)
+        except (AttributeError, OSError):
+            pass
+    return {
+        "cpu_logical_count": cpu_count,
+        "cpu_percent": cpu_percent,
+        "cpu_used_cores": round((cpu_percent or 0) * (cpu_count or 0) / 100, 3)
+        if cpu_percent is not None and cpu_count
+        else None,
+        "memory_total_bytes": total_bytes,
+        "memory_available_bytes": available_bytes,
+        "memory_used_bytes": used_bytes,
+        "memory_used_percent": round((used_bytes / total_bytes) * 100, 2)
+        if used_bytes is not None and total_bytes
+        else None,
+    }
 
 
 def _runtime_summary(job: SimulationJob) -> dict[str, Any]:
@@ -173,6 +266,7 @@ class SimulationOpsService:
                 },
             },
             "runtime_env": runtime_env,
+            "system_resources": _system_resources(),
             "services_memory": services,
             "services_memory_total_bytes": sum(
                 int(item.get("memory_usage_bytes") or 0) for item in services
