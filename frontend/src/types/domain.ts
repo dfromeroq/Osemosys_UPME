@@ -250,6 +250,63 @@ export type SimulationOverview = {
   services_memory_total_bytes: number;
 };
 
+export type SimulationOpsJob = {
+  id: number;
+  status: RunStatus;
+  simulation_type: SimulationType;
+  scenario_id: number | null;
+  solver_name: SimulationSolver;
+  solver_threads_configured?: number | null;
+  solver_threads_used?: number | null;
+  queued_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  progress?: number | null;
+  objective_value?: number | null;
+  total_dispatch?: number | null;
+  stage_times?: Record<string, number | string>;
+  solver_status?: string | null;
+  runtime?: {
+    commit?: string | null;
+    branch?: string | null;
+    deploy_env?: string | null;
+    cpu_visible?: number | null;
+    last_resource_sample?: {
+      stage?: string;
+      elapsed_seconds?: number;
+      process_cpu_percent?: number;
+      rss_mb?: number | null;
+      peak_rss_mb?: number | null;
+      threads?: number | null;
+    } | null;
+  };
+};
+
+export type SimulationOpsEnvironment = {
+  name: string;
+  generated_at: string;
+  reachable: boolean;
+  error?: string | null;
+  queue: {
+    queued_count?: number;
+    running_count?: number;
+    active_count?: number;
+    total_count?: number;
+    counts_by_status_type?: Record<string, Record<string, number>>;
+    limits?: Record<string, number>;
+  };
+  runtime_env: Record<string, string | null>;
+  services_memory: Array<{ service_name: string; memory_usage_bytes: number }>;
+  services_memory_total_bytes: number;
+  active_jobs: SimulationOpsJob[];
+  recent_jobs: SimulationOpsJob[];
+};
+
+export type SimulationOpsDashboard = {
+  generated_at: string;
+  environments: SimulationOpsEnvironment[];
+};
+
 export type ConstraintViolation = {
   name: string;
   body: number;

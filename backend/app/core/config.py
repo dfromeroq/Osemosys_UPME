@@ -81,6 +81,14 @@ class Settings(BaseSettings):
     # de la etiqueta `com.docker.compose.project` del propio contenedor (via
     # /containers/{hostname}/json). Fallback: todos los proyectos.
     docker_metrics_project: str = Field(default="", alias="DOCKER_METRICS_PROJECT")
+    simulation_ops_environment_name: str = Field(
+        default="",
+        alias="SIMULATION_OPS_ENVIRONMENT_NAME",
+    )
+    simulation_ops_remote_environments: str = Field(
+        default="",
+        alias="SIMULATION_OPS_REMOTE_ENVIRONMENTS",
+    )
 
     # Auth
     secret_key: str = Field(default="change-me", alias="SECRET_KEY")
@@ -106,6 +114,25 @@ class Settings(BaseSettings):
         if not self.docker_metrics_services:
             return []
         return [service.strip() for service in self.docker_metrics_services.split(",") if service.strip()]
+
+    def simulation_ops_remote_environments_list(self) -> list[dict]:
+        """Ambientes remotos configurados para el tablero operacional.
+
+        Formato esperado en env:
+        ``[{"name":"prod","base_url":"https://.../api/v1","token":"..."}]``.
+        """
+        import json
+
+        raw = (self.simulation_ops_remote_environments or "").strip()
+        if not raw:
+            return []
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(parsed, list):
+            return []
+        return [item for item in parsed if isinstance(item, dict)]
 
 
 @lru_cache

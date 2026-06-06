@@ -309,6 +309,8 @@ VITE_SIMULATION_MODE="${VITE_SIMULATION_MODE:-api}"
 APP_GIT_SHA="${APP_GIT_SHA:-$(git rev-parse HEAD 2>/dev/null || true)}"
 APP_GIT_BRANCH="${APP_GIT_BRANCH:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)}"
 APP_DEPLOY_ENV="${APP_DEPLOY_ENV:-${VITE_APP_ENV}}"
+SIMULATION_OPS_ENVIRONMENT_NAME="${SIMULATION_OPS_ENVIRONMENT_NAME:-${APP_DEPLOY_ENV}}"
+SIMULATION_OPS_REMOTE_ENVIRONMENTS="${SIMULATION_OPS_REMOTE_ENVIRONMENTS:-}"
 
 if [[ -z "${POSTGRES_PORT}" ]]; then
   if is_port_in_use 5432; then
@@ -351,6 +353,8 @@ upsert_env_key .env MKL_NUM_THREADS "${MKL_NUM_THREADS}"
 upsert_env_key .env APP_GIT_SHA "${APP_GIT_SHA}"
 upsert_env_key .env APP_GIT_BRANCH "${APP_GIT_BRANCH}"
 upsert_env_key .env APP_DEPLOY_ENV "${APP_DEPLOY_ENV}"
+upsert_env_key .env SIMULATION_OPS_ENVIRONMENT_NAME "${SIMULATION_OPS_ENVIRONMENT_NAME}"
+upsert_env_key .env SIMULATION_OPS_REMOTE_ENVIRONMENTS "${SIMULATION_OPS_REMOTE_ENVIRONMENTS}"
 upsert_env_key .env VITE_API_BASE_URL "${VITE_API_BASE_URL}"
 upsert_env_key .env VITE_APP_ENV "${VITE_APP_ENV}"
 upsert_env_key .env VITE_SIMULATION_MODE "${VITE_SIMULATION_MODE}"
@@ -372,6 +376,8 @@ upsert_env_key backend/.env MKL_NUM_THREADS "${MKL_NUM_THREADS}"
 upsert_env_key backend/.env APP_GIT_SHA "${APP_GIT_SHA}"
 upsert_env_key backend/.env APP_GIT_BRANCH "${APP_GIT_BRANCH}"
 upsert_env_key backend/.env APP_DEPLOY_ENV "${APP_DEPLOY_ENV}"
+upsert_env_key backend/.env SIMULATION_OPS_ENVIRONMENT_NAME "${SIMULATION_OPS_ENVIRONMENT_NAME}"
+upsert_env_key backend/.env SIMULATION_OPS_REMOTE_ENVIRONMENTS "${SIMULATION_OPS_REMOTE_ENVIRONMENTS}"
 
 capture_previous_images
 

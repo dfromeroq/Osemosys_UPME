@@ -18,6 +18,7 @@ export const paths = {
   catalogs: "/app/catalogs",
   officialImport: "/app/official-import",
   simulation: "/app/simulation",
+  simulationOps: "/app/simulation-ops",
   results: "/app/results",
   resultsDetail: (runId: string | number) => `/app/results/${runId}`,
   resultsDataExplorer: (
@@ -57,4 +58,3 @@ export const paths = {
   chartViewer: (jobId: string | number) => `/app/charts/viewer/${jobId}`,
   history: "/app/history",
 } as const;
-
