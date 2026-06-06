@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { simulationOpsApi } from "@/features/simulation/api/simulationOpsApi";
+import { ResourceTimeline } from "@/features/simulation/components/ResourceTimeline";
 import type { SimulationOpsDashboard, SimulationOpsEnvironment, SimulationOpsJob } from "@/types/domain";
 
 function formatBytes(value: number | null | undefined): string {
@@ -61,42 +62,52 @@ function JobTable({
         <tbody>
           {jobs.map((job) => {
             const sample = job.runtime?.last_resource_sample;
+            const samples = job.runtime?.resource_samples ?? [];
             return (
-              <tr key={job.id} className="border-t border-slate-800/70">
-                <td className="py-2 pr-3 font-mono text-slate-200">{job.id}</td>
-                <td className="py-2 pr-3 text-slate-200">{job.status}</td>
-                <td className="py-2 pr-3 text-slate-300">{job.simulation_type}</td>
-                <td className="py-2 pr-3 text-right font-mono text-slate-300">
-                  {typeof job.progress === "number" ? `${job.progress.toFixed(0)}%` : "—"}
-                </td>
-                <td className="py-2 pr-3 text-slate-300">{sample?.stage ?? "—"}</td>
-                <td className="py-2 pr-3 text-right font-mono text-slate-300">
-                  {typeof sample?.process_cpu_percent === "number"
-                    ? `${sample.process_cpu_percent.toFixed(1)}%`
-                    : "—"}
-                </td>
-                <td className="py-2 pr-3 text-right font-mono text-slate-300">
-                  {typeof sample?.rss_mb === "number" ? `${sample.rss_mb.toFixed(1)} MiB` : "—"}
-                </td>
-                <td className="py-2 pr-3 text-right font-mono text-slate-300">
-                  {sample?.threads ?? "—"}
-                </td>
-                <td className="py-2 pr-3 font-mono text-slate-300">
-                  {shortCommit(job.runtime?.commit)}
-                </td>
-                <td className="py-2 text-right">
-                  {job.status === "QUEUED" || job.status === "RUNNING" ? (
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      onClick={() => onCancel(environment, job.id)}
-                      style={{ padding: "5px 9px", fontSize: 12 }}
-                    >
-                      Cancelar
-                    </button>
-                  ) : null}
-                </td>
-              </tr>
+              <Fragment key={job.id}>
+                <tr className="border-t border-slate-800/70">
+                  <td className="py-2 pr-3 font-mono text-slate-200">{job.id}</td>
+                  <td className="py-2 pr-3 text-slate-200">{job.status}</td>
+                  <td className="py-2 pr-3 text-slate-300">{job.simulation_type}</td>
+                  <td className="py-2 pr-3 text-right font-mono text-slate-300">
+                    {typeof job.progress === "number" ? `${job.progress.toFixed(0)}%` : "—"}
+                  </td>
+                  <td className="py-2 pr-3 text-slate-300">{sample?.stage ?? "—"}</td>
+                  <td className="py-2 pr-3 text-right font-mono text-slate-300">
+                    {typeof sample?.process_cpu_percent === "number"
+                      ? `${sample.process_cpu_percent.toFixed(1)}%`
+                      : "—"}
+                  </td>
+                  <td className="py-2 pr-3 text-right font-mono text-slate-300">
+                    {typeof sample?.rss_mb === "number" ? `${sample.rss_mb.toFixed(1)} MiB` : "—"}
+                  </td>
+                  <td className="py-2 pr-3 text-right font-mono text-slate-300">
+                    {sample?.threads ?? "—"}
+                  </td>
+                  <td className="py-2 pr-3 font-mono text-slate-300">
+                    {shortCommit(job.runtime?.commit)}
+                  </td>
+                  <td className="py-2 text-right">
+                    {job.status === "QUEUED" || job.status === "RUNNING" ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => onCancel(environment, job.id)}
+                        style={{ padding: "5px 9px", fontSize: 12 }}
+                      >
+                        Cancelar
+                      </button>
+                    ) : null}
+                  </td>
+                </tr>
+                {samples.length > 1 ? (
+                  <tr key={`${job.id}-resource-timeline`} className="border-t border-slate-900/70">
+                    <td colSpan={10} className="py-3">
+                      <ResourceTimeline samples={samples} title={`Recursos por paso · ejecución ${job.id}`} />
+                    </td>
+                  </tr>
+                ) : null}
+              </Fragment>
             );
           })}
         </tbody>
