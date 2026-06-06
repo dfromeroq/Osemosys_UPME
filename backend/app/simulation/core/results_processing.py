@@ -360,12 +360,55 @@ def _safe_extract(var_component, *, use_cache: bool = True) -> dict:
     return res
 
 
+def _safe_extract_sparse_param(param_component, *, use_cache: bool = True) -> dict:
+    """Extrae solo valores materializados de un Param Pyomo.
+
+    ``Param.extract_values()`` puede densificar parámetros con default sobre el
+    producto completo de índices. En modelos regionales eso convierte ratios
+    sparse en decenas de millones de filas default, justo el cuello de botella
+    del postproceso.
+    """
+    cache = None
+    comp_name = None
+    if use_cache:
+        try:
+            model = param_component.model()
+            cache = getattr(model, "_safe_extract_cache", None)
+            if cache is None:
+                cache = {}
+                model._safe_extract_cache = cache
+            comp_name = f"{param_component.local_name}:sparse"
+            with _safe_extract_cache_lock:
+                if comp_name in cache:
+                    return cache[comp_name]
+        except Exception:
+            cache = None
+            comp_name = None
+
+    if not hasattr(param_component, "_data"):
+        return _safe_extract(param_component, use_cache=use_cache)
+
+    raw: dict = {}
+    for key, item in param_component._data.items():
+        value = getattr(item, "value", item)
+        if value is None:
+            continue
+        if isinstance(value, (int, float)) and abs(value) < _EPS:
+            continue
+        raw[key] = value
+
+    if cache is not None and comp_name:
+        with _safe_extract_cache_lock:
+            cache[comp_name] = raw
+    return raw
+
+
 def _safe_extract_param(instance: pyo.ConcreteModel, param_name: str) -> dict:
     """Extrae un Param del modelo si existe."""
     param = getattr(instance, param_name, None)
     if param is None or not hasattr(param, "extract_values"):
         return {}
-    return _safe_extract(param)
+    return _safe_extract_sparse_param(param)
 
 
 # Legacy helper conservado comentado para notebooks/debug futuro.
