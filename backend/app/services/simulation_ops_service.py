@@ -52,6 +52,7 @@ def _runtime_summary(job: SimulationJob) -> dict[str, Any]:
     if not isinstance(samples, list):
         samples = []
     last_sample = samples[-1] if samples and isinstance(samples[-1], dict) else None
+    clean_samples = [sample for sample in samples if isinstance(sample, dict)]
     env = context.get("env") if isinstance(context.get("env"), dict) else {}
     cpu = context.get("cpu") if isinstance(context.get("cpu"), dict) else {}
     return {
@@ -60,6 +61,7 @@ def _runtime_summary(job: SimulationJob) -> dict[str, Any]:
         "deploy_env": env.get("APP_DEPLOY_ENV"),
         "cpu_visible": cpu.get("affinity_count") or cpu.get("os_cpu_count"),
         "last_resource_sample": last_sample,
+        "resource_samples": clean_samples[-60:],
     }
 
 

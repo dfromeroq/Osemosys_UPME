@@ -8,28 +8,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "@/shared/components/Modal";
 import { simulationApi } from "@/features/simulation/api/simulationApi";
+import { ResourceTimeline } from "@/features/simulation/components/ResourceTimeline";
 import { SimulationStageTimeline } from "@/features/simulation/components/SimulationStageTimeline";
 import {
   formatReadableDuration,
   getTopSlowStages,
   resolveStageTimings,
 } from "@/features/simulation/simulationStageTimings";
-import type { SimulationLog, SimulationRun } from "@/types/domain";
+import type { RuntimeResourceSample, SimulationLog, SimulationRun } from "@/types/domain";
 
 type Props = {
   jobId: number | null;
   onClose: () => void;
-};
-
-type RuntimeResourceSample = {
-  stage?: string;
-  elapsed_seconds?: number;
-  delta_seconds?: number;
-  process_cpu_percent?: number;
-  rss_mb?: number | null;
-  peak_rss_mb?: number | null;
-  threads?: number | null;
-  cgroup_memory_current_mb?: number | null;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -265,42 +255,45 @@ export function JobLogsModal({ jobId, onClose }: Props) {
               ) : null}
 
               {visibleSamples.length > 0 ? (
-                <div style={{ overflowX: "auto" }}>
-                  <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
-                    <thead className="text-slate-500">
-                      <tr>
-                        <th className="py-1 pr-3 text-left font-medium">Paso</th>
-                        <th className="py-1 pr-3 text-right font-medium">t</th>
-                        <th className="py-1 pr-3 text-right font-medium">CPU</th>
-                        <th className="py-1 pr-3 text-right font-medium">RAM</th>
-                        <th className="py-1 pr-3 text-right font-medium">Pico</th>
-                        <th className="py-1 text-right font-medium">Hilos</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visibleSamples.map((sample, idx) => (
-                        <tr key={`${sample.stage ?? "sample"}-${idx}`} className="border-t border-slate-800/70">
-                          <td className="py-1 pr-3 text-slate-200">{sample.stage ?? "—"}</td>
-                          <td className="py-1 pr-3 text-right font-mono text-slate-300">
-                            {formatCompactNumber(sample.elapsed_seconds, "s")}
-                          </td>
-                          <td className="py-1 pr-3 text-right font-mono text-slate-300">
-                            {formatCompactNumber(sample.process_cpu_percent, "%")}
-                          </td>
-                          <td className="py-1 pr-3 text-right font-mono text-slate-300">
-                            {formatCompactNumber(sample.rss_mb, " MiB")}
-                          </td>
-                          <td className="py-1 pr-3 text-right font-mono text-slate-300">
-                            {formatCompactNumber(sample.peak_rss_mb, " MiB")}
-                          </td>
-                          <td className="py-1 text-right font-mono text-slate-300">
-                            {formatCompactNumber(sample.threads)}
-                          </td>
+                <>
+                  <ResourceTimeline samples={resourceSamples} />
+                  <div style={{ overflowX: "auto" }}>
+                    <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
+                      <thead className="text-slate-500">
+                        <tr>
+                          <th className="py-1 pr-3 text-left font-medium">Paso</th>
+                          <th className="py-1 pr-3 text-right font-medium">t</th>
+                          <th className="py-1 pr-3 text-right font-medium">CPU</th>
+                          <th className="py-1 pr-3 text-right font-medium">RAM</th>
+                          <th className="py-1 pr-3 text-right font-medium">Pico</th>
+                          <th className="py-1 text-right font-medium">Hilos</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {visibleSamples.map((sample, idx) => (
+                          <tr key={`${sample.stage ?? "sample"}-${idx}`} className="border-t border-slate-800/70">
+                            <td className="py-1 pr-3 text-slate-200">{sample.stage ?? "—"}</td>
+                            <td className="py-1 pr-3 text-right font-mono text-slate-300">
+                              {formatCompactNumber(sample.elapsed_seconds, "s")}
+                            </td>
+                            <td className="py-1 pr-3 text-right font-mono text-slate-300">
+                              {formatCompactNumber(sample.process_cpu_percent, "%")}
+                            </td>
+                            <td className="py-1 pr-3 text-right font-mono text-slate-300">
+                              {formatCompactNumber(sample.rss_mb, " MiB")}
+                            </td>
+                            <td className="py-1 pr-3 text-right font-mono text-slate-300">
+                              {formatCompactNumber(sample.peak_rss_mb, " MiB")}
+                            </td>
+                            <td className="py-1 text-right font-mono text-slate-300">
+                              {formatCompactNumber(sample.threads)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               ) : null}
             </div>
           ) : null}
