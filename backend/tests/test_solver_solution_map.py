@@ -11,6 +11,7 @@ from app.simulation.core.solver import (
     _ensure_rate_of_activity_mapped,
     _map_all_vars_from_col_map,
     _pyomo_name_to_lp,
+    _set_var_value_from_col_map,
 )
 
 
@@ -59,3 +60,16 @@ class TestSelectiveSolutionMap:
         highs_name = "RateOfActivity(R1_TS1_T1_1_2020)"
         _map_all_vars_from_col_map(tiny_instance, {highs_name: 3.0})
         assert var.value == pytest.approx(3.0)
+
+    def test_set_var_value_from_col_map_pyomo_and_lp_names(self, tiny_instance) -> None:
+        idx = ("R1", "TS1", "T1", "1", 2020)
+        var = tiny_instance.RateOfActivity[idx]
+        pyomo_name = var.name
+        lp_name = _pyomo_name_to_lp(pyomo_name)
+
+        _set_var_value_from_col_map(var, {pyomo_name: 1.25})
+        assert var.value == pytest.approx(1.25)
+
+        var.set_value(0.0)
+        _set_var_value_from_col_map(var, {lp_name: 2.5})
+        assert var.value == pytest.approx(2.5)

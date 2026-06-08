@@ -232,19 +232,6 @@ def _lp_name_to_pyomo(name: str) -> str:
     return name
 
 
-def _var_lookup_names(pyomo_name: str) -> tuple[str, ...]:
-    """Variantes de nombre para buscar una Var en el mapa de columnas HiGHS."""
-    if "[" not in pyomo_name or not pyomo_name.endswith("]"):
-        return (pyomo_name,)
-    base, rest = pyomo_name.split("[", 1)
-    inner = rest[:-1]
-    return (
-        pyomo_name,
-        _pyomo_name_to_lp(pyomo_name),
-        f"{base}({inner})",
-    )
-
-
 def _highs_status_to_raw(status: object) -> str:
     try:
         import highspy
@@ -279,11 +266,11 @@ def _set_var_value_from_col_map(
     var: Var,
     col_map: dict[str, float],
 ) -> None:
-    val = None
-    for candidate in _var_lookup_names(var.name):
-        val = col_map.get(candidate)
-        if val is not None:
-            break
+    pyomo_name = var.name
+    val = col_map.get(pyomo_name)
+    if val is None and "[" in pyomo_name and pyomo_name.endswith("]"):
+        # Fast-path: HiGHS LP usa paréntesis + "_" entre índices.
+        val = col_map.get(_pyomo_name_to_lp(pyomo_name))
     if val is not None:
         var.set_value(val, skip_validation=True)
 
