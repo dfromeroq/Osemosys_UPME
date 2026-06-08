@@ -23,14 +23,23 @@ export type SolverSettings = {
   highs_time_limit: number;
   highs_ipm_optimality_tolerance: number;
   highs_primal_feasibility_tolerance: number;
+  highs_dual_feasibility_tolerance: number;
   updated_at: string | null;
   updated_by_username: string | null;
 };
 
 export type SolverSettingsUpdate = Omit<
   SolverSettings,
-  "updated_at" | "updated_by_username"
->;
+  | "updated_at"
+  | "updated_by_username"
+  | "highs_ipm_optimality_tolerance"
+  | "highs_primal_feasibility_tolerance"
+  | "highs_dual_feasibility_tolerance"
+> & {
+  highs_ipm_optimality_tolerance: number | string;
+  highs_primal_feasibility_tolerance: number | string;
+  highs_dual_feasibility_tolerance: number | string;
+};
 
 async function getSolverSettings(): Promise<SolverSettings> {
   const { data } = await httpClient.get<SolverSettings>(

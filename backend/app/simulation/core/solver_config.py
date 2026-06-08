@@ -18,6 +18,7 @@ SOLVER_HIGHS_USE_DIRECT_KEY = "solver.highs.use_direct"
 SOLVER_HIGHS_TIME_LIMIT_KEY = "solver.highs.time_limit"
 SOLVER_HIGHS_IPM_TOL_KEY = "solver.highs.ipm_optimality_tolerance"
 SOLVER_HIGHS_PRIMAL_TOL_KEY = "solver.highs.primal_feasibility_tolerance"
+SOLVER_HIGHS_DUAL_TOL_KEY = "solver.highs.dual_feasibility_tolerance"
 
 VALID_HIGHS_METHODS = frozenset({"choose", "simplex", "ipm", "ipx", "hipo"})
 VALID_ON_OFF_CHOOSE = frozenset({"off", "on", "choose"})
@@ -42,6 +43,7 @@ class SolverHighsConfig:
     time_limit: float = 0.0
     ipm_optimality_tolerance: float = 1e-7
     primal_feasibility_tolerance: float = 1e-7
+    dual_feasibility_tolerance: float = 1e-7
     log_to_console: bool | None = None
 
 
@@ -110,6 +112,7 @@ def resolve_highs_config(settings: object) -> SolverHighsConfig:
     time_limit = float(getattr(settings, "sim_solver_highs_time_limit", 0) or 0)
     ipm_tol = float(getattr(settings, "sim_solver_highs_ipm_tol", 1e-7) or 1e-7)
     primal_tol = float(getattr(settings, "sim_solver_highs_primal_tol", 1e-7) or 1e-7)
+    dual_tol = float(getattr(settings, "sim_solver_highs_dual_tol", 1e-7) or 1e-7)
 
     try:
         from app.db.session import SessionLocal
@@ -144,6 +147,7 @@ def resolve_highs_config(settings: object) -> SolverHighsConfig:
                 time_limit = _read_db_float(db, SOLVER_HIGHS_TIME_LIMIT_KEY, time_limit)
                 ipm_tol = _read_db_float(db, SOLVER_HIGHS_IPM_TOL_KEY, ipm_tol)
                 primal_tol = _read_db_float(db, SOLVER_HIGHS_PRIMAL_TOL_KEY, primal_tol)
+                dual_tol = _read_db_float(db, SOLVER_HIGHS_DUAL_TOL_KEY, dual_tol)
         except Exception:
             logger.exception("No fue posible leer solver settings desde BD; usando env defaults")
 
@@ -162,6 +166,7 @@ def resolve_highs_config(settings: object) -> SolverHighsConfig:
         time_limit=max(0.0, time_limit),
         ipm_optimality_tolerance=ipm_tol,
         primal_feasibility_tolerance=primal_tol,
+        dual_feasibility_tolerance=dual_tol,
         log_to_console=None,
     )
 
@@ -192,7 +197,10 @@ def apply_highs_options_to_model(h: object, config: SolverHighsConfig) -> int | 
         options["time_limit"] = config.time_limit
     if config.method == "ipm":
         options["ipm_optimality_tolerance"] = config.ipm_optimality_tolerance
-        options["primal_feasibility_tolerance"] = config.primal_feasibility_tolerance
+
+    options["primal_feasibility_tolerance"] = config.primal_feasibility_tolerance
+    options["dual_feasibility_tolerance"] = config.dual_feasibility_tolerance
+
     if config.method == "hipo" and config.hipo_parallel_type:
         options["hipo_parallel_type"] = config.hipo_parallel_type
 

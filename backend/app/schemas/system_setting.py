@@ -25,6 +25,7 @@ class SolverSettingsPublic(BaseModel):
     highs_time_limit: float = Field(default=0.0, ge=0.0)
     highs_ipm_optimality_tolerance: float = Field(default=1e-7, gt=0.0)
     highs_primal_feasibility_tolerance: float = Field(default=1e-7, gt=0.0)
+    highs_dual_feasibility_tolerance: float = Field(default=1e-7, gt=0.0)
     updated_at: datetime | None = None
     updated_by_username: str | None = None
 
@@ -42,3 +43,5 @@ class SolverSettingsUpdate(BaseModel):
     highs_time_limit: float = Field(default=0.0, ge=0.0)
     highs_ipm_optimality_tolerance: float = Field(default=1e-7, gt=0.0)
     highs_primal_feasibility_tolerance: float = Field(default=1e-7, gt=0.0)
+    highs_dual_feasibility_tolerance: float = Field(default=1e-7, gt=0.0)
+

@@ -22,6 +22,7 @@ from app.simulation.core.solver_config import (
     SOLVER_HIGHS_PARALLEL_KEY,
     SOLVER_HIGHS_PRESOLVE_KEY,
     SOLVER_HIGHS_PRIMAL_TOL_KEY,
+    SOLVER_HIGHS_DUAL_TOL_KEY,
     SOLVER_HIGHS_TIME_LIMIT_KEY,
     SOLVER_HIGHS_USE_DIRECT_KEY,
     SOLVER_THREADS_KEY,
@@ -60,6 +61,7 @@ def _latest_updated(db: Session) -> tuple[object | None, object | None]:
         SOLVER_HIGHS_TIME_LIMIT_KEY,
         SOLVER_HIGHS_IPM_TOL_KEY,
         SOLVER_HIGHS_PRIMAL_TOL_KEY,
+        SOLVER_HIGHS_DUAL_TOL_KEY,
     ]
     latest_at = None
     latest_by = None
@@ -92,6 +94,7 @@ def _to_public(db: Session) -> SolverSettingsPublic:
         highs_time_limit=cfg.time_limit,
         highs_ipm_optimality_tolerance=cfg.ipm_optimality_tolerance,
         highs_primal_feasibility_tolerance=cfg.primal_feasibility_tolerance,
+        highs_dual_feasibility_tolerance=cfg.dual_feasibility_tolerance,
         updated_at=latest_at,  # type: ignore[arg-type]
         updated_by_username=username,
     )
@@ -124,6 +127,7 @@ def update_solver_settings(
         SOLVER_HIGHS_TIME_LIMIT_KEY: payload.highs_time_limit,
         SOLVER_HIGHS_IPM_TOL_KEY: payload.highs_ipm_optimality_tolerance,
         SOLVER_HIGHS_PRIMAL_TOL_KEY: payload.highs_primal_feasibility_tolerance,
+        SOLVER_HIGHS_DUAL_TOL_KEY: payload.highs_dual_feasibility_tolerance,
     }
     for key, value in updates.items():
         SystemSettingsService.set_value(

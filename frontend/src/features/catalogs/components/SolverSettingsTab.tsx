@@ -54,6 +54,7 @@ function settingsToDraft(s: SolverSettings): SolverSettingsUpdate {
     highs_time_limit: s.highs_time_limit,
     highs_ipm_optimality_tolerance: s.highs_ipm_optimality_tolerance,
     highs_primal_feasibility_tolerance: s.highs_primal_feasibility_tolerance,
+    highs_dual_feasibility_tolerance: s.highs_dual_feasibility_tolerance,
   };
 }
 
@@ -219,31 +220,35 @@ export function SolverSettingsTab({ canEdit }: SolverSettingsTabProps) {
                   </select>
                 </label>
 
-                <TextField
-                  label="HiPO parallel type"
-                  value={draft.highs_hipo_parallel_type}
-                  onChange={(e) =>
-                    patchDraft({ highs_hipo_parallel_type: e.target.value.trim() })
-                  }
-                  disabled={saving || !canEdit || draft.highs_method !== "hipo"}
-                />
-
-                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span>Crossover</span>
-                  <select
-                    value={draft.highs_run_crossover}
+                {draft.highs_method === "hipo" && (
+                  <TextField
+                    label="HiPO parallel type"
+                    value={draft.highs_hipo_parallel_type}
                     onChange={(e) =>
-                      patchDraft({ highs_run_crossover: e.target.value as OnOffChoose })
+                      patchDraft({ highs_hipo_parallel_type: e.target.value.trim() })
                     }
                     disabled={saving || !canEdit}
-                  >
-                    {ON_OFF_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                  />
+                )}
+
+                {(draft.highs_method === "ipm" || draft.highs_method === "hipo") && (
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span>Crossover</span>
+                    <select
+                      value={draft.highs_run_crossover}
+                      onChange={(e) =>
+                        patchDraft({ highs_run_crossover: e.target.value as OnOffChoose })
+                      }
+                      disabled={saving || !canEdit}
+                    >
+                      {ON_OFF_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
 
                 <TextField
                   label="Time limit (s)"
@@ -256,31 +261,29 @@ export function SolverSettingsTab({ canEdit }: SolverSettingsTabProps) {
                   disabled={saving || !canEdit}
                 />
 
+                {(draft.highs_method === "ipm" || draft.highs_method === "hipo") && (
+                  <TextField
+                    label="Tolerancia IPM"
+                    type="text"
+                    value={String(draft.highs_ipm_optimality_tolerance)}
+                    onChange={(e) => patchDraft({ highs_ipm_optimality_tolerance: e.target.value })}
+                    disabled={saving || !canEdit}
+                  />
+                )}
+
                 <TextField
-                  label="Tolerancia IPM"
-                  type="number"
-                  step="any"
-                  value={String(draft.highs_ipm_optimality_tolerance)}
-                  onChange={(e) =>
-                    patchDraft({
-                      highs_ipm_optimality_tolerance:
-                        Number.parseFloat(e.target.value) || 1e-7,
-                    })
-                  }
+                  label="Tolerancia primal"
+                  type="text"
+                  value={String(draft.highs_primal_feasibility_tolerance)}
+                  onChange={(e) => patchDraft({ highs_primal_feasibility_tolerance: e.target.value })}
                   disabled={saving || !canEdit}
                 />
 
                 <TextField
-                  label="Tolerancia primal"
-                  type="number"
-                  step="any"
-                  value={String(draft.highs_primal_feasibility_tolerance)}
-                  onChange={(e) =>
-                    patchDraft({
-                      highs_primal_feasibility_tolerance:
-                        Number.parseFloat(e.target.value) || 1e-7,
-                    })
-                  }
+                  label="Tolerancia dual"
+                  type="text"
+                  value={String(draft.highs_dual_feasibility_tolerance)}
+                  onChange={(e) => patchDraft({ highs_dual_feasibility_tolerance: e.target.value })}
                   disabled={saving || !canEdit}
                 />
               </div>
