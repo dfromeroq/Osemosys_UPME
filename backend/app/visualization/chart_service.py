@@ -3523,6 +3523,9 @@ def _render_stacked_bar(
     from matplotlib.ticker import FuncFormatter as _FuncFormatter
 
     ax.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
+    from matplotlib.ticker import MaxNLocator
+
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=7, min_n_ticks=5, steps=[1, 2, 2.5, 5, 10]))
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
@@ -3534,7 +3537,8 @@ def _render_stacked_bar(
             np.nanmax(np.array(s.data, dtype=float)) for s in line_series
         ) if line_series else 0.0
         y_top = max(bottom.max(), line_max) if len(bottom) > 0 else line_max
-    y_top = max(y_top, 1.0) * 1.20  # 20% headroom — asegura último tick ≥ max dato
+    y_top = y_top * 1.20
+    y_top = max(y_top, 0.01)
 
     if y_axis_min is not None or y_axis_max is not None:
         cur_lo = float(y_axis_min) if y_axis_min is not None else 0.0
@@ -3661,9 +3665,10 @@ def _render_line_chart(
     )
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
     ax.tick_params(axis="y", labelsize=18)
-    from matplotlib.ticker import FuncFormatter as _FuncFormatter
+    from matplotlib.ticker import FuncFormatter as _FuncFormatter, MaxNLocator as _MaxNLocator
 
     ax.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
+    ax.yaxis.set_major_locator(_MaxNLocator(nbins=7, min_n_ticks=5, steps=[1, 2, 2.5, 5, 10]))
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     if y_axis_min is not None or y_axis_max is not None:
@@ -3777,9 +3782,10 @@ def _render_stacked_area(
     ax.set_xticks(x)
     ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
     ax.tick_params(axis="y", labelsize=18)
-    from matplotlib.ticker import FuncFormatter as _FuncFormatter
+    from matplotlib.ticker import FuncFormatter as _FuncFormatter, MaxNLocator as _MaxNLocator
 
     ax.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
+    ax.yaxis.set_major_locator(_MaxNLocator(nbins=7, min_n_ticks=5, steps=[1, 2, 2.5, 5, 10]))
     ax.set_ylabel(chart.yAxisLabel, fontsize=24)
     if not clean:
         ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
@@ -3824,7 +3830,7 @@ def _render_stacked_area(
         line_max = max(
             np.nanmax(np.array(s.data, dtype=float)) for s in line_series
         ) if line_series else 0.0
-    y_top = max(area_top, line_max, 1.0) * 1.20
+    y_top = max(area_top, line_max, 0.01) * 1.20
 
     if y_axis_min is not None or y_axis_max is not None:
         cur_lo = float(y_axis_min) if y_axis_min is not None else 0.0
@@ -3968,9 +3974,10 @@ def render_comparison_by_year_bytes(
         ax.set_xticklabels(categories, rotation=90, ha="center", fontsize=20)
         ax.set_ylabel(data.yAxisLabel, fontsize=24)
         ax.tick_params(axis="y", labelsize=18)
-        from matplotlib.ticker import FuncFormatter as _FuncFormatter
+        from matplotlib.ticker import FuncFormatter as _FuncFormatter, MaxNLocator as _MaxNLocator
 
         ax.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
+        ax.yaxis.set_major_locator(_MaxNLocator(nbins=7, min_n_ticks=5, steps=[1, 2, 2.5, 5, 10]))
         ax.grid(axis="y", alpha=0.3, linewidth=0.5)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
@@ -4059,9 +4066,10 @@ def render_pareto_chart_bytes(
         fontsize=20,
     )
     ax1.tick_params(axis="y", labelsize=18)
-    from matplotlib.ticker import FuncFormatter as _FuncFormatter
+    from matplotlib.ticker import FuncFormatter as _FuncFormatter, MaxNLocator as _MaxNLocator
 
     ax1.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
+    ax1.yaxis.set_major_locator(_MaxNLocator(nbins=7, min_n_ticks=5, steps=[1, 2, 2.5, 5, 10]))
     ax1.grid(axis="y", alpha=0.3, linewidth=0.5)
     ax1.spines["top"].set_visible(False)
 
@@ -4070,6 +4078,7 @@ def render_pareto_chart_bytes(
     ax2.set_ylabel("% acumulado", fontsize=24, color="#dc2626")
     ax2.tick_params(axis="y", labelsize=18)
     ax2.yaxis.set_major_formatter(_FuncFormatter(lambda v, _p: format_axis_3sig(v)))
+    ax2.yaxis.set_major_locator(_MaxNLocator(nbins=6, min_n_ticks=4, steps=[1, 2, 5, 10]))
     ax2.set_ylim(0, 110)
     ax2.spines["top"].set_visible(False)
 
