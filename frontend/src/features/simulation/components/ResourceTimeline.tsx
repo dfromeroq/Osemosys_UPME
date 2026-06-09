@@ -9,6 +9,15 @@ export type ResourceTimelineCapacity = {
 };
 
 const SEGMENT_COLORS = ["#0ea5e9", "#22c55e", "#f59e0b", "#a78bfa", "#ef4444", "#14b8a6"];
+const SVG_WIDTH = 1160;
+const SVG_HEIGHT = 250;
+const PLOT_X = 72;
+const PLOT_WIDTH = 980;
+const RIGHT_AXIS_X = 1106;
+const CHART_TOP = 68;
+const CHART_HEIGHT = 130;
+const SEGMENT_TOP = 34;
+const SEGMENT_HEIGHT = 18;
 
 function asNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -53,16 +62,12 @@ function pointPath(
   scaleMax: number,
   totalSeconds: number,
 ): string {
-  const x0 = 48;
-  const width = 1060;
-  const y0 = 68;
-  const height = 130;
   return samples
     .map((sample) => {
       const elapsed = asNumber(sample.elapsed_seconds) ?? 0;
       const value = clamp((read(sample) ?? 0) / Math.max(1, scaleMax), 0, 1);
-      const x = x0 + (elapsed / Math.max(1, totalSeconds)) * width;
-      const y = y0 + (1 - value) * height;
+      const x = PLOT_X + (elapsed / Math.max(1, totalSeconds)) * PLOT_WIDTH;
+      const y = CHART_TOP + (1 - value) * CHART_HEIGHT;
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
@@ -102,15 +107,9 @@ export function ResourceTimeline({
   const currentRamGb = asNumber(capacity?.currentRamUsedGb);
   const ticks = [0, 0.25, 0.5, 0.75, 1];
 
-  const x0 = 48;
-  const width = 900;
-  const chartTop = 68;
-  const chartHeight = 130;
-  const segmentTop = 34;
-  const segmentHeight = 18;
   const yFor = (value: number, scaleMax: number) =>
-    chartTop + (1 - clamp(value / Math.max(1, scaleMax), 0, 1)) * chartHeight;
-  const xFor = (elapsed: number) => x0 + (elapsed / totalSeconds) * width;
+    CHART_TOP + (1 - clamp(value / Math.max(1, scaleMax), 0, 1)) * CHART_HEIGHT;
+  const xFor = (elapsed: number) => PLOT_X + (elapsed / totalSeconds) * PLOT_WIDTH;
 
   const segments = prepared.slice(1).map((sample, idx) => {
     const previous = prepared[idx] ?? sample;
@@ -145,10 +144,10 @@ export function ResourceTimeline({
         <svg
           role="img"
           aria-label="Timeline de duración, RAM, CPU e hilos por paso de simulación"
-          viewBox="0 0 1160 250"
+          viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
           style={{ minWidth: 1040, width: "100%", height: 270, display: "block" }}
         >
-          <rect x="0" y="0" width="1160" height="250" rx="8" fill="rgba(2,6,23,0.35)" />
+          <rect x="0" y="0" width={SVG_WIDTH} height={SVG_HEIGHT} rx="8" fill="rgba(2,6,23,0.35)" />
 
           {segments.map((segment) => {
             const x = xFor(segment.start);
@@ -158,9 +157,9 @@ export function ResourceTimeline({
               <g key={segment.key}>
                 <rect
                   x={x}
-                  y={segmentTop}
+                  y={SEGMENT_TOP}
                   width={segmentWidth}
-                  height={segmentHeight}
+                  height={SEGMENT_HEIGHT}
                   rx="3"
                   fill={segment.color}
                   opacity="0.82"
@@ -168,7 +167,7 @@ export function ResourceTimeline({
                   <title>{`${segment.label}: ${formatReadableDuration(segment.duration)}`}</title>
                 </rect>
                 {showText ? (
-                  <text x={x + 6} y={segmentTop + 13} fill="#020617" fontSize="10" fontWeight="700">
+                  <text x={x + 6} y={SEGMENT_TOP + 13} fill="#020617" fontSize="10" fontWeight="700">
                     {segment.shortLabel}
                   </text>
                 ) : null}
@@ -177,10 +176,10 @@ export function ResourceTimeline({
           })}
 
           {ticks.map((tick) => {
-            const x = x0 + tick * width;
+            const x = PLOT_X + tick * PLOT_WIDTH;
             return (
               <g key={tick}>
-                <line x1={x} y1={chartTop} x2={x} y2={chartTop + chartHeight} stroke="rgba(148,163,184,0.15)" />
+                <line x1={x} y1={CHART_TOP} x2={x} y2={CHART_TOP + CHART_HEIGHT} stroke="rgba(148,163,184,0.15)" />
                 <text x={x} y="222" textAnchor="middle" fill="rgba(148,163,184,0.82)" fontSize="10">
                   {formatReadableDuration(totalSeconds * tick)}
                 </text>
@@ -188,35 +187,35 @@ export function ResourceTimeline({
             );
           })}
           {[0, 0.5, 1].map((tick) => {
-            const y = chartTop + (1 - tick) * chartHeight;
+            const y = CHART_TOP + (1 - tick) * CHART_HEIGHT;
             return (
               <g key={tick}>
-                <line x1={x0} y1={y} x2={x0 + width} y2={y} stroke="rgba(148,163,184,0.12)" />
-                <text x="8" y={y + 4} fill="rgba(56,189,248,0.82)" fontSize="10">
+                <line x1={PLOT_X} y1={y} x2={PLOT_X + PLOT_WIDTH} y2={y} stroke="rgba(148,163,184,0.12)" />
+                <text x="14" y={y + 4} fill="rgba(56,189,248,0.82)" fontSize="10">
                   {formatNumber(tick * totalRamGb, "", 0)}
                 </text>
-                <text x="1118" y={y + 4} fill="rgba(245,158,11,0.85)" fontSize="10">
+                <text x={RIGHT_AXIS_X} y={y + 4} fill="rgba(245,158,11,0.85)" fontSize="10">
                   {formatNumber(tick * cpuScale, "", 1)}
                 </text>
               </g>
             );
           })}
-          <text x="8" y="64" fill="rgba(56,189,248,0.82)" fontSize="10">GB</text>
-          <text x="1090" y="64" fill="rgba(245,158,11,0.85)" fontSize="10">cores/hilos</text>
+          <text x="14" y="64" fill="rgba(56,189,248,0.82)" fontSize="10">GB</text>
+          <text x={RIGHT_AXIS_X - 28} y="64" fill="rgba(245,158,11,0.85)" fontSize="10">cores/hilos</text>
 
           {currentCpuCores !== null ? (
             <g>
               <line
-                x1={x0}
+                x1={PLOT_X}
                 y1={yFor(currentCpuCores, cpuScale)}
-                x2={x0 + width}
+                x2={PLOT_X + PLOT_WIDTH}
                 y2={yFor(currentCpuCores, cpuScale)}
                 stroke="#f97316"
                 strokeDasharray="5 5"
                 opacity="0.7"
               />
               <text
-                x={x0 + width - 6}
+                x={PLOT_X + PLOT_WIDTH - 6}
                 y={yFor(currentCpuCores, cpuScale) - 4}
                 textAnchor="end"
                 fill="#fed7aa"
@@ -229,16 +228,16 @@ export function ResourceTimeline({
           {currentRamGb !== null ? (
             <g>
               <line
-                x1={x0}
+                x1={PLOT_X}
                 y1={yFor(currentRamGb, totalRamGb)}
-                x2={x0 + width}
+                x2={PLOT_X + PLOT_WIDTH}
                 y2={yFor(currentRamGb, totalRamGb)}
                 stroke="#67e8f9"
                 strokeDasharray="5 5"
                 opacity="0.7"
               />
               <text
-                x={x0 + 6}
+                x={PLOT_X + 6}
                 y={yFor(currentRamGb, totalRamGb) - 4}
                 fill="#a5f3fc"
                 fontSize="10"
