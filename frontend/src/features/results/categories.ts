@@ -376,9 +376,23 @@ export const CATEGORIES: Category[] = [
   },
 ];
 
+const REGIONAL_PREFIXES = new Set(["AN", "CA", "IN", "NE", "OR", "SE", "SO"]);
+
+function stripRegionalPrefix(code: string): string {
+  if (code.length >= 4 && code[2] === "_") {
+    const prefix = code.substring(0, 2);
+    if (REGIONAL_PREFIXES.has(prefix)) {
+      return code.substring(3);
+    }
+  }
+  return code;
+}
+
 /**
  * Resuelve `technology_prefixes` contra la lista disponible de tecnologías
  * (facets). Devuelve sólo los nombres que empiezan por algún prefijo.
+ * Para modelos regionales, ignora el prefijo geográfico (AN_, CA_, etc.)
+ * al hacer la comparación.
  */
 export function resolveTechnologyNames(
   prefixes: readonly string[] | undefined,
@@ -386,7 +400,7 @@ export function resolveTechnologyNames(
 ): string[] {
   if (!prefixes || prefixes.length === 0) return [];
   return available.filter((name) =>
-    prefixes.some((p) => name.startsWith(p)),
+    prefixes.some((p) => name.startsWith(p) || stripRegionalPrefix(name).startsWith(p)),
   );
 }
 
