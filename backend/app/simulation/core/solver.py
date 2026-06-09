@@ -449,12 +449,16 @@ def _solve_with_direct_highspy(
 
     threads_used = apply_highs_options_to_model(h, highs_config)
     logger.info(
-        "HiGHS directo: method=%s presolve=%s parallel=%s threads=%s crossover=%s",
+        "HiGHS directo: method=%s presolve=%s parallel=%s threads=%s crossover=%s "
+        "ipm_tol=%s primal_tol=%s dual_tol=%s",
         _display_highs_value(highs_config.method),
         _display_highs_value(highs_config.presolve),
         _display_highs_value(highs_config.parallel),
         highs_config.threads or "default",
         _display_highs_value(highs_config.run_crossover),
+        highs_config.ipm_optimality_tolerance,
+        highs_config.primal_feasibility_tolerance,
+        highs_config.dual_feasibility_tolerance,
     )
 
     if on_stage:
@@ -827,6 +831,9 @@ def _solve_highs(
             "run_crossover": highs_config.run_crossover,
             "use_direct": highs_config.use_direct,
             "time_limit": highs_config.time_limit,
+            "ipm_optimality_tolerance": highs_config.ipm_optimality_tolerance,
+            "primal_feasibility_tolerance": highs_config.primal_feasibility_tolerance,
+            "dual_feasibility_tolerance": highs_config.dual_feasibility_tolerance,
         },
     }
 

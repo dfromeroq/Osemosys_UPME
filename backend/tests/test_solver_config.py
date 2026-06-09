@@ -83,11 +83,14 @@ def test_resolve_highs_config_from_env() -> None:
     assert cfg.threads == 8
 
 
-def test_apply_highs_options_default_applies_nothing() -> None:
+def test_apply_highs_options_default_applies_only_tolerances() -> None:
     opts: dict[str, object] = {}
     threads = apply_highs_options_to_model(opts, SolverHighsConfig())
     assert threads is None
-    assert opts == {}
+    assert opts == {
+        "primal_feasibility_tolerance": 1e-7,
+        "dual_feasibility_tolerance": 1e-7,
+    }
 
 
 def test_apply_highs_options_to_dict() -> None:
