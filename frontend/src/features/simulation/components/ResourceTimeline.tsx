@@ -54,7 +54,7 @@ function pointPath(
   totalSeconds: number,
 ): string {
   const x0 = 48;
-  const width = 900;
+  const width = 1060;
   const y0 = 68;
   const height = 130;
   return samples
@@ -92,6 +92,9 @@ export function ResourceTimeline({
     asNumber(capacity?.totalRamGb) ?? Math.max(...prepared.map((sample) => mbToGb(sample.rss_mb) ?? 0), 1),
   );
   const threadScale = Math.max(cpuCores, ...prepared.map((sample) => asNumber(sample.threads) ?? 0), 1);
+  const maxRamGb = Math.max(...prepared.map((sample) => mbToGb(sample.rss_mb) ?? 0), 0);
+  const maxCpuCores = Math.max(...prepared.map((sample) => (asNumber(sample.process_cpu_percent) ?? 0) / 100), 0);
+  const maxThreads = Math.max(...prepared.map((sample) => asNumber(sample.threads) ?? 0), 0);
   const currentCpuCores =
     asNumber(capacity?.currentCpuPercent) !== null
       ? ((asNumber(capacity?.currentCpuPercent) ?? 0) / 100) * cpuCores
@@ -142,10 +145,10 @@ export function ResourceTimeline({
         <svg
           role="img"
           aria-label="Timeline de duración, RAM, CPU e hilos por paso de simulación"
-          viewBox="0 0 1000 250"
-          style={{ minWidth: 900, width: "100%", height: 270, display: "block" }}
+          viewBox="0 0 1160 250"
+          style={{ minWidth: 1040, width: "100%", height: 270, display: "block" }}
         >
-          <rect x="0" y="0" width="1000" height="250" rx="8" fill="rgba(2,6,23,0.35)" />
+          <rect x="0" y="0" width="1160" height="250" rx="8" fill="rgba(2,6,23,0.35)" />
 
           {segments.map((segment) => {
             const x = xFor(segment.start);
@@ -189,34 +192,60 @@ export function ResourceTimeline({
             return (
               <g key={tick}>
                 <line x1={x0} y1={y} x2={x0 + width} y2={y} stroke="rgba(148,163,184,0.12)" />
-                <text x="10" y={y + 4} fill="rgba(148,163,184,0.72)" fontSize="10">
-                  {Math.round(tick * 100)}%
+                <text x="8" y={y + 4} fill="rgba(56,189,248,0.82)" fontSize="10">
+                  {formatNumber(tick * totalRamGb, "", 0)}
+                </text>
+                <text x="1118" y={y + 4} fill="rgba(245,158,11,0.85)" fontSize="10">
+                  {formatNumber(tick * cpuScale, "", 1)}
                 </text>
               </g>
             );
           })}
+          <text x="8" y="64" fill="rgba(56,189,248,0.82)" fontSize="10">GB</text>
+          <text x="1090" y="64" fill="rgba(245,158,11,0.85)" fontSize="10">cores/hilos</text>
 
           {currentCpuCores !== null ? (
-            <line
-              x1={x0}
-              y1={yFor(currentCpuCores, cpuScale)}
-              x2={x0 + width}
-              y2={yFor(currentCpuCores, cpuScale)}
-              stroke="#f97316"
-              strokeDasharray="5 5"
-              opacity="0.7"
-            />
+            <g>
+              <line
+                x1={x0}
+                y1={yFor(currentCpuCores, cpuScale)}
+                x2={x0 + width}
+                y2={yFor(currentCpuCores, cpuScale)}
+                stroke="#f97316"
+                strokeDasharray="5 5"
+                opacity="0.7"
+              />
+              <text
+                x={x0 + width - 6}
+                y={yFor(currentCpuCores, cpuScale) - 4}
+                textAnchor="end"
+                fill="#fed7aa"
+                fontSize="10"
+              >
+                CPU actual {formatNumber(currentCpuCores, " cores", 1)}
+              </text>
+            </g>
           ) : null}
           {currentRamGb !== null ? (
-            <line
-              x1={x0}
-              y1={yFor(currentRamGb, totalRamGb)}
-              x2={x0 + width}
-              y2={yFor(currentRamGb, totalRamGb)}
-              stroke="#67e8f9"
-              strokeDasharray="5 5"
-              opacity="0.7"
-            />
+            <g>
+              <line
+                x1={x0}
+                y1={yFor(currentRamGb, totalRamGb)}
+                x2={x0 + width}
+                y2={yFor(currentRamGb, totalRamGb)}
+                stroke="#67e8f9"
+                strokeDasharray="5 5"
+                opacity="0.7"
+              />
+              <text
+                x={x0 + 6}
+                y={yFor(currentRamGb, totalRamGb) - 4}
+                fill="#a5f3fc"
+                fontSize="10"
+              >
+                RAM actual {formatNumber(currentRamGb, " GB", 1)}
+              </text>
+            </g>
           ) : null}
 
           <polyline
@@ -269,13 +298,13 @@ export function ResourceTimeline({
 
           <g transform="translate(54 18)" fontSize="11" fill="rgba(203,213,225,0.92)">
             <circle cx="0" cy="0" r="4" fill="#38bdf8" />
-            <text x="9" y="4">RAM sim / {formatNumber(totalRamGb, " GB", 1)}</text>
-            <circle cx="145" cy="0" r="4" fill="#f59e0b" />
-            <text x="154" y="4">CPU sim / {formatNumber(cpuScale, " cores", 0)}</text>
-            <circle cx="295" cy="0" r="4" fill="#a78bfa" />
-            <text x="304" y="4">Hilos / {formatNumber(threadScale, "", 0)}</text>
-            <rect x="420" y="-4" width="16" height="8" rx="2" fill="#22c55e" />
-            <text x="444" y="4">Duración de tramo</text>
+            <text x="9" y="4">RAM sim max {formatNumber(maxRamGb, " GB", 2)} / total {formatNumber(totalRamGb, " GB", 1)}</text>
+            <circle cx="245" cy="0" r="4" fill="#f59e0b" />
+            <text x="254" y="4">CPU sim max {formatNumber(maxCpuCores, " cores", 2)} / cap {formatNumber(cpuScale, " cores", 0)}</text>
+            <circle cx="485" cy="0" r="4" fill="#a78bfa" />
+            <text x="494" y="4">Hilos max {formatNumber(maxThreads, "", 0)} / escala {formatNumber(threadScale, "", 0)}</text>
+            <rect x="670" y="-4" width="16" height="8" rx="2" fill="#22c55e" />
+            <text x="694" y="4">Duración</text>
           </g>
         </svg>
       </div>
