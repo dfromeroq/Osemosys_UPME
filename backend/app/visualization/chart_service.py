@@ -365,13 +365,13 @@ def _safe_int(val: Any) -> int | None:
 
 
 def format_axis_3sig(v: Any) -> str:
-    """Formatea un valor numérico como **entero** con separador de miles.
+    """Formatea un valor numérico para ejes de gráficas (Matplotlib).
 
     Uso típico: ``ax.yaxis.set_major_formatter(FuncFormatter(format_axis_3sig))``.
 
     Reglas:
-      * ``|v| >= 1`` → entero con separador de miles ("1,234")
-      * ``|v| < 1`` y ≠ 0 → "0" (se trunca la parte decimal)
+      * ``|v| >= 10`` → entero con separador de miles ("1,234")
+      * ``0 < |v| < 10`` → 2 cifras significativas ("0.5", "1.0", "5.0")
       * cero → "0"
     """
     import math
@@ -386,7 +386,9 @@ def format_axis_3sig(v: Any) -> str:
         return str(v)
     if v == 0:
         return "0"
-    return f"{v:,.0f}"
+    if abs(v) >= 10:
+        return f"{v:,.0f}"
+    return f"{v:.2g}"
 
 
 def _year_keep_indices(

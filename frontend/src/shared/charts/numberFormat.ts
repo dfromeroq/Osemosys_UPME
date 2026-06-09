@@ -26,19 +26,25 @@ export function bumpFontSize(
 }
 
 /**
- * Formatea un valor como entero con separador de miles.
+ * Formatea un valor numérico para ejes de gráficas.
  *
  * Reglas:
- *   - |v| >= 1              → entero con separador de miles ("1,234")
- *   - |v| < 1 y ≠ 0         → "0" (se trunca la parte decimal)
+ *   - |v| >= 10             → entero con separador de miles ("1,234")
+ *   - 0 < |v| < 10          → 2 cifras significativas ("0.50", "1.0", "5.0")
  *   - 0                     → "0"
  */
 export function formatAxis3Sig(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v as number)) return "0";
   const num = Number(v);
   if (num === 0) return "0";
+  if (Math.abs(num) >= 10) {
+    return num.toLocaleString("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    });
+  }
   return num.toLocaleString("en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumSignificantDigits: 2,
+    maximumSignificantDigits: 2,
   });
 }

@@ -74,6 +74,9 @@ function facetExportLegendTitleFromSelection(sel: ChartSelection): string | unde
 }
 
 function stackLabelFormatter(this: Highcharts.StackItemObject): string {
+  if (Math.abs(this.total) < 1) {
+    return this.total.toLocaleString("en-US", { minimumSignificantDigits: 2, maximumSignificantDigits: 2 });
+  }
   return Highcharts.numberFormat(this.total, 2, ".", ",");
 }
 

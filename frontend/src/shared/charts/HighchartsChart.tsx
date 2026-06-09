@@ -171,10 +171,13 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
             fontSize: fb('11pt'),
           },
           // Highcharts invoca el formatter con `this` como StackItemObject; no usar flecha.
-          // Mostrar solo cada 2 categorías (0, 2, 4, …) con 1 decimal máximo.
+          // Mostrar solo cada 2 categorías (0, 2, 4, …).
           // eslint-disable-next-line react-hooks/unsupported-syntax -- API de Highcharts
           formatter: function (this: Highcharts.StackItemObject) {
             if (typeof this.x === 'number' && this.x % 2 !== 0) return '';
+            if (Math.abs(this.total) < 1) {
+              return this.total.toLocaleString('en-US', { minimumSignificantDigits: 2, maximumSignificantDigits: 2 });
+            }
             return Highcharts.numberFormat(this.total, 1, '.', ',');
           },
         },

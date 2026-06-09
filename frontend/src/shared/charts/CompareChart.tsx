@@ -264,6 +264,9 @@ export const CompareChart: React.FC<CompareChartProps> = ({
           },
           // eslint-disable-next-line react-hooks/unsupported-syntax -- API de Highcharts (`this`)
           formatter: function (this: Highcharts.StackItemObject) {
+            if (Math.abs(this.total) < 1) {
+              return this.total.toLocaleString('en-US', { minimumSignificantDigits: 2, maximumSignificantDigits: 2 });
+            }
             return Highcharts.numberFormat(this.total, 2, '.', ',');
           },
         },

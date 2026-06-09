@@ -298,6 +298,7 @@ export const simulationApi = {
     if (selection.loc) params.loc = selection.loc;
     if (selection.variable) params.variable = selection.variable;
     if (selection.agrupar_por) params.agrupar_por = selection.agrupar_por;
+    if (selection.region) params.region = selection.region;
     if (options?.clean) params.clean = "true";
     // Solo aplican cuando view_mode === 'table'
     if (selection.viewMode === "table") {
