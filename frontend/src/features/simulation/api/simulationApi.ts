@@ -344,7 +344,7 @@ export const simulationApi = {
     return { blob, filename };
   },
 
-  async getCompareData(params: { job_ids: string, tipo: string, un?: string, years_to_plot?: string, agrupacion?: string, sub_filtro?: string, loc?: string, group_by?: string }) {
+  async getCompareData(params: { job_ids: string, tipo: string, un?: string, years_to_plot?: string, agrupacion?: string, sub_filtro?: string, loc?: string, group_by?: string, region?: string }) {
     const { data } = await httpClient.get<CompareChartResponse>(`/visualizations/chart-data/compare`, { params });
     return data;
   },
@@ -369,6 +369,7 @@ export const simulationApi = {
     un?: string;
     sub_filtro?: string;
     loc?: string;
+    region?: string;
   }) {
     const { data } = await httpClient.get<ChartDataResponse>(
       `/visualizations/chart-data/compare-line`,

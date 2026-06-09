@@ -962,6 +962,10 @@ def _color_map_comparison(
         palette = get_colores_emisiones()
         return {c: palette.get(c, "#999999") for c in categorias_unicas}
 
+    if agrupacion == "REGION":
+        from app.visualization.regional import REGION_COLORS
+        return {c: REGION_COLORS.get(c, "#999999") for c in categorias_unicas}
+
     # TECNOLOGIA: reutiliza generar_colores_tecnologias de colors.py
     df_tmp = pd.DataFrame({"COLOR": list(categorias_unicas)})
     colores_lista, orden_lista = generar_colores_tecnologias(df_tmp, "COLOR")
@@ -1928,6 +1932,7 @@ def build_comparison_data(
     loc: str | None = None,
     job_display_overrides: dict[int, str] | None = None,
     es_porcentaje_override: bool = False,
+    region: str | None = None,
 ) -> CompareChartResponse:
     """Construye la respuesta de comparación multi-escenario.
 
@@ -2055,7 +2060,7 @@ def build_comparison_data(
         first_job_id = job_ids[0]
         df_var = _load_variable_data(db, first_job_id, variable_name)
         # Strip prefijos regionales si el job es REGIONAL (acumulado nacional).
-        df_var = _apply_regional_transform(db, first_job_id, df_var)
+        df_var = _apply_regional_transform(db, first_job_id, df_var, region_filter=region)
 
         if not df_var.empty:
             df_hist = _procesar_bloque_comparacion(
@@ -2082,8 +2087,8 @@ def build_comparison_data(
 
     for jid in job_ids:
         df_var = _load_variable_data(db, jid, variable_name)
-        # Strip prefijos regionales si el job es REGIONAL (acumulado nacional).
-        df_var = _apply_regional_transform(db, jid, df_var)
+        # Strip prefijos regionales si el job es REGIONAL.
+        df_var = _apply_regional_transform(db, jid, df_var, region_filter=region)
         if df_var.empty:
             continue
 
@@ -2812,6 +2817,7 @@ def build_comparison_line_data(
     sub_filtro: str | None = None,
     loc: str | None = None,
     job_display_overrides: dict[int, str] | None = None,
+    region: str | None = None,
 ) -> ChartDataResponse:
     """Construye líneas totales multi-escenario sobre el mismo eje.
 
@@ -2900,8 +2906,8 @@ def build_comparison_line_data(
 
     for jid in job_ids:
         df = _load_variable_data(db, jid, variable_name)
-        # Strip prefijos regionales si el job es REGIONAL (acumulado nacional).
-        df = _apply_regional_transform(db, jid, df)
+        # Strip prefijos regionales si el job es REGIONAL.
+        df = _apply_regional_transform(db, jid, df, region_filter=region)
         if df.empty:
             totals_per_job[jid] = {}
             continue
@@ -2970,6 +2976,7 @@ def build_pareto_data(
     un: str = "PJ",
     sub_filtro: str | None = None,
     loc: str | None = None,
+    region: str | None = None,
 ) -> ParetoChartResponse:
     """Construye los datos para un gráfico de Pareto por tecnología.
 
@@ -3014,7 +3021,7 @@ def build_pareto_data(
         )
 
     # Strip prefijos regionales antes del filtro (jobs REGIONAL).
-    df = _apply_regional_transform(db, job_id, df)
+    df = _apply_regional_transform(db, job_id, df, region_filter=region)
 
     if filtro_fn is not None:
         df = filtro_fn(df, sub_filtro=sub_filtro, loc=loc)
@@ -3282,6 +3289,7 @@ def export_all_charts_zip(
     *,
     view_mode: str = "column",
     clean: bool = False,
+    region: str | None = None,
 ) -> "io.BytesIO":
     """Genera un ZIP con todas las gráficas renderizadas como SVG o PNG.
 
@@ -3328,11 +3336,12 @@ def export_all_charts_zip(
                         config_id,
                         un=un,
                         variable=var_name,
+                        region=region,
                     )
                     if chart.series:
                         charts_to_render.append((f"{label} — {var_suffix}", chart))
             else:
-                chart = build_chart_data(db, job_id, config_id, un=un)
+                chart = build_chart_data(db, job_id, config_id, un=un, region=region)
                 if chart.series:
                     charts_to_render.append((label, chart))
 
@@ -5017,6 +5026,7 @@ def build_comparison_data_by_year_alt(
     loc: str | None = None,
     job_display_overrides: dict[int, str] | None = None,
     es_porcentaje_override: bool = False,
+    region: str | None = None,
 ) -> CompareChartResponse:
     """Construye respuesta agrupada por ESCENARIO (no por año).
 
@@ -5095,8 +5105,8 @@ def build_comparison_data_by_year_alt(
     all_data: list[pd.DataFrame] = []
     for jid in job_ids:
         df_var = _load_variable_data(db, jid, variable_name)
-        # Strip prefijos regionales si el job es REGIONAL (acumulado nacional).
-        df_var = _apply_regional_transform(db, jid, df_var)
+        # Strip prefijos regionales si el job es REGIONAL.
+        df_var = _apply_regional_transform(db, jid, df_var, region_filter=region)
         if df_var.empty:
             continue
 

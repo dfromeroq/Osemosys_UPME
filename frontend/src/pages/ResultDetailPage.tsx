@@ -1107,6 +1107,11 @@ export function ResultDetailPage() {
       if (chartSelection.loc) params.loc = chartSelection.loc;
       if (chartSelection.agrupar_por) params.agrupacion = chartSelection.agrupar_por;
       if (esPorcentaje) params.es_porcentaje = 'true';
+      // Filtro regional: ignorado por backend si el job no es REGIONAL.
+      // Si agrupamos por región, el filtro no aplica (mutuamente excluyente).
+      if (chartSelection.region && chartSelection.agrupar_por !== 'REGION') {
+        params.region = chartSelection.region;
+      }
 
       simulationApi
         .getCompareData(params as Parameters<typeof simulationApi.getCompareData>[0])
@@ -1131,6 +1136,11 @@ export function ResultDetailPage() {
       if (chartSelection.loc) params.loc = chartSelection.loc;
       if (chartSelection.agrupar_por) params.agrupacion = chartSelection.agrupar_por;
       if (esPorcentaje) params.es_porcentaje = 'true';
+      // Filtro regional: ignorado por backend si el job no es REGIONAL.
+      // Si agrupamos por región, el filtro no aplica (mutuamente excluyente).
+      if (chartSelection.region && chartSelection.agrupar_por !== 'REGION') {
+        params.region = chartSelection.region;
+      }
 
       simulationApi
         .getCompareData(params as Parameters<typeof simulationApi.getCompareData>[0])
@@ -1151,6 +1161,11 @@ export function ResultDetailPage() {
       };
       if (chartSelection.sub_filtro) params.sub_filtro = chartSelection.sub_filtro;
       if (chartSelection.loc) params.loc = chartSelection.loc;
+      // Filtro regional: ignorado por backend si el job no es REGIONAL.
+      // Si agrupamos por región, el filtro no aplica (mutuamente excluyente).
+      if (chartSelection.region && chartSelection.agrupar_por !== 'REGION') {
+        params.region = chartSelection.region;
+      }
 
       simulationApi
         .getCompareLineData(params as Parameters<typeof simulationApi.getCompareLineData>[0])

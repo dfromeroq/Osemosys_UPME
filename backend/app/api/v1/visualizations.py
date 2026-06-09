@@ -99,6 +99,7 @@ def get_comparison_data(
     loc: str | None = Query(None),
     es_porcentaje: bool = Query(False, description="Si true, normaliza cada año/escenario a 100%"),
     group_by: str = Query("year", description="Agrupación: 'year' (default) o 'scenario' para modo alternativo"),
+    region: str | None = Query(None, description="Filtro regional (AN, CA, IN, NE, OR, SE, SO) — solo en jobs REGIONAL"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -144,6 +145,7 @@ def get_comparison_data(
                 sub_filtro=sub_filtro,
                 loc=loc,
                 es_porcentaje_override=es_porcentaje,
+                region=region,
             )
         else:
             return chart_service.build_comparison_data(
@@ -156,6 +158,7 @@ def get_comparison_data(
                 sub_filtro=sub_filtro,
                 loc=loc,
                 es_porcentaje_override=es_porcentaje,
+                region=region,
             )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -202,6 +205,7 @@ def get_comparison_line_data(
     un: str = Query("PJ"),
     sub_filtro: str | None = Query(None),
     loc: str | None = Query(None),
+    region: str | None = Query(None, description="Filtro regional (AN, CA, IN, NE, OR, SE, SO) — solo en jobs REGIONAL"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -211,6 +215,7 @@ def get_comparison_line_data(
         return chart_service.build_comparison_line_data(
             db=db, job_ids=job_id_list, tipo=tipo,
             un=un, sub_filtro=sub_filtro, loc=loc,
+            region=region,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -559,6 +564,7 @@ def get_pareto_data(
     un: str = Query("PJ"),
     sub_filtro: str | None = Query(None),
     loc: str | None = Query(None),
+    region: str | None = Query(None, description="Filtro regional (AN, CA, IN, NE, OR, SE, SO) — solo en jobs REGIONAL"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -573,6 +579,7 @@ def get_pareto_data(
         return chart_service.build_pareto_data(
             db=db, job_id=job["id"], tipo=tipo,
             un=un, sub_filtro=sub_filtro, loc=loc,
+            region=region,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -731,6 +738,7 @@ def export_chart(
         None,
         description='Nombres de series ocultas separados por coma.',
     ),
+    region: str | None = Query(None, description="Filtro regional (AN, CA, IN, NE, OR, SE, SO) — solo en jobs REGIONAL"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -767,6 +775,7 @@ def export_chart(
                 un=un,
                 sub_filtro=sub_filtro,
                 loc=loc,
+                region=region,
             )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -813,6 +822,7 @@ def export_chart(
             loc=loc,
             variable=variable,
             agrupar_por=agrupar_por,
+            region=region,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -909,6 +919,7 @@ def export_all_charts(
         False,
         description="True = descargar sin título ni etiquetas numéricas sobre las barras.",
     ),
+    region: str | None = Query(None, description="Filtro regional (AN, CA, IN, NE, OR, SE, SO) — solo en jobs REGIONAL"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -931,6 +942,7 @@ def export_all_charts(
     try:
         zip_bytes = chart_service.export_all_charts_zip(
             db=db, job_id=job["id"], un=un, fmt=fmt, view_mode=view_mode, clean=clean,
+            region=region,
         )
     except Exception as e:
         logger.exception("Error generando ZIP de gráficas")
