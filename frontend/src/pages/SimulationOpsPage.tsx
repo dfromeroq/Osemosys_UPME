@@ -41,6 +41,43 @@ function formatGb(value: number | null | undefined): string {
   return `${gb.toLocaleString("es-CO", { maximumFractionDigits: 1 })} GB`;
 }
 
+function formatTimestamp(value: string | null | undefined): string {
+  return value ? new Date(value).toLocaleString("es-CO") : "—";
+}
+
+function jobDurationSeconds(job: SimulationOpsJob): number | null {
+  if (!job.started_at || !job.finished_at) return null;
+  const started = new Date(job.started_at).getTime();
+  const finished = new Date(job.finished_at).getTime();
+  if (!Number.isFinite(started) || !Number.isFinite(finished) || finished < started) return null;
+  return (finished - started) / 1000;
+}
+
+function sampleMax(
+  job: SimulationOpsJob,
+  read: (sample: NonNullable<SimulationOpsJob["runtime"]>["last_resource_sample"]) => number | null,
+): number | null {
+  const samples = job.runtime?.resource_samples ?? [];
+  const values = samples
+    .map((sample) => read(sample))
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return values.length ? Math.max(...values) : null;
+}
+
+function ramPeakGb(job: SimulationOpsJob): number | null {
+  const peak = sampleMax(job, (sample) => sample?.peak_rss_mb ?? sample?.rss_mb ?? null);
+  return peak === null ? null : peak / 1024;
+}
+
+function cpuPeakCores(job: SimulationOpsJob): number | null {
+  const peak = sampleMax(job, (sample) => sample?.process_cpu_percent ?? null);
+  return peak === null ? null : peak / 100;
+}
+
+function threadPeak(job: SimulationOpsJob): number | null {
+  return sampleMax(job, (sample) => sample?.threads ?? null);
+}
+
 function JobTable({
   environment,
   jobs,
@@ -148,6 +185,114 @@ function JobTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+function RecentJobsHistory({
+  jobs,
+  capacity,
+}: {
+  jobs: SimulationOpsJob[];
+  capacity?: ResourceTimelineCapacity;
+}) {
+  const historicalJobs = jobs.filter((job) => job.status !== "QUEUED" && job.status !== "RUNNING");
+  const firstWithSamples = historicalJobs.find((job) => (job.runtime?.resource_samples?.length ?? 0) > 1)?.id ?? null;
+  const [selectedJobId, setSelectedJobId] = useState<number | null>(firstWithSamples);
+  const selectedJob = historicalJobs.find((job) => job.id === selectedJobId) ?? null;
+  const selectedSamples = selectedJob?.runtime?.resource_samples ?? [];
+
+  if (historicalJobs.length === 0) {
+    return null;
+  }
+
+  return (
+    <section style={{ display: "grid", gap: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: 15 }}>Histórico reciente</h3>
+          <div className="text-xs text-slate-500">
+            Últimas ejecuciones terminadas con muestras de RAM, CPU e hilos cuando estén disponibles.
+          </div>
+        </div>
+        {selectedJob ? (
+          <div className="text-xs text-slate-500">
+            Seleccionada: <span className="font-mono text-slate-300">#{selectedJob.id}</span>
+          </div>
+        ) : null}
+      </div>
+
+      <div style={{ overflowX: "auto" }}>
+        <table className="w-full text-sm" style={{ borderCollapse: "collapse", minWidth: 980 }}>
+          <thead className="text-slate-500">
+            <tr>
+              <th className="py-2 pr-3 text-left font-medium">ID</th>
+              <th className="py-2 pr-3 text-left font-medium">Estado</th>
+              <th className="py-2 pr-3 text-left font-medium">Tipo</th>
+              <th className="py-2 pr-3 text-left font-medium">Fin</th>
+              <th className="py-2 pr-3 text-right font-medium">Duración</th>
+              <th className="py-2 pr-3 text-right font-medium">RAM pico</th>
+              <th className="py-2 pr-3 text-right font-medium">CPU pico</th>
+              <th className="py-2 pr-3 text-right font-medium">Hilos pico</th>
+              <th className="py-2 pr-3 text-left font-medium">Commit</th>
+              <th className="py-2 text-right font-medium">Detalle</th>
+            </tr>
+          </thead>
+          <tbody>
+            {historicalJobs.map((job) => {
+              const selected = selectedJobId === job.id;
+              const hasSamples = (job.runtime?.resource_samples?.length ?? 0) > 1;
+              return (
+                <tr
+                  key={job.id}
+                  className="border-t border-slate-800/70"
+                  style={{ background: selected ? "rgba(14,165,233,0.07)" : undefined }}
+                >
+                  <td className="py-2 pr-3 font-mono text-slate-200">{job.id}</td>
+                  <td className="py-2 pr-3 text-slate-200">{job.status}</td>
+                  <td className="py-2 pr-3 text-slate-300">{job.simulation_type}</td>
+                  <td className="py-2 pr-3 text-slate-300">{formatTimestamp(job.finished_at)}</td>
+                  <td className="py-2 pr-3 text-right font-mono text-slate-300">
+                    {formatSeconds(jobDurationSeconds(job))}
+                  </td>
+                  <td className="py-2 pr-3 text-right font-mono text-slate-300">
+                    {formatGb(ramPeakGb(job))}
+                  </td>
+                  <td className="py-2 pr-3 text-right font-mono text-slate-300">
+                    {cpuPeakCores(job)?.toLocaleString("es-CO", { maximumFractionDigits: 2 }) ?? "—"}
+                  </td>
+                  <td className="py-2 pr-3 text-right font-mono text-slate-300">
+                    {threadPeak(job)?.toLocaleString("es-CO", { maximumFractionDigits: 0 }) ?? "—"}
+                  </td>
+                  <td className="py-2 pr-3 font-mono text-slate-300">{shortCommit(job.runtime?.commit)}</td>
+                  <td className="py-2 text-right">
+                    {hasSamples ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => setSelectedJobId(selected ? null : job.id)}
+                        style={{ padding: "5px 9px", fontSize: 12 }}
+                      >
+                        {selected ? "Ocultar" : "Ver"}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-slate-600">Sin muestras</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {selectedJob && selectedSamples.length > 1 ? (
+        <ResourceTimeline
+          samples={selectedSamples}
+          title={`Histórico de recursos · ejecución ${selectedJob.id}`}
+          capacity={capacity}
+        />
+      ) : null}
+    </section>
   );
 }
 
@@ -269,6 +414,7 @@ function EnvironmentPanel({
       ) : null}
 
       <JobTable environment={env.name} jobs={env.active_jobs} onCancel={onCancel} capacity={capacity} />
+      <RecentJobsHistory jobs={env.recent_jobs} capacity={capacity} />
     </section>
   );
 }

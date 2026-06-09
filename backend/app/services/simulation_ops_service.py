@@ -229,7 +229,7 @@ class SimulationOpsService:
             .limit(30)
         ).scalars().all()
         recent_jobs = db.execute(
-            select(SimulationJob).order_by(SimulationJob.id.desc()).limit(12)
+            select(SimulationJob).order_by(SimulationJob.id.desc()).limit(30)
         ).scalars().all()
 
         services = DockerMetricsService.list_service_memory()
