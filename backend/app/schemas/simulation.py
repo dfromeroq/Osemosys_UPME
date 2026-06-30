@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from app.schemas.scenario import ScenarioTagPublic, SimulationType
 
 SimulationStatus = Literal["QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED"]
-SimulationSolver = Literal["highs", "glpk", "gurobi"]
+SimulationSolver = Literal["highs", "glpk", "gurobi", "mosek"]
 SimulationInputMode = Literal["SCENARIO", "CSV_UPLOAD"]
 #: Estado del análisis de infactibilidad on-demand para un job infactible.
 #: ``NONE`` = aún no se ha corrido; se dispara vía POST /simulations/{id}/diagnose-infeasibility.

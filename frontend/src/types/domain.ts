@@ -8,7 +8,7 @@ export type ChangeRequestStatus = "PENDING" | "APPROVED" | "REJECTED";
 export type ScenarioPermissionScope = "mine" | "readable" | "editable" | "readonly";
 
 export type RunStatus = "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
-export type SimulationSolver = "highs" | "glpk" | "gurobi";
+export type SimulationSolver = "highs" | "glpk" | "gurobi" | "mosek";
 export type SimulationInputMode = "SCENARIO" | "CSV_UPLOAD";
 
 export type CatalogEntity =

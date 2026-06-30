@@ -82,6 +82,8 @@ function getSolverLabel(solverName: SimulationSolver) {
       return "GLPK";
     case "gurobi":
       return "Gurobi";
+    case "mosek":
+      return "MOSEK";
   }
 }
 
@@ -1075,6 +1077,7 @@ export function SimulationPage() {
               <option value="highs">HiGHS</option>
               <option value="glpk">GLPK</option>
               <option value="gurobi">Gurobi</option>
+              <option value="mosek">MOSEK</option>
             </select>
           </label>
           <Button variant="primary" onClick={runSimulation} disabled={submitting || !selectedScenario}>
@@ -1243,6 +1246,7 @@ export function SimulationPage() {
               <option value="highs">HiGHS</option>
               <option value="glpk">GLPK</option>
               <option value="gurobi">Gurobi</option>
+              <option value="mosek">MOSEK</option>
             </select>
           </label>
           <label className="field" style={{ margin: 0 }}>

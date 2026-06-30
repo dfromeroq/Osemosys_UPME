@@ -29,6 +29,7 @@ SOLVER_FACTORIES: dict[str, str] = {
     "highs": "appsi_highs",
     "glpk": "glpk",
     "gurobi": "gurobi",
+    "mosek": "mosek",
 }
 
 
@@ -62,6 +63,19 @@ def _gurobi_lightweight_available() -> bool:
     return True
 
 
+def _mosek_lightweight_available() -> bool:
+    """Chequea si mosek está instalado SIN consumir licencia.
+
+    Igual que Gurobi, solo verifica que el módulo Python sea importable;
+    la licencia se valida al hacer el ``solve()`` real.
+    """
+    try:
+        import mosek  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
 def get_solver_availability() -> dict[str, bool]:
     """Comprueba para cada solver si está disponible (instalado y usable).
 
@@ -73,6 +87,9 @@ def get_solver_availability() -> dict[str, bool]:
     for solver_alias, solver_factory in SOLVER_FACTORIES.items():
         if solver_alias == "gurobi":
             availability[solver_alias] = _gurobi_lightweight_available()
+            continue
+        if solver_alias == "mosek":
+            availability[solver_alias] = _mosek_lightweight_available()
             continue
         solver = pyo.SolverFactory(solver_factory)
         availability[solver_alias] = bool(
@@ -174,6 +191,23 @@ def _release_solver(solver: object) -> None:
     except Exception:  # pragma: no cover - gurobipy no instalado
         pass
 
+    # MOSEK: cerrar el Task/Env si el plugin Pyomo los expone.
+    try:
+        import mosek  # noqa: F401
+
+        mosek_env = getattr(solver, "_mosek_env", None) or getattr(solver, "_env", None)
+        if mosek_env is not None:
+            for closer in ("__exit__", "dispose"):
+                fn = getattr(mosek_env, closer, None)
+                if callable(fn):
+                    try:
+                        fn(None, None, None) if closer == "__exit__" else fn()
+                    except Exception:  # pragma: no cover
+                        pass
+                    break
+    except Exception:  # pragma: no cover - mosek no instalado
+        pass
+
 
 def _resolve_solver_threads(settings: object) -> int:
     """Devuelve los hilos a entregar al solver.
@@ -246,6 +280,25 @@ def _apply_solver_runtime_options(
                 )
         try:
             effective = gurobi_options["Threads"]
+            return int(effective) if effective is not None else None
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    if candidate == "mosek":
+        mosek_options = getattr(solver, "options", None)
+        if mosek_options is None:
+            return None
+        if solver_threads > 0:
+            try:
+                mosek_options["MSK_IPAR_NUM_THREADS"] = str(solver_threads)
+                logger.info("Configurando MOSEK con MSK_IPAR_NUM_THREADS=%s", solver_threads)
+            except Exception:  # pragma: no cover
+                logger.warning(
+                    "No fue posible aplicar MSK_IPAR_NUM_THREADS=%s a MOSEK vía solver.options",
+                    solver_threads,
+                )
+        try:
+            effective = mosek_options["MSK_IPAR_NUM_THREADS"]
             return int(effective) if effective is not None else None
         except (KeyError, TypeError, ValueError):
             return None

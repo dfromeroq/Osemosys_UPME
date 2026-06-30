@@ -140,10 +140,10 @@ async def submit_simulation_from_csv(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """Encola una simulación desde un ZIP con CSV procesados."""
-    if solver_name not in {"highs", "glpk", "gurobi"}:
+    if solver_name not in {"highs", "glpk", "gurobi", "mosek"}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Solver inválido. Usa 'highs', 'glpk' o 'gurobi'.",
+            detail="Solver inválido. Usa 'highs', 'glpk', 'gurobi' o 'mosek'.",
         )
     if not csv_zip.filename or not csv_zip.filename.lower().endswith(".zip"):
         raise HTTPException(

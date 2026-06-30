@@ -44,8 +44,8 @@ class SimulationService:
 
     @staticmethod
     def _validate_solver_name(solver_name: str) -> str:
-        if solver_name not in {"highs", "glpk", "gurobi"}:
-            raise ConflictError("Solver invalido. Usa 'highs', 'glpk' o 'gurobi'.")
+        if solver_name not in {"highs", "glpk", "gurobi", "mosek"}:
+            raise ConflictError("Solver invalido. Usa 'highs', 'glpk', 'gurobi' o 'mosek'.")
         return solver_name
 
     @staticmethod
