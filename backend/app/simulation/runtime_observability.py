@@ -27,6 +27,9 @@ _ENV_KEYS = (
     "OSEMOSYS_CONSTRAINT_DIAGNOSTICS",
     "OSEMOSYS_FAST_DATAPORTAL",
     "OSEMOSYS_SELECTIVE_SOLUTION_MAP",
+    "OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL",
+    "OSEMOSYS_SPARSE_MATRIX_PREPROCESS",
+    "OSEMOSYS_SPARSE_HIGH_DIM_PARAMS",
     "SIM_MAX_CONCURRENCY",
     "SIM_SOLVER_HIGHS_DIRECT",
     "SIM_SOLVER_THREADS",
@@ -135,13 +138,26 @@ def _open_fd_count() -> int | None:
 def _memory_context() -> dict[str, Any]:
     mem_current = _read_int("/sys/fs/cgroup/memory.current")
     mem_max = _read_int("/sys/fs/cgroup/memory.max")
+    mem_peak = _read_int("/sys/fs/cgroup/memory.peak")
     swap_current = _read_int("/sys/fs/cgroup/memory.swap.current")
     swap_max = _read_int("/sys/fs/cgroup/memory.swap.max")
+    events: dict[str, int] = {}
+    for line in (_read_text("/sys/fs/cgroup/memory.events") or "").splitlines():
+        parts = line.split()
+        if len(parts) == 2:
+            try:
+                events[parts[0]] = int(parts[1])
+            except ValueError:
+                pass
     return {
         "cgroup_memory_current_mb": _bytes_to_mb(mem_current),
         "cgroup_memory_max_mb": _bytes_to_mb(mem_max),
+        "cgroup_memory_peak_mb": _bytes_to_mb(mem_peak),
         "cgroup_swap_current_mb": _bytes_to_mb(swap_current),
         "cgroup_swap_max_mb": _bytes_to_mb(swap_max),
+        "cgroup_memory_events": events,
+        "cgroup_oom_count": events.get("oom", 0),
+        "cgroup_oom_kill_count": events.get("oom_kill", 0),
     }
 
 
@@ -180,6 +196,7 @@ class ResourceTrace:
         ru = resource.getrusage(resource.RUSAGE_SELF)
         sample = {
             "stage": stage,
+            "pid": os.getpid(),
             "elapsed_seconds": round(now_wall - self.start_wall, 3),
             "delta_seconds": round(wall_delta, 3),
             "process_cpu_percent": round((cpu_delta / wall_delta) * 100, 2)

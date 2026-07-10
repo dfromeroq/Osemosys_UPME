@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.exceptions import ConflictError, NotFoundError
-from app.models import SimulationJob
+from app.models import SimulationJob, SimulationJobEvent
 from app.repositories.simulation_repository import SimulationRepository
 from app.services.docker_metrics_service import DockerMetricsService
 from app.simulation.celery_app import celery_app
@@ -136,6 +136,17 @@ def _system_resources() -> dict[str, Any]:
     }
 
 
+def _event_summary(event: SimulationJobEvent) -> dict[str, Any]:
+    return {
+        "id": event.id,
+        "event_type": event.event_type,
+        "stage": event.stage,
+        "message": event.message,
+        "progress": _safe_float(event.progress),
+        "created_at": _dt(event.created_at),
+    }
+
+
 def _runtime_summary(job: SimulationJob) -> dict[str, Any]:
     timings = job.model_timings_json if isinstance(job.model_timings_json, dict) else {}
     context = timings.get("runtime_context")
@@ -148,17 +159,26 @@ def _runtime_summary(job: SimulationJob) -> dict[str, Any]:
     clean_samples = [sample for sample in samples if isinstance(sample, dict)]
     env = context.get("env") if isinstance(context.get("env"), dict) else {}
     cpu = context.get("cpu") if isinstance(context.get("cpu"), dict) else {}
+    memory = context.get("memory") if isinstance(context.get("memory"), dict) else {}
     return {
         "commit": env.get("APP_GIT_SHA"),
         "branch": env.get("APP_GIT_BRANCH"),
         "deploy_env": env.get("APP_DEPLOY_ENV"),
+        "hostname": context.get("hostname"),
+        "pid": context.get("pid"),
         "cpu_visible": cpu.get("affinity_count") or cpu.get("os_cpu_count"),
+        "cpu_context": cpu,
+        "memory_context": memory,
         "last_resource_sample": last_sample,
         "resource_samples": clean_samples[-60:],
     }
 
 
-def _job_summary(job: SimulationJob) -> dict[str, Any]:
+def _job_summary(
+    job: SimulationJob,
+    *,
+    events: list[SimulationJobEvent] | None = None,
+) -> dict[str, Any]:
     timings = job.model_timings_json if isinstance(job.model_timings_json, dict) else {}
     stage_times = job.stage_times_json if isinstance(job.stage_times_json, dict) else {}
     return {
@@ -179,6 +199,7 @@ def _job_summary(job: SimulationJob) -> dict[str, Any]:
         "model_timing_keys": sorted(timings.keys()),
         "solver_status": timings.get("solver_status"),
         "runtime": _runtime_summary(job),
+        "events": [_event_summary(event) for event in (events or [])],
     }
 
 
@@ -232,7 +253,35 @@ class SimulationOpsService:
             select(SimulationJob).order_by(SimulationJob.id.desc()).limit(30)
         ).scalars().all()
 
-        services = DockerMetricsService.list_service_memory()
+        job_ids = list(dict.fromkeys(int(job.id) for job in [*active_jobs, *recent_jobs]))
+        events_by_job: dict[int, list[SimulationJobEvent]] = {job_id: [] for job_id in job_ids}
+        if job_ids:
+            event_rows = db.execute(
+                select(SimulationJobEvent)
+                .where(SimulationJobEvent.job_id.in_(job_ids))
+                .order_by(SimulationJobEvent.id.desc())
+                .limit(max(20, len(job_ids) * 20))
+            ).scalars().all()
+            for event in event_rows:
+                bucket = events_by_job.setdefault(int(event.job_id), [])
+                if len(bucket) < 20:
+                    bucket.append(event)
+            for bucket in events_by_job.values():
+                bucket.reverse()
+
+        service_memory = DockerMetricsService.list_service_memory()
+        service_metrics = DockerMetricsService.list_service_metrics()
+        detailed_by_name = {
+            str(item.get("service_name")): item for item in service_metrics
+        }
+        services = [
+            {**detailed_by_name.get(str(item.get("service_name")), {}), **item}
+            for item in service_memory
+        ]
+        known = {str(item.get("service_name")) for item in services}
+        services.extend(
+            item for item in service_metrics if str(item.get("service_name")) not in known
+        )
         runtime_env = {
             key: os.environ.get(key)
             for key in (
@@ -271,8 +320,12 @@ class SimulationOpsService:
             "services_memory_total_bytes": sum(
                 int(item.get("memory_usage_bytes") or 0) for item in services
             ),
-            "active_jobs": [_job_summary(job) for job in active_jobs],
-            "recent_jobs": [_job_summary(job) for job in recent_jobs],
+            "active_jobs": [
+                _job_summary(job, events=events_by_job.get(int(job.id))) for job in active_jobs
+            ],
+            "recent_jobs": [
+                _job_summary(job, events=events_by_job.get(int(job.id))) for job in recent_jobs
+            ],
         }
 
     @staticmethod

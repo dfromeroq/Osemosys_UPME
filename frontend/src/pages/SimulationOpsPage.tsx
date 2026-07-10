@@ -78,6 +78,29 @@ function threadPeak(job: SimulationOpsJob): number | null {
   return sampleMax(job, (sample) => sample?.threads ?? null);
 }
 
+function EventTimeline({ job }: { job: SimulationOpsJob }) {
+  const events = job.events ?? [];
+  if (events.length === 0) return null;
+  return (
+    <div style={{ display: "grid", gap: 6 }}>
+      <div className="text-xs font-medium text-slate-400">Eventos recientes</div>
+      <div style={{ display: "grid", gap: 4, maxHeight: 180, overflowY: "auto" }}>
+        {events.map((event) => (
+          <div
+            key={event.id}
+            className="rounded border border-slate-800 px-2 py-1 text-xs text-slate-400"
+            style={{ display: "grid", gridTemplateColumns: "145px 110px 1fr", gap: 8 }}
+          >
+            <span className="font-mono">{formatTimestamp(event.created_at)}</span>
+            <span className="font-mono text-sky-300">{event.stage ?? event.event_type}</span>
+            <span>{event.message ?? "—"}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function JobTable({
   environment,
   jobs,
@@ -98,7 +121,7 @@ function JobTable({
 
   return (
     <div style={{ overflowX: "auto" }}>
-      <table className="w-full text-sm" style={{ borderCollapse: "collapse", minWidth: 880 }}>
+      <table className="w-full text-sm" style={{ borderCollapse: "collapse", minWidth: 960 }}>
         <thead className="text-slate-500">
           <tr>
             <th className="py-2 pr-3 text-left font-medium">ID</th>
@@ -106,6 +129,7 @@ function JobTable({
             <th className="py-2 pr-3 text-left font-medium">Tipo</th>
             <th className="py-2 pr-3 text-right font-medium">Progreso</th>
             <th className="py-2 pr-3 text-left font-medium">Paso</th>
+            <th className="py-2 pr-3 text-right font-medium">PID</th>
             <th className="py-2 pr-3 text-right font-medium">CPU</th>
             <th className="py-2 pr-3 text-right font-medium">RAM</th>
             <th className="py-2 pr-3 text-right font-medium">Hilos</th>
@@ -131,6 +155,9 @@ function JobTable({
                     {typeof job.progress === "number" ? `${job.progress.toFixed(0)}%` : "—"}
                   </td>
                   <td className="py-2 pr-3 text-slate-300">{sample?.stage ?? "—"}</td>
+                  <td className="py-2 pr-3 text-right font-mono text-slate-300">
+                    {job.runtime?.pid ?? "—"}
+                  </td>
                   <td className="py-2 pr-3 text-right font-mono text-slate-300">
                     {typeof sample?.process_cpu_percent === "number"
                       ? `${sample.process_cpu_percent.toFixed(1)}%`
@@ -170,12 +197,15 @@ function JobTable({
                 </tr>
                 {selected && samples.length > 1 ? (
                   <tr key={`${job.id}-resource-timeline`} className="border-t border-slate-900/70">
-                    <td colSpan={10} className="py-3">
-                      <ResourceTimeline
-                        samples={samples}
-                        title={`Recursos por paso · ejecución ${job.id}`}
-                        capacity={capacity}
-                      />
+                    <td colSpan={11} className="py-3">
+                      <div style={{ display: "grid", gap: 10 }}>
+                        <ResourceTimeline
+                          samples={samples}
+                          title={`Recursos por paso · ejecución ${job.id}`}
+                          capacity={capacity}
+                        />
+                        <EventTimeline job={job} />
+                      </div>
                     </td>
                   </tr>
                 ) : null}
@@ -285,12 +315,17 @@ function RecentJobsHistory({
         </table>
       </div>
 
-      {selectedJob && selectedSamples.length > 1 ? (
-        <ResourceTimeline
-          samples={selectedSamples}
-          title={`Histórico de recursos · ejecución ${selectedJob.id}`}
-          capacity={capacity}
-        />
+      {selectedJob ? (
+        <div style={{ display: "grid", gap: 10 }}>
+          {selectedSamples.length > 1 ? (
+            <ResourceTimeline
+              samples={selectedSamples}
+              title={`Histórico de recursos · ejecución ${selectedJob.id}`}
+              capacity={capacity}
+            />
+          ) : null}
+          <EventTimeline job={selectedJob} />
+        </div>
       ) : null}
     </section>
   );
@@ -401,15 +436,53 @@ function EnvironmentPanel({
       </div>
 
       {env.services_memory.length > 0 ? (
-        <div className="flex flex-wrap gap-2 text-xs">
-          {env.services_memory.map((service) => (
-            <span
-              key={service.service_name}
-              className="rounded border border-slate-700 px-2 py-1 font-mono text-slate-300"
-            >
-              {service.service_name}: {formatBytes(service.memory_usage_bytes)}
-            </span>
-          ))}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+            gap: 8,
+          }}
+        >
+          {env.services_memory.map((service) => {
+            const processes = (service.processes ?? []).filter((process) =>
+              ["python", "glpsol", "highs", "celery"].some((name) =>
+                `${process.command ?? ""} ${process.args ?? ""}`.toLowerCase().includes(name),
+              ),
+            );
+            return (
+              <div
+                key={service.service_name}
+                className="rounded border border-slate-700 px-3 py-2 text-xs text-slate-300"
+                style={{ display: "grid", gap: 5 }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <strong className="font-mono text-slate-200">{service.service_name}</strong>
+                  <span className={service.oom_killed ? "text-red-400" : "text-slate-500"}>
+                    {service.oom_killed ? "OOMKilled" : service.status ?? "—"}
+                  </span>
+                </div>
+                <div className="font-mono">
+                  CPU {service.cpu_percent != null ? `${service.cpu_percent.toFixed(1)}%` : "—"}
+                  {service.cpu_used_cores != null ? ` (${service.cpu_used_cores.toFixed(2)} cores)` : ""}
+                </div>
+                <div className="font-mono">
+                  RAM {formatBytes(service.memory_working_set_bytes ?? service.memory_usage_bytes)} /{" "}
+                  {formatBytes(service.memory_limit_bytes)} · pico {formatBytes(service.memory_peak_bytes)}
+                </div>
+                <div className="font-mono text-slate-500">
+                  PID host {service.host_pid ?? "—"} · procesos {service.pids_current ?? "—"} · reinicios{" "}
+                  {service.restart_count ?? 0}
+                </div>
+                {processes.slice(0, 4).map((process, index) => (
+                  <div key={`${process.pid ?? index}-${process.command ?? "process"}`} className="font-mono text-slate-500">
+                    {process.command ?? "proceso"} pid={process.pid ?? "—"} cpu={process.cpu_percent ?? "—"}% rss={
+                      process.rss_kb != null ? `${(process.rss_kb / 1024).toFixed(0)}MiB` : "—"
+                    }
+                  </div>
+                ))}
+              </div>
+            );
+          })}
         </div>
       ) : null}
 
@@ -427,7 +500,6 @@ export function SimulationOpsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     simulationOpsApi
       .getDashboard(true)
       .then((data) => {

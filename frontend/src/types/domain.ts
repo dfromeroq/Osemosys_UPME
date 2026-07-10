@@ -252,6 +252,7 @@ export type SimulationOverview = {
 
 export type RuntimeResourceSample = {
   stage?: string;
+  pid?: number;
   elapsed_seconds?: number;
   delta_seconds?: number;
   process_cpu_percent?: number;
@@ -262,6 +263,20 @@ export type RuntimeResourceSample = {
   open_fds?: number | null;
   cgroup_memory_current_mb?: number | null;
   cgroup_memory_max_mb?: number | null;
+  cgroup_memory_peak_mb?: number | null;
+  cgroup_swap_current_mb?: number | null;
+  cgroup_swap_max_mb?: number | null;
+  cgroup_oom_count?: number | null;
+  cgroup_oom_kill_count?: number | null;
+};
+
+export type SimulationOpsEvent = {
+  id: number;
+  event_type: string;
+  stage?: string | null;
+  message?: string | null;
+  progress?: number | null;
+  created_at?: string | null;
 };
 
 export type SimulationOpsJob = {
@@ -284,10 +299,15 @@ export type SimulationOpsJob = {
     commit?: string | null;
     branch?: string | null;
     deploy_env?: string | null;
+    hostname?: string | null;
+    pid?: number | null;
     cpu_visible?: number | null;
+    cpu_context?: Record<string, unknown>;
+    memory_context?: Record<string, unknown>;
     last_resource_sample?: RuntimeResourceSample | null;
     resource_samples?: RuntimeResourceSample[];
   };
+  events?: SimulationOpsEvent[];
 };
 
 export type SimulationOpsEnvironment = {
@@ -313,7 +333,32 @@ export type SimulationOpsEnvironment = {
     memory_used_bytes?: number | null;
     memory_used_percent?: number | null;
   };
-  services_memory: Array<{ service_name: string; memory_usage_bytes: number }>;
+  services_memory: Array<{
+    service_name: string;
+    memory_usage_bytes?: number | null;
+    memory_working_set_bytes?: number | null;
+    memory_limit_bytes?: number | null;
+    memory_peak_bytes?: number | null;
+    memory_used_percent?: number | null;
+    cpu_percent?: number | null;
+    cpu_used_cores?: number | null;
+    online_cpus?: number | null;
+    pids_current?: number | null;
+    host_pid?: number | null;
+    oom_killed?: boolean;
+    restart_count?: number;
+    status?: string | null;
+    container_id?: string | null;
+    processes?: Array<{
+      pid?: string | null;
+      ppid?: string | null;
+      cpu_percent?: number | null;
+      memory_percent?: number | null;
+      rss_kb?: number | null;
+      command?: string | null;
+      args?: string | null;
+    }>;
+  }>;
   services_memory_total_bytes: number;
   active_jobs: SimulationOpsJob[];
   recent_jobs: SimulationOpsJob[];
