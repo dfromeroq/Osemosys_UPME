@@ -48,6 +48,8 @@ def _merge_solver_timings(timings: dict[str, float], solver_result: dict) -> Non
                 timings[str(key)] = float(val)
     cfg = solver_result.get("solver_highs_config")
     if isinstance(cfg, dict):
+        timings["solver_highs_profile"] = cfg.get("profile")
+        timings["solver_highs_threads"] = cfg.get("threads")
         timings["solver_highs_method"] = cfg.get("method")
         timings["solver_highs_use_direct"] = cfg.get("use_direct")
         timings["solver_highs_primal_tol"] = cfg.get("primal_feasibility_tolerance")

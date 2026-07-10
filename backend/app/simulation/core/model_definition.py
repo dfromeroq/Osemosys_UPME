@@ -18,8 +18,11 @@ Estructura del archivo:
 
 from __future__ import annotations
 
+import os
+
 from pyomo.environ import (
     AbstractModel,
+    Any,
     Constraint,
     NonNegativeIntegers,
     NonNegativeReals,
@@ -54,6 +57,7 @@ def create_abstract_model(
     has_storage: bool = False,
     has_udc: bool = True,
     param_defaults: Mapping[str, float] | None = None,
+    sparse_high_dim_params: bool | None = None,
 ) -> AbstractModel:
     """Construye el AbstractModel OSeMOSYS completo.
 
@@ -63,12 +67,19 @@ def create_abstract_model(
         Si True, incluye sets/params/vars/constraints de almacenamiento.
     has_udc : bool
         Si True, incluye User-Defined Constraints.
+    sparse_high_dim_params : bool | None
+        Si True, ActivityRatio y parámetros afines almacenan sólo índices
+        presentes y usan default para ausentes. None toma la variable de entorno.
 
     Returns
     -------
     AbstractModel listo para ``model.create_instance(data)``.
     """
     defaults = _resolve_defaults(param_defaults)
+    if sparse_high_dim_params is None:
+        sparse_high_dim_params = str(
+            os.getenv("OSEMOSYS_SPARSE_HIGH_DIM_PARAMS", "1")
+        ).strip().lower() not in {"0", "false", "off", "no"}
 
     model = AbstractModel()
 
@@ -159,13 +170,16 @@ def create_abstract_model(
     )
     model.AvailabilityFactor = Param(model.REGION, model.TECHNOLOGY, model.YEAR, default=_d("availabilityfactor", defaults))
     model.ResidualCapacity = Param(model.REGION, model.TECHNOLOGY, model.YEAR, default=_d("residualcapacity", defaults))
+    _activity_ratio_index = (
+        (Any,)
+        if sparse_high_dim_params
+        else (model.REGION, model.TECHNOLOGY, model.FUEL, model.MODE_OF_OPERATION, model.YEAR)
+    )
     model.InputActivityRatio = Param(
-        model.REGION, model.TECHNOLOGY, model.FUEL, model.MODE_OF_OPERATION, model.YEAR,
-        default=_d("inputactivityratio", defaults),
+        *_activity_ratio_index, default=_d("inputactivityratio", defaults),
     )
     model.OutputActivityRatio = Param(
-        model.REGION, model.TECHNOLOGY, model.FUEL, model.MODE_OF_OPERATION, model.YEAR,
-        default=_d("outputactivityratio", defaults),
+        *_activity_ratio_index, default=_d("outputactivityratio", defaults),
     )
 
     # ====================================================================
@@ -243,9 +257,13 @@ def create_abstract_model(
     #    Parameters — Emissions & Penalties
     # ====================================================================
 
+    _emission_ratio_index = (
+        (Any,)
+        if sparse_high_dim_params
+        else (model.REGION, model.TECHNOLOGY, model.EMISSION, model.MODE_OF_OPERATION, model.YEAR)
+    )
     model.EmissionActivityRatio = Param(
-        model.REGION, model.TECHNOLOGY, model.EMISSION, model.MODE_OF_OPERATION, model.YEAR,
-        default=_d("emissionactivityratio", defaults),
+        *_emission_ratio_index, default=_d("emissionactivityratio", defaults),
     )
     model.EmissionsPenalty = Param(model.REGION, model.EMISSION, model.YEAR, default=_d("emissionspenalty", defaults))
     model.AnnualExogenousEmission = Param(
@@ -261,11 +279,16 @@ def create_abstract_model(
     #    Parameters — MUIO
     # ====================================================================
 
+    _input_capacity_ratio_index = (
+        (Any,)
+        if sparse_high_dim_params
+        else (model.REGION, model.TECHNOLOGY, model.FUEL, model.YEAR)
+    )
     model.InputToNewCapacityRatio = Param(
-        model.REGION, model.TECHNOLOGY, model.FUEL, model.YEAR, within=Reals, default=_d("inputtonewcapacityratio", defaults),
+        *_input_capacity_ratio_index, within=Reals, default=_d("inputtonewcapacityratio", defaults),
     )
     model.InputToTotalCapacityRatio = Param(
-        model.REGION, model.TECHNOLOGY, model.FUEL, model.YEAR, within=Reals, default=_d("inputtototalcapacityratio", defaults),
+        *_input_capacity_ratio_index, within=Reals, default=_d("inputtototalcapacityratio", defaults),
     )
     model.TechnologyActivityByModeLowerLimit = Param(
         model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR,
@@ -284,7 +307,7 @@ def create_abstract_model(
         within=Reals, default=_d("technologyactivityincreasebymodelimit", defaults),
     )
     model.EmissionToActivityChangeRatio = Param(
-        model.REGION, model.TECHNOLOGY, model.EMISSION, model.MODE_OF_OPERATION, model.YEAR,
+        *_emission_ratio_index,
         within=Reals, default=_d("emissiontoactivitychangeratio", defaults),
     )
 
@@ -1226,6 +1249,8 @@ def create_abstract_model(
     )
 
     def LU2_rule(m, r, t, mo, y):
+        if m.TechnologyActivityByModeLowerLimit[r, t, mo, y] == 0:
+            return Constraint.Skip
         return (
             sum(m.RateOfActivity[r, l, t, mo, y] * m.YearSplit[l, y] for l in m.TIMESLICE)
             >= m.TechnologyActivityByModeLowerLimit[r, t, mo, y]

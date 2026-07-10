@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Claves en core.system_setting (texto).
 SOLVER_THREADS_KEY = "solver.threads"
+SOLVER_PROFILE_KEY = "solver.profile"
 SOLVER_HIGHS_METHOD_KEY = "solver.highs.method"
 SOLVER_HIGHS_PRESOLVE_KEY = "solver.highs.presolve"
 SOLVER_HIGHS_PARALLEL_KEY = "solver.highs.parallel"
 SOLVER_HIGHS_HIPO_PARALLEL_TYPE_KEY = "solver.highs.hipo_parallel_type"
 SOLVER_HIGHS_CROSSOVER_KEY = "solver.highs.run_crossover"
+SOLVER_HIGHS_OPTIONS_JSON_KEY = "solver.highs.options_json"
 SOLVER_HIGHS_USE_DIRECT_KEY = "solver.highs.use_direct"
 SOLVER_HIGHS_TIME_LIMIT_KEY = "solver.highs.time_limit"
 SOLVER_HIGHS_IPM_TOL_KEY = "solver.highs.ipm_optimality_tolerance"
@@ -22,7 +26,34 @@ SOLVER_HIGHS_DUAL_TOL_KEY = "solver.highs.dual_feasibility_tolerance"
 
 VALID_HIGHS_METHODS = frozenset({"choose", "simplex", "ipm", "ipx", "hipo"})
 VALID_ON_OFF_CHOOSE = frozenset({"off", "on", "choose"})
+VALID_SOLVER_PROFILES = frozenset({"default", "balanced", "fast", "memory"})
 HIGHS_USE_DEFAULT = ""
+
+# Presets conservadores: no fijan threads para evitar sobre-suscripción. Usa
+# SIM_SOLVER_THREADS / solver.threads para asignar cores por despliegue.
+_HIGHS_PROFILE_PRESETS: dict[str, dict[str, object]] = {
+    "default": {},
+    "balanced": {
+        "presolve": "on",
+        "parallel": "choose",
+        "run_crossover": "off",
+        "use_direct": True,
+    },
+    "fast": {
+        "method": "ipm",
+        "presolve": "on",
+        "parallel": "on",
+        "run_crossover": "off",
+        "use_direct": True,
+    },
+    "memory": {
+        "method": "simplex",
+        "presolve": "on",
+        "parallel": "off",
+        "run_crossover": "off",
+        "use_direct": True,
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -33,6 +64,7 @@ class SolverHighsConfig:
     comportamiento que ``highspy.Highs()`` sin ``setOptionValue`` en el notebook.
     """
 
+    profile: str = "default"
     threads: int = 0
     method: str = HIGHS_USE_DEFAULT
     presolve: str = HIGHS_USE_DEFAULT
@@ -44,7 +76,25 @@ class SolverHighsConfig:
     ipm_optimality_tolerance: float = 1e-7
     primal_feasibility_tolerance: float = 1e-7
     dual_feasibility_tolerance: float = 1e-7
+    extra_options: dict[str, Any] | None = None
     log_to_console: bool | None = None
+
+
+def _normalize_profile(value: str | None) -> str:
+    normalized = str(value or "default").strip().lower()
+    if normalized in {"", "default"}:
+        return "default"
+    if normalized in VALID_SOLVER_PROFILES:
+        return normalized
+    logger.warning("Perfil solver inválido %r; usando default", value)
+    return "default"
+
+
+def _profile_value(profile: str, key: str, current: object, *, unset: object) -> object:
+    """Devuelve valor de perfil solo si el valor actual está explícitamente vacío."""
+    if current != unset:
+        return current
+    return _HIGHS_PROFILE_PRESETS.get(profile, {}).get(key, current)
 
 
 def _unset_highs_override(value: str | None) -> str:
@@ -96,8 +146,29 @@ def _read_db_bool(db, key: str, default: bool) -> bool:
     return raw.lower() in {"1", "true", "yes", "on"}
 
 
+def _parse_options_json(raw: str | None) -> dict[str, Any]:
+    text = (raw or "").strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        logger.warning("SIM_SOLVER_HIGHS_OPTIONS_JSON inválido; se ignora")
+        return {}
+    if not isinstance(parsed, dict):
+        logger.warning("SIM_SOLVER_HIGHS_OPTIONS_JSON debe ser objeto JSON; se ignora")
+        return {}
+    return {str(k): v for k, v in parsed.items()}
+
+
 def resolve_highs_config(settings: object) -> SolverHighsConfig:
-    """Combina env vars con overrides de BD (admin UI)."""
+    """Combina env vars con perfil y overrides de BD (admin UI).
+
+    Precedencia: defaults HiGHS < perfil < overrides específicos env < perfil BD
+    < overrides específicos BD. El perfil no pisa opciones específicas ya
+    definidas; solo rellena vacíos.
+    """
+    profile = _normalize_profile(getattr(settings, "sim_solver_profile", "default"))
     threads = int(getattr(settings, "sim_solver_threads", 0) or 0)
     method = _unset_highs_override(getattr(settings, "sim_solver_highs_method", HIGHS_USE_DEFAULT))
     presolve = _unset_highs_override(getattr(settings, "sim_solver_highs_presolve", HIGHS_USE_DEFAULT))
@@ -113,6 +184,13 @@ def resolve_highs_config(settings: object) -> SolverHighsConfig:
     ipm_tol = float(getattr(settings, "sim_solver_highs_ipm_tol", 1e-7) or 1e-7)
     primal_tol = float(getattr(settings, "sim_solver_highs_primal_tol", 1e-7) or 1e-7)
     dual_tol = float(getattr(settings, "sim_solver_highs_dual_tol", 1e-7) or 1e-7)
+    extra_options = _parse_options_json(getattr(settings, "sim_solver_highs_options_json", ""))
+
+    method = str(_profile_value(profile, "method", method, unset=HIGHS_USE_DEFAULT))
+    presolve = str(_profile_value(profile, "presolve", presolve, unset=HIGHS_USE_DEFAULT))
+    parallel = str(_profile_value(profile, "parallel", parallel, unset=HIGHS_USE_DEFAULT))
+    run_crossover = str(_profile_value(profile, "run_crossover", run_crossover, unset=HIGHS_USE_DEFAULT))
+    use_direct = bool(_profile_value(profile, "use_direct", use_direct, unset=True))
 
     try:
         from app.db.session import SessionLocal
@@ -125,6 +203,14 @@ def resolve_highs_config(settings: object) -> SolverHighsConfig:
                 from app.services.system_settings_service import SystemSettingsService
 
                 threads = SystemSettingsService.get_solver_threads(db, fallback=threads)
+                db_profile = _read_db_setting(db, SOLVER_PROFILE_KEY)
+                if db_profile is not None:
+                    profile = _normalize_profile(db_profile)
+                    method = str(_profile_value(profile, "method", method, unset=HIGHS_USE_DEFAULT))
+                    presolve = str(_profile_value(profile, "presolve", presolve, unset=HIGHS_USE_DEFAULT))
+                    parallel = str(_profile_value(profile, "parallel", parallel, unset=HIGHS_USE_DEFAULT))
+                    run_crossover = str(_profile_value(profile, "run_crossover", run_crossover, unset=HIGHS_USE_DEFAULT))
+                    use_direct = bool(_profile_value(profile, "use_direct", use_direct, unset=True))
                 db_method = _read_db_setting(db, SOLVER_HIGHS_METHOD_KEY)
                 if db_method is not None:
                     method = _unset_highs_override(db_method)
@@ -148,10 +234,14 @@ def resolve_highs_config(settings: object) -> SolverHighsConfig:
                 ipm_tol = _read_db_float(db, SOLVER_HIGHS_IPM_TOL_KEY, ipm_tol)
                 primal_tol = _read_db_float(db, SOLVER_HIGHS_PRIMAL_TOL_KEY, primal_tol)
                 dual_tol = _read_db_float(db, SOLVER_HIGHS_DUAL_TOL_KEY, dual_tol)
+                db_options_json = _read_db_setting(db, SOLVER_HIGHS_OPTIONS_JSON_KEY)
+                if db_options_json is not None:
+                    extra_options.update(_parse_options_json(db_options_json))
         except Exception:
             logger.exception("No fue posible leer solver settings desde BD; usando env defaults")
 
     return SolverHighsConfig(
+        profile=profile,
         threads=threads,
         method=_normalize_choice(method, allowed=VALID_HIGHS_METHODS, default=HIGHS_USE_DEFAULT),
         presolve=_normalize_choice(presolve, allowed=VALID_ON_OFF_CHOOSE, default=HIGHS_USE_DEFAULT),
@@ -167,6 +257,7 @@ def resolve_highs_config(settings: object) -> SolverHighsConfig:
         ipm_optimality_tolerance=ipm_tol,
         primal_feasibility_tolerance=primal_tol,
         dual_feasibility_tolerance=dual_tol,
+        extra_options=extra_options,
         log_to_console=None,
     )
 
@@ -200,6 +291,9 @@ def apply_highs_options_to_model(h: object, config: SolverHighsConfig) -> int | 
 
     options["primal_feasibility_tolerance"] = config.primal_feasibility_tolerance
     options["dual_feasibility_tolerance"] = config.dual_feasibility_tolerance
+
+    if config.extra_options:
+        options.update(config.extra_options)
 
     if config.method == "hipo" and config.hipo_parallel_type:
         options["hipo_parallel_type"] = config.hipo_parallel_type

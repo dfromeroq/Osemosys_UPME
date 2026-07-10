@@ -37,12 +37,14 @@ def _fake_settings(**overrides: object) -> SimpleNamespace:
     base = dict(
         sim_solver_tee=False,
         sim_solver_keepfiles=False,
+        sim_solver_profile="default",
         sim_solver_threads=0,
         sim_solver_highs_method="",
         sim_solver_highs_presolve="",
         sim_solver_highs_parallel="",
         sim_solver_highs_hipo_parallel_type="",
         sim_solver_highs_crossover="",
+        sim_solver_highs_options_json="",
         sim_solver_highs_direct=False,
         sim_solver_highs_time_limit=0.0,
         sim_solver_highs_ipm_tol=1e-7,
@@ -81,6 +83,40 @@ def test_resolve_highs_config_from_env() -> None:
     assert cfg.parallel == "on"
     assert cfg.hipo_parallel_type == "both"
     assert cfg.threads == 8
+
+
+def test_resolve_highs_fast_profile_fills_empty_overrides() -> None:
+    cfg = resolve_highs_config(
+        _fake_settings(sim_solver_profile="fast", sim_solver_highs_direct=True)
+    )
+    assert cfg.profile == "fast"
+    assert cfg.method == "ipm"
+    assert cfg.presolve == "on"
+    assert cfg.parallel == "on"
+    assert cfg.run_crossover == "off"
+    assert cfg.use_direct is True
+
+
+def test_specific_env_override_wins_over_profile() -> None:
+    cfg = resolve_highs_config(
+        _fake_settings(
+            sim_solver_profile="fast",
+            sim_solver_highs_method="simplex",
+            sim_solver_highs_parallel="off",
+        )
+    )
+    assert cfg.method == "simplex"
+    assert cfg.parallel == "off"
+
+
+def test_extra_options_json_is_parsed_and_applied() -> None:
+    cfg = resolve_highs_config(
+        _fake_settings(sim_solver_highs_options_json='{"simplex_strategy": 1}')
+    )
+    opts: dict[str, object] = {}
+    apply_highs_options_to_model(opts, cfg)
+    assert cfg.extra_options == {"simplex_strategy": 1}
+    assert opts["simplex_strategy"] == 1
 
 
 def test_apply_highs_options_default_applies_only_tolerances() -> None:

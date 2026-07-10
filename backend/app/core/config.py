@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     sim_stale_task_minutes: int = Field(default=30, alias="SIM_STALE_TASK_MINUTES")
     sim_solver_tee: bool = Field(default=False, alias="SIM_SOLVER_TEE")
     sim_solver_keepfiles: bool = Field(default=False, alias="SIM_SOLVER_KEEPFILES")
+    sim_solver_profile: str = Field(default="default", alias="SIM_SOLVER_PROFILE")
     sim_solver_threads: int = Field(default=0, alias="SIM_SOLVER_THREADS")
     sim_solver_highs_method: str = Field(default="", alias="SIM_SOLVER_HIGHS_METHOD")
     sim_solver_highs_presolve: str = Field(default="", alias="SIM_SOLVER_HIGHS_PRESOLVE")
@@ -59,11 +60,24 @@ class Settings(BaseSettings):
         alias="SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE",
     )
     sim_solver_highs_crossover: str = Field(default="", alias="SIM_SOLVER_HIGHS_CROSSOVER")
+    sim_solver_highs_options_json: str = Field(default="", alias="SIM_SOLVER_HIGHS_OPTIONS_JSON")
     sim_solver_highs_direct: bool = Field(default=True, alias="SIM_SOLVER_HIGHS_DIRECT")
     sim_solver_highs_time_limit: float = Field(default=0.0, alias="SIM_SOLVER_HIGHS_TIME_LIMIT")
     sim_solver_highs_ipm_tol: float = Field(default=1e-7, alias="SIM_SOLVER_HIGHS_IPM_TOL")
     sim_solver_highs_primal_tol: float = Field(default=1e-7, alias="SIM_SOLVER_HIGHS_PRIMAL_TOL")
     sim_solver_highs_dual_tol: float = Field(default=1e-7, alias="SIM_SOLVER_HIGHS_DUAL_TOL")
+    osemosys_activity_lower_prune_tol: float = Field(
+        default=0.0,
+        alias="OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL",
+    )
+    osemosys_sparse_matrix_preprocess: bool = Field(
+        default=True,
+        alias="OSEMOSYS_SPARSE_MATRIX_PREPROCESS",
+    )
+    osemosys_sparse_high_dim_params: bool = Field(
+        default=True,
+        alias="OSEMOSYS_SPARSE_HIGH_DIM_PARAMS",
+    )
     simulation_artifacts_dir: str = Field(default="/app/tmp", alias="SIMULATION_ARTIFACTS_DIR")
     docker_socket_path: str = Field(default="/var/run/docker.sock", alias="DOCKER_SOCKET_PATH")
     docker_metrics_services: str = Field(

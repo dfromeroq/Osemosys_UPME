@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 
 from fastapi import APIRouter, Depends
@@ -16,6 +17,7 @@ from app.schemas.system_setting import SolverSettingsPublic, SolverSettingsUpdat
 from app.services.system_settings_service import SystemSettingsService
 from app.simulation.core.solver_config import (
     SOLVER_HIGHS_CROSSOVER_KEY,
+    SOLVER_HIGHS_OPTIONS_JSON_KEY,
     SOLVER_HIGHS_HIPO_PARALLEL_TYPE_KEY,
     SOLVER_HIGHS_IPM_TOL_KEY,
     SOLVER_HIGHS_METHOD_KEY,
@@ -25,6 +27,7 @@ from app.simulation.core.solver_config import (
     SOLVER_HIGHS_DUAL_TOL_KEY,
     SOLVER_HIGHS_TIME_LIMIT_KEY,
     SOLVER_HIGHS_USE_DIRECT_KEY,
+    SOLVER_PROFILE_KEY,
     SOLVER_THREADS_KEY,
     _display_highs_value,
     resolve_highs_config,
@@ -52,11 +55,13 @@ def _effective_solver_threads(requested_threads: int) -> int:
 def _latest_updated(db: Session) -> tuple[object | None, object | None]:
     keys = [
         SOLVER_THREADS_KEY,
+        SOLVER_PROFILE_KEY,
         SOLVER_HIGHS_METHOD_KEY,
         SOLVER_HIGHS_PRESOLVE_KEY,
         SOLVER_HIGHS_PARALLEL_KEY,
         SOLVER_HIGHS_HIPO_PARALLEL_TYPE_KEY,
         SOLVER_HIGHS_CROSSOVER_KEY,
+        SOLVER_HIGHS_OPTIONS_JSON_KEY,
         SOLVER_HIGHS_USE_DIRECT_KEY,
         SOLVER_HIGHS_TIME_LIMIT_KEY,
         SOLVER_HIGHS_IPM_TOL_KEY,
@@ -84,6 +89,7 @@ def _to_public(db: Session) -> SolverSettingsPublic:
         if user is not None:
             username = user.username
     return SolverSettingsPublic(
+        solver_profile=cfg.profile,  # type: ignore[arg-type]
         solver_threads=cfg.threads,
         highs_method=_display_highs_value(cfg.method),  # type: ignore[arg-type]
         highs_presolve=_display_highs_value(cfg.presolve),  # type: ignore[arg-type]
@@ -95,6 +101,7 @@ def _to_public(db: Session) -> SolverSettingsPublic:
         highs_ipm_optimality_tolerance=cfg.ipm_optimality_tolerance,
         highs_primal_feasibility_tolerance=cfg.primal_feasibility_tolerance,
         highs_dual_feasibility_tolerance=cfg.dual_feasibility_tolerance,
+        highs_options_json="" if not cfg.extra_options else json.dumps(cfg.extra_options, sort_keys=True),
         updated_at=latest_at,  # type: ignore[arg-type]
         updated_by_username=username,
     )
@@ -117,6 +124,7 @@ def update_solver_settings(
 ) -> SolverSettingsPublic:
     """Actualiza opciones runtime del solver multihilo."""
     updates = {
+        SOLVER_PROFILE_KEY: payload.solver_profile,
         SOLVER_THREADS_KEY: payload.solver_threads,
         SOLVER_HIGHS_METHOD_KEY: payload.highs_method,
         SOLVER_HIGHS_PRESOLVE_KEY: payload.highs_presolve,
@@ -128,6 +136,7 @@ def update_solver_settings(
         SOLVER_HIGHS_IPM_TOL_KEY: payload.highs_ipm_optimality_tolerance,
         SOLVER_HIGHS_PRIMAL_TOL_KEY: payload.highs_primal_feasibility_tolerance,
         SOLVER_HIGHS_DUAL_TOL_KEY: payload.highs_dual_feasibility_tolerance,
+        SOLVER_HIGHS_OPTIONS_JSON_KEY: payload.highs_options_json,
     }
     for key, value in updates.items():
         SystemSettingsService.set_value(

@@ -825,6 +825,8 @@ def _solve_highs(
         "infeasibility_diagnostics": diagnostics,
         "solver_timings": solver_timings,
         "solver_highs_config": {
+            "profile": highs_config.profile,
+            "threads": highs_config.threads,
             "method": highs_config.method,
             "presolve": highs_config.presolve,
             "parallel": highs_config.parallel,
@@ -834,6 +836,7 @@ def _solve_highs(
             "ipm_optimality_tolerance": highs_config.ipm_optimality_tolerance,
             "primal_feasibility_tolerance": highs_config.primal_feasibility_tolerance,
             "dual_feasibility_tolerance": highs_config.dual_feasibility_tolerance,
+            "extra_options": highs_config.extra_options or {},
         },
     }
 

@@ -20,6 +20,7 @@ from pyomo.environ import AbstractModel, ConcreteModel, DataPortal
 logger = logging.getLogger(__name__)
 
 _USE_PANDAS_DATAPORTAL = os.getenv("OSEMOSYS_FAST_DATAPORTAL", "1") != "0"
+_PYOMO_REPORT_TIMING = os.getenv("OSEMOSYS_PYOMO_REPORT_TIMING", "0") == "1"
 
 # Columnas de índice que Pyomo/DataPortal tratan como enteros (paridad con CSV nativo).
 # SEASON/DAYTYPE/DAILYTIMEBRACKET son sets ordenados numéricos en OSeMOSYS (p. ej. "1" → 1).
@@ -302,7 +303,9 @@ def build_instance(
 
     logger.info("Creando instancia del modelo...")
     t_create = perf_counter()
-    instance = model.create_instance(data, report_timing=True)
+    # El timing por componente de Pyomo intenta ``len(Any)`` y falla al
+    # formatear Params sparse. Los timings estructurados propios siguen activos.
+    instance = model.create_instance(data, report_timing=_PYOMO_REPORT_TIMING)
     load_timings["create_instance_pyomo_seconds"] = perf_counter() - t_create
     if load_timings:
         top = sorted(load_timings.items(), key=lambda kv: kv[1], reverse=True)[:5]
