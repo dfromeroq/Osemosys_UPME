@@ -40,6 +40,7 @@ from app.models import (
     Timeslice,
     UdcSet,
 )
+from app.simulation.core.canonical_csv_order import canonicalize_csv_directory
 from app.simulation.core.mode_of_operation_normalize import (
     normalize_mode_of_operation_scalar,
     normalize_mode_of_operation_series,
@@ -336,6 +337,10 @@ def export_scenario_to_csv(
         record["VALUE"] = value
         param_rows[pname].append(record)
         total_rows += 1
+
+    # No ordenar aquí: el preproceso heredado del notebook usa en algunos
+    # puntos groupby().first(), por lo que el orden SAND del combustible forma
+    # parte de su semántica. El orden canónico se aplica sólo al resultado final.
 
     # ------------------------------------------------------------------
     # Construcción de SETS — replica SAND_SETS_to_CSV del notebook.
@@ -1338,6 +1343,7 @@ def run_data_processing_from_excel(
     #    Aplica dead_year exclusion automáticamente y reporta bound_conflicts
     #    como warnings sin corregirlos.
     quality = _apply_data_quality_validation(csv_dir, detected_during="excel")
+    canonicalize_csv_directory(csv_dir, PARAM_INDEX)
 
     # Re-leer ProcessingResult tras la posible exclusión de años.
     result = _build_processing_result_from_csv_dir(csv_dir)
@@ -1375,6 +1381,7 @@ def get_processing_result_from_csv_dir(
         quality = _apply_data_quality_validation(csv_dir, detected_during="csv")
     else:
         quality = {}
+    canonicalize_csv_directory(csv_dir, PARAM_INDEX)
     result = _build_processing_result_from_csv_dir(csv_dir)
     result.data_quality_warnings = quality
     return result
@@ -1440,7 +1447,15 @@ def run_data_processing(
             scenario_id,
         )
         apply_light_csv_preprocess(csv_dir)
-        return _build_processing_result_from_csv_dir(csv_dir)
+        canonicalize_csv_directory(csv_dir, PARAM_INDEX)
+        result_after = _build_processing_result_from_csv_dir(csv_dir)
+        # En escenarios persistidos los IDs de resultados deben ser los IDs
+        # reales de catálogo cargados por export_scenario_to_csv, no posiciones
+        # 1..N del archivo. Estas últimas sólo aplican al flujo Excel sin BD.
+        result.sets = result_after.sets
+        result.has_storage = result_after.has_storage
+        result.has_udc = result_after.has_udc
+        return result
 
     normalize_mode_of_operation_in_csv_dir(csv_dir)
 
@@ -1488,6 +1503,7 @@ def run_data_processing(
     #    Aplica dead_year exclusion automáticamente y reporta bound_conflicts
     #    como warnings sin corregirlos.
     quality = _apply_data_quality_validation(csv_dir, detected_during="db")
+    canonicalize_csv_directory(csv_dir, PARAM_INDEX)
 
     # Re-leer ProcessingResult tras la posible exclusión de años, y
     # adjuntar warnings.

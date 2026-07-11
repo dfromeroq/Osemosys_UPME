@@ -29,6 +29,10 @@ from app.models import (
     User,
 )
 from app.services.scenario_service import ScenarioService
+from app.simulation.core.canonical_csv_order import (
+    canonical_record_key,
+    canonical_set_values,
+)
 from app.simulation.core.data_processing import PARAM_INDEX
 
 _REQUIRED_SET_CSVS = (
@@ -152,7 +156,7 @@ class CsvScenarioImportService:
             clean = str(raw or "").strip()
             if clean:
                 values.append(clean)
-        return values
+        return [str(value).strip() for value in canonical_set_values(values)]
 
     @staticmethod
     def _resolve_catalog_value(
@@ -241,7 +245,9 @@ class CsvScenarioImportService:
             if not csv_path.exists():
                 continue
             ScenarioService._ensure_parameter_exists(db, param_name=param_name)
-            for row in CsvScenarioImportService._iter_csv_rows(csv_path):
+            csv_rows = CsvScenarioImportService._iter_csv_rows(csv_path)
+            csv_rows.sort(key=lambda row: canonical_record_key(row, dimensions))
+            for row in csv_rows:
                 value = CsvScenarioImportService._parse_value(row.get("VALUE"), param_name=param_name)
                 payload = {
                     "id_scenario": scenario_id,
@@ -290,7 +296,10 @@ class CsvScenarioImportService:
                     payload["id_udc_set"],
                     payload["year"],
                 )
-                dedup[dedup_key] = OsemosysParamValue(**payload)
+                # Tras ordenar por dimensiones y VALUE, conservar la primera
+                # fila hace determinista el tratamiento de duplicados y replica
+                # el ``keep=first`` del exportador hacia Pyomo.
+                dedup.setdefault(dedup_key, OsemosysParamValue(**payload))
 
         return list(dedup.values())
 

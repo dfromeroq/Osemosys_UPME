@@ -19,7 +19,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import pandas as pd
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.db.session import SessionLocal
 from app.models import OsemosysOutputParamValue, Scenario, SimulationJob, User
@@ -313,6 +313,50 @@ def _compare_pair(db, left: SimulationJob, right: SimulationJob) -> dict:
     }
 
 
+def _compare_exact_output_rows(db, left_job_id: int, right_job_id: int) -> dict:
+    """Compara el multiconjunto completo persistido, sin depender del orden SQL."""
+    columns = """
+        variable_name, id_region, id_technology, id_fuel, id_emission,
+        id_timeslice, id_mode_of_operation, id_storage, id_season, id_daytype,
+        id_dailytimebracket, technology_name, fuel_name, emission_name, year,
+        value, value2, index_json::text
+    """
+    row = db.execute(
+        text(
+            f"""
+            WITH left_rows AS (
+                SELECT {columns}
+                FROM osemosys.osemosys_output_param_value
+                WHERE id_simulation_job = :left_job_id
+            ), right_rows AS (
+                SELECT {columns}
+                FROM osemosys.osemosys_output_param_value
+                WHERE id_simulation_job = :right_job_id
+            ), only_left AS (
+                SELECT * FROM left_rows EXCEPT ALL SELECT * FROM right_rows
+            ), only_right AS (
+                SELECT * FROM right_rows EXCEPT ALL SELECT * FROM left_rows
+            )
+            SELECT
+                (SELECT count(*) FROM left_rows),
+                (SELECT count(*) FROM right_rows),
+                (SELECT count(*) FROM only_left),
+                (SELECT count(*) FROM only_right)
+            """
+        ),
+        {"left_job_id": left_job_id, "right_job_id": right_job_id},
+    ).one()
+    return {
+        "left_job_id": left_job_id,
+        "right_job_id": right_job_id,
+        "rows_left": int(row[0]),
+        "rows_right": int(row[1]),
+        "only_left": int(row[2]),
+        "only_right": int(row[3]),
+        "identical": int(row[2]) == 0 and int(row[3]) == 0,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--username", default="seed")
@@ -382,13 +426,13 @@ def main() -> int:
         }
 
     specs = [
-        ("national_excel_highs", "national_excel", "highs", "Nacional Excel · HiGHS"),
-        ("national_csv_highs", "national_csv", "highs", "Nacional CSV · HiGHS"),
-        ("regional_excel_highs", "regional_excel", "highs", "Regional Excel · HiGHS"),
-        ("regional_csv_highs", "regional_csv", "highs", "Regional CSV · HiGHS"),
+        ("national_excel_highs", "national_excel", "highs", "Nacional Excel · HiGHS canónico"),
+        ("national_csv_highs", "national_csv", "highs", "Nacional CSV · HiGHS canónico"),
+        ("regional_excel_highs", "regional_excel", "highs", "Regional Excel · HiGHS canónico"),
+        ("regional_csv_highs", "regional_csv", "highs", "Regional CSV · HiGHS canónico"),
         ("national_4seasons_highs", "national_4seasons", "highs", "Nacional 4 estaciones · HiGHS"),
-        ("national_excel_glpk", "national_excel", "glpk", "Nacional Excel · GLPK A"),
-        ("national_csv_glpk", "national_csv", "glpk", "Nacional CSV · GLPK A"),
+        ("national_excel_glpk", "national_excel", "glpk", "Nacional Excel · GLPK A canónico"),
+        ("national_csv_glpk", "national_csv", "glpk", "Nacional CSV · GLPK A canónico"),
         ("regional_excel_glpk", "regional_excel", "glpk", "Regional Excel · GLPK A"),
     ]
     jobs: dict[str, SimulationJob] = {}
@@ -410,6 +454,7 @@ def main() -> int:
 
     with SessionLocal() as db:
         comparisons = {}
+        exact_comparisons = {}
         pairs = {
             "national_highs_excel_vs_csv": ("national_excel_highs", "national_csv_highs"),
             "regional_highs_excel_vs_csv": ("regional_excel_highs", "regional_csv_highs"),
@@ -421,10 +466,14 @@ def main() -> int:
                 right = db.get(SimulationJob, int(jobs[right_key].id))
                 if left is not None and right is not None:
                     comparisons[name] = _compare_pair(db, left, right)
+                    exact_comparisons[name] = _compare_exact_output_rows(
+                        db, int(left.id), int(right.id)
+                    )
 
     manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "username": args.username,
+        "canonical_order": True,
         "scenario_ids": scenario_ids,
         "jobs": {
             key: {
@@ -440,6 +489,7 @@ def main() -> int:
         },
         "failures": failures,
         "comparisons": comparisons,
+        "exact_multiset_comparison": exact_comparisons,
     }
     manifest_path = Path(args.manifest)
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
