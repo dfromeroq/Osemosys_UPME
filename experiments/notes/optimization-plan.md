@@ -27,12 +27,22 @@
    - `OSEMOSYS_PYOMO_REPORT_TIMING=0` implícito: los timings estructurados
      propios permanecen activos.
 
-5. Observabilidad:
+5. GLPK independiente de HiGHS:
+   - `SIM_SOLVER_GLPK_PROFILE=fast|strict|default`.
+   - `fast` (A): defaults robustos primal+presolve con modelo sparse.
+   - `strict` (B): simplex exacto; sólo diagnóstico, no operativo en este LP.
+   - `SIM_SOLVER_GLPK_TIME_LIMIT` y `SIM_SOLVER_GLPK_OPTIONS_JSON`.
+   - La reducción sparse de penalizaciones bajó 129,360 filas/columnas en
+     nacional y mejoró GLPK ~6% sin cambiar el objetivo.
+
+6. Observabilidad:
    - `/api/v1/simulation-ops/dashboard` incluye CPU/cores, RAM actual/límite/pico,
      PID, procesos, reinicios, `OOMKilled`, cola y eventos recientes.
    - `runtime_resource_samples` registra RSS/peak, cgroup RAM/swap, conteos OOM,
      CPU, threads, PID y etapa.
    - La UI `/app/simulation-ops` muestra tarjetas por servicio y timeline por job.
+   - Rediseño inspirado en Open Design `mission-control` (Apache-2.0), conservando
+     la paleta slate/sky actual y sin usar marca/assets de terceros.
 
 ## Perfiles
 

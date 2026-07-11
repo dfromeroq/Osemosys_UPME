@@ -1,0 +1,216 @@
+{
+  "generated_at": "2026-07-11T01:21:04.089310+00:00",
+  "username": "seed",
+  "scenario_ids": {
+    "national_excel": 6,
+    "national_csv": 11,
+    "regional_excel": 8,
+    "regional_csv": 12,
+    "national_4seasons": 10
+  },
+  "jobs": {
+    "national_excel_highs": {
+      "id": 5,
+      "status": "SUCCEEDED",
+      "solver": "highs",
+      "objective_value": 1117470.2926387491,
+      "total_demand": 32969.64562260975,
+      "total_dispatch": 1304533.502328607,
+      "total_unmet": 0.0
+    },
+    "national_csv_highs": {
+      "id": 13,
+      "status": "SUCCEEDED",
+      "solver": "highs",
+      "objective_value": 1117470.2926387491,
+      "total_demand": 32969.64562260975,
+      "total_dispatch": 1304533.502328607,
+      "total_unmet": 0.0
+    },
+    "regional_excel_highs": {
+      "id": 7,
+      "status": "SUCCEEDED",
+      "solver": "highs",
+      "objective_value": 1828936.3163885893,
+      "total_demand": 29967.432500497333,
+      "total_dispatch": 164486.15536755617,
+      "total_unmet": 0.0
+    },
+    "regional_csv_highs": {
+      "id": 14,
+      "status": "SUCCEEDED",
+      "solver": "highs",
+      "objective_value": 1828936.3163885896,
+      "total_demand": 29967.432500497333,
+      "total_dispatch": 164353.56783914487,
+      "total_unmet": 0.0
+    },
+    "national_4seasons_highs": {
+      "id": 9,
+      "status": "SUCCEEDED",
+      "solver": "highs",
+      "objective_value": 1117959.7702730515,
+      "total_demand": 32969.64562260975,
+      "total_dispatch": 181672.52122708893,
+      "total_unmet": 0.0
+    },
+    "national_excel_glpk": {
+      "id": 10,
+      "status": "SUCCEEDED",
+      "solver": "glpk",
+      "objective_value": 1117470.2926460647,
+      "total_demand": 32969.64562260975,
+      "total_dispatch": 183859.23833359772,
+      "total_unmet": 0.0
+    },
+    "national_csv_glpk": {
+      "id": 15,
+      "status": "SUCCEEDED",
+      "solver": "glpk",
+      "objective_value": 1117470.2926460651,
+      "total_demand": 32969.64562260975,
+      "total_dispatch": 181654.60531389128,
+      "total_unmet": 0.0
+    },
+    "regional_excel_glpk": {
+      "id": 12,
+      "status": "CANCELLED",
+      "solver": "glpk",
+      "objective_value": 0.0,
+      "total_demand": 0.0,
+      "total_dispatch": 0.0,
+      "total_unmet": 0.0
+    }
+  },
+  "failures": {
+    "regional_excel_glpk": "Job 12 cancelado desde UI tras 2 h 48 min; GLPK regional no produjo solución."
+  },
+  "comparisons": {
+    "national_highs_excel_vs_csv": {
+      "left_job_id": 5,
+      "right_job_id": 13,
+      "solver": "highs",
+      "status_equal": true,
+      "objective": {
+        "left": 1117470.2926387491,
+        "right": 1117470.2926387491,
+        "abs_difference": 0.0,
+        "relative_difference": 0.0,
+        "passes": true
+      },
+      "total_demand": {
+        "left": 32969.64562260975,
+        "right": 32969.64562260975,
+        "relative_difference": 0.0,
+        "passes": true
+      },
+      "total_unmet": {
+        "left": 0.0,
+        "right": 0.0,
+        "abs_difference": 0.0,
+        "passes": true
+      },
+      "annual_aggregates": {
+        "Dispatch": {
+          "years": 33,
+          "max_abs_difference": 9.094947017729282e-13,
+          "max_relative_difference": 1.5685148409257905e-16
+        },
+        "NewCapacity": {
+          "years": 33,
+          "max_abs_difference": 5.400124791776761e-13,
+          "max_relative_difference": 5.308369866769121e-15
+        },
+        "AnnualEmissions": {
+          "years": 33,
+          "max_abs_difference": 7.275957614183426e-12,
+          "max_relative_difference": 2.9916702143491494e-16
+        }
+      }
+    },
+    "regional_highs_excel_vs_csv": {
+      "left_job_id": 7,
+      "right_job_id": 14,
+      "solver": "highs",
+      "status_equal": true,
+      "objective": {
+        "left": 1828936.3163885893,
+        "right": 1828936.3163885896,
+        "abs_difference": 2.3283064365386963e-10,
+        "relative_difference": 1.273038550153655e-16,
+        "passes": true
+      },
+      "total_demand": {
+        "left": 29967.432500497333,
+        "right": 29967.432500497333,
+        "relative_difference": 0.0,
+        "passes": true
+      },
+      "total_unmet": {
+        "left": 0.0,
+        "right": 0.0,
+        "abs_difference": 0.0,
+        "passes": true
+      },
+      "annual_aggregates": {
+        "Dispatch": {
+          "years": 34,
+          "max_abs_difference": 141.6135964160203,
+          "max_relative_difference": 0.027333186316835324
+        },
+        "NewCapacity": {
+          "years": 34,
+          "max_abs_difference": 0.00010172849238188064,
+          "max_relative_difference": 1.0177798757672373e-06
+        },
+        "AnnualEmissions": {
+          "years": 34,
+          "max_abs_difference": 0.05645713301646538,
+          "max_relative_difference": 0.0008551640218795742
+        }
+      }
+    },
+    "national_glpk_excel_vs_csv": {
+      "left_job_id": 10,
+      "right_job_id": 15,
+      "solver": "glpk",
+      "status_equal": true,
+      "objective": {
+        "left": 1117470.2926460647,
+        "right": 1117470.2926460651,
+        "abs_difference": 4.656612873077393e-10,
+        "relative_difference": 4.1671021625559e-16,
+        "passes": true
+      },
+      "total_demand": {
+        "left": 32969.64562260975,
+        "right": 32969.64562260975,
+        "relative_difference": 0.0,
+        "passes": true
+      },
+      "total_unmet": {
+        "left": 0.0,
+        "right": 0.0,
+        "abs_difference": 0.0,
+        "passes": true
+      },
+      "annual_aggregates": {
+        "Dispatch": {
+          "years": 33,
+          "max_abs_difference": 2199.999999999827,
+          "max_relative_difference": 0.2538637276064048
+        },
+        "NewCapacity": {
+          "years": 33,
+          "max_abs_difference": 9.37892071845414,
+          "max_relative_difference": 0.07452220424091144
+        },
+        "AnnualEmissions": {
+          "years": 33,
+          "max_abs_difference": 2.202696835323877,
+          "max_relative_difference": 0.00023599676129706565
+        }
+      }
+    }
+  }
+}

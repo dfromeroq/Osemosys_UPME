@@ -24,7 +24,9 @@ También se normalizaron placeholders de límites de emisiones extremos a
 | Caso | Solver/configuración | Estado | Objetivo | Solver s | Wall s | Peak RSS MiB | Validación |
 |---|---|---:|---:|---:|---:|---:|---|
 | Nacional final 1 TS | HiGHS simplex, tol `1e-7` | optimal | `1117470.2892099898` | 15.08 | 83.56 | 3407.98 | Dif. notebook `1.75e-6` |
+| Nacional sparse penalties | HiGHS simplex, tol `1e-7` | optimal | `1117470.28920999` | 14.44 | 72.49 | 2849.72 | Mismo objetivo; menos LP/RAM |
 | Nacional final 1 TS | GLPK | optimal | `1117470.2892168164` | 104.93 | 134.44 | 1740.40 | Dif. notebook `5.08e-6` |
+| Nacional sparse penalties | GLPK A | optimal | `1117470.2892168146` | 98.48 | 126.84 | 1467.43 | Mismo objetivo; ~6% solver y ~16% RAM |
 | Nacional sintético 2 TS | HiGHS simplex, tol `1e-9` | optimal | `1117470.2892116222` | 185.57 | 260.86 | 3770.14 | Antes terminaba `kNotset`; dif. `1.13e-7` |
 | Regional final | HiGHS perfil memory, tol `1e-9` | optimal | `1829148.0336643092` | 181.23 | ~415 | ~11,448 cgroup | 2,593,551 restricciones; 0 violaciones `>1e-9`; máxima `6.88e-10` |
 
@@ -62,7 +64,10 @@ de referencia.
 ## Decisiones
 
 - HiGHS queda validado como solver principal para nacional y regional.
-- GLPK se conserva como opción compatible y referencia histórica.
+- GLPK se conserva como opción compatible y referencia histórica. El perfil A
+  usa primal+presolve robusto sobre el modelo sparse; dual/interior no fueron
+  numéricamente válidos. El perfil B exacto declaró infactibilidad del modelo
+  decimal incluso tras corregir el conflicto de precisión de `2.01e-11`.
 - No usar el perfil IPM `fast` en estos datos: las pruebas anteriores terminaron
   `Unknown`/no certificadas.
 - Ejecutar regional de forma aislada con límite ponderado; requiere ~11–12 GiB.
