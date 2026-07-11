@@ -27,9 +27,13 @@ from app.simulation.core.solver_config import (
     SOLVER_HIGHS_DUAL_TOL_KEY,
     SOLVER_HIGHS_TIME_LIMIT_KEY,
     SOLVER_HIGHS_USE_DIRECT_KEY,
+    SOLVER_GLPK_OPTIONS_JSON_KEY,
+    SOLVER_GLPK_PROFILE_KEY,
+    SOLVER_GLPK_TIME_LIMIT_KEY,
     SOLVER_PROFILE_KEY,
     SOLVER_THREADS_KEY,
     _display_highs_value,
+    resolve_glpk_config,
     resolve_highs_config,
 )
 
@@ -67,6 +71,9 @@ def _latest_updated(db: Session) -> tuple[object | None, object | None]:
         SOLVER_HIGHS_IPM_TOL_KEY,
         SOLVER_HIGHS_PRIMAL_TOL_KEY,
         SOLVER_HIGHS_DUAL_TOL_KEY,
+        SOLVER_GLPK_PROFILE_KEY,
+        SOLVER_GLPK_TIME_LIMIT_KEY,
+        SOLVER_GLPK_OPTIONS_JSON_KEY,
     ]
     latest_at = None
     latest_by = None
@@ -81,7 +88,9 @@ def _latest_updated(db: Session) -> tuple[object | None, object | None]:
 
 
 def _to_public(db: Session) -> SolverSettingsPublic:
-    cfg = resolve_highs_config(get_settings())
+    settings = get_settings()
+    cfg = resolve_highs_config(settings)
+    glpk_cfg = resolve_glpk_config(settings)
     latest_at, latest_by = _latest_updated(db)
     username: str | None = None
     if latest_by is not None:
@@ -102,6 +111,9 @@ def _to_public(db: Session) -> SolverSettingsPublic:
         highs_primal_feasibility_tolerance=cfg.primal_feasibility_tolerance,
         highs_dual_feasibility_tolerance=cfg.dual_feasibility_tolerance,
         highs_options_json="" if not cfg.extra_options else json.dumps(cfg.extra_options, sort_keys=True),
+        glpk_profile=glpk_cfg.profile,  # type: ignore[arg-type]
+        glpk_time_limit=glpk_cfg.time_limit,
+        glpk_options_json="" if not glpk_cfg.extra_options else json.dumps(glpk_cfg.extra_options, sort_keys=True),
         updated_at=latest_at,  # type: ignore[arg-type]
         updated_by_username=username,
     )
@@ -137,6 +149,9 @@ def update_solver_settings(
         SOLVER_HIGHS_PRIMAL_TOL_KEY: payload.highs_primal_feasibility_tolerance,
         SOLVER_HIGHS_DUAL_TOL_KEY: payload.highs_dual_feasibility_tolerance,
         SOLVER_HIGHS_OPTIONS_JSON_KEY: payload.highs_options_json,
+        SOLVER_GLPK_PROFILE_KEY: payload.glpk_profile,
+        SOLVER_GLPK_TIME_LIMIT_KEY: payload.glpk_time_limit,
+        SOLVER_GLPK_OPTIONS_JSON_KEY: payload.glpk_options_json,
     }
     for key, value in updates.items():
         SystemSettingsService.set_value(

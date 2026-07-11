@@ -23,10 +23,14 @@ SOLVER_HIGHS_TIME_LIMIT_KEY = "solver.highs.time_limit"
 SOLVER_HIGHS_IPM_TOL_KEY = "solver.highs.ipm_optimality_tolerance"
 SOLVER_HIGHS_PRIMAL_TOL_KEY = "solver.highs.primal_feasibility_tolerance"
 SOLVER_HIGHS_DUAL_TOL_KEY = "solver.highs.dual_feasibility_tolerance"
+SOLVER_GLPK_PROFILE_KEY = "solver.glpk.profile"
+SOLVER_GLPK_TIME_LIMIT_KEY = "solver.glpk.time_limit"
+SOLVER_GLPK_OPTIONS_JSON_KEY = "solver.glpk.options_json"
 
 VALID_HIGHS_METHODS = frozenset({"choose", "simplex", "ipm", "ipx", "hipo"})
 VALID_ON_OFF_CHOOSE = frozenset({"off", "on", "choose"})
 VALID_SOLVER_PROFILES = frozenset({"default", "balanced", "fast", "memory"})
+VALID_GLPK_PROFILES = frozenset({"default", "fast", "strict"})
 HIGHS_USE_DEFAULT = ""
 
 # Presets conservadores: no fijan threads para evitar sobre-suscripción. Usa
@@ -80,6 +84,19 @@ class SolverHighsConfig:
     log_to_console: bool | None = None
 
 
+@dataclass(frozen=True)
+class SolverGlpkConfig:
+    """Opciones GLPK aisladas de HiGHS.
+
+    ``fast`` corresponde al perfil A validado (defaults primal+presolve de
+    GLPK sobre el modelo reducido). ``strict`` usa simplex exacto (perfil B).
+    """
+
+    profile: str = "fast"
+    time_limit: float = 0.0
+    extra_options: dict[str, Any] | None = None
+
+
 def _normalize_profile(value: str | None) -> str:
     normalized = str(value or "default").strip().lower()
     if normalized in {"", "default"}:
@@ -88,6 +105,14 @@ def _normalize_profile(value: str | None) -> str:
         return normalized
     logger.warning("Perfil solver inválido %r; usando default", value)
     return "default"
+
+
+def _normalize_glpk_profile(value: str | None) -> str:
+    normalized = str(value or "fast").strip().lower()
+    if normalized in VALID_GLPK_PROFILES:
+        return normalized
+    logger.warning("Perfil GLPK inválido %r; usando fast", value)
+    return "fast"
 
 
 def _profile_value(profile: str, key: str, current: object, *, unset: object) -> object:
@@ -153,12 +178,68 @@ def _parse_options_json(raw: str | None) -> dict[str, Any]:
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError:
-        logger.warning("SIM_SOLVER_HIGHS_OPTIONS_JSON inválido; se ignora")
+        logger.warning("Opciones JSON del solver inválidas; se ignoran")
         return {}
     if not isinstance(parsed, dict):
-        logger.warning("SIM_SOLVER_HIGHS_OPTIONS_JSON debe ser objeto JSON; se ignora")
+        logger.warning("Opciones JSON del solver deben ser un objeto; se ignoran")
         return {}
     return {str(k): v for k, v in parsed.items()}
+
+
+def resolve_glpk_config(settings: object) -> SolverGlpkConfig:
+    """Combina perfil/opciones GLPK de env y BD sin tocar HiGHS."""
+    profile = _normalize_glpk_profile(
+        getattr(settings, "sim_solver_glpk_profile", "fast")
+    )
+    time_limit = float(getattr(settings, "sim_solver_glpk_time_limit", 0) or 0)
+    extra_options = _parse_options_json(
+        getattr(settings, "sim_solver_glpk_options_json", "")
+    )
+    try:
+        from app.db.session import SessionLocal
+    except Exception:  # pragma: no cover
+        SessionLocal = None  # type: ignore[misc, assignment]
+    if SessionLocal is not None:
+        try:
+            with SessionLocal() as db:
+                db_profile = _read_db_setting(db, SOLVER_GLPK_PROFILE_KEY)
+                if db_profile is not None:
+                    profile = _normalize_glpk_profile(db_profile)
+                time_limit = _read_db_float(db, SOLVER_GLPK_TIME_LIMIT_KEY, time_limit)
+                db_options = _read_db_setting(db, SOLVER_GLPK_OPTIONS_JSON_KEY)
+                if db_options is not None:
+                    extra_options.update(_parse_options_json(db_options))
+        except Exception:
+            logger.exception("No fue posible leer GLPK settings desde BD; usando env")
+    return SolverGlpkConfig(
+        profile=profile,
+        time_limit=max(0.0, time_limit),
+        extra_options=extra_options,
+    )
+
+
+def glpk_options(config: SolverGlpkConfig) -> dict[str, Any]:
+    """Traduce perfiles A/B a flags de ``glpsol`` aceptados por Pyomo."""
+    options: dict[str, Any] = {}
+    if config.profile == "fast":
+        # Los defaults GLPK ya son primal+scale+adv+presolve. Forzar dual fue
+        # más rápido pero no recuperó una solución factible en el modelo UPME.
+        pass
+    elif config.profile == "strict":
+        options.update({"exact": None})
+    if config.time_limit > 0:
+        options["tmlim"] = max(1, int(config.time_limit))
+    if config.extra_options:
+        options.update(config.extra_options)
+    return options
+
+
+def apply_glpk_options_to_solver(solver: object, config: SolverGlpkConfig) -> dict[str, Any]:
+    options = glpk_options(config)
+    target = getattr(solver, "options", None)
+    if target is not None:
+        target.update(options)
+    return options
 
 
 def resolve_highs_config(settings: object) -> SolverHighsConfig:

@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     sim_solver_highs_ipm_tol: float = Field(default=1e-7, alias="SIM_SOLVER_HIGHS_IPM_TOL")
     sim_solver_highs_primal_tol: float = Field(default=1e-7, alias="SIM_SOLVER_HIGHS_PRIMAL_TOL")
     sim_solver_highs_dual_tol: float = Field(default=1e-7, alias="SIM_SOLVER_HIGHS_DUAL_TOL")
+    sim_solver_glpk_profile: str = Field(default="fast", alias="SIM_SOLVER_GLPK_PROFILE")
+    sim_solver_glpk_time_limit: float = Field(default=0.0, alias="SIM_SOLVER_GLPK_TIME_LIMIT")
+    sim_solver_glpk_options_json: str = Field(default="", alias="SIM_SOLVER_GLPK_OPTIONS_JSON")
     osemosys_activity_lower_prune_tol: float = Field(
         default=0.0,
         alias="OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL",
@@ -77,6 +80,10 @@ class Settings(BaseSettings):
     osemosys_sparse_high_dim_params: bool = Field(
         default=True,
         alias="OSEMOSYS_SPARSE_HIGH_DIM_PARAMS",
+    )
+    osemosys_sparse_emission_penalties: bool = Field(
+        default=True,
+        alias="OSEMOSYS_SPARSE_EMISSION_PENALTIES",
     )
     simulation_artifacts_dir: str = Field(default="/app/tmp", alias="SIMULATION_ARTIFACTS_DIR")
     docker_socket_path: str = Field(default="/var/run/docker.sock", alias="DOCKER_SOCKET_PATH")

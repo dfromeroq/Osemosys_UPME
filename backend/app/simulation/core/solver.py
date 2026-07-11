@@ -25,8 +25,11 @@ from pyomo.core import Constraint, Suffix, Var, value
 
 from app.core.config import get_settings
 from app.simulation.core.solver_config import (
+    SolverGlpkConfig,
     SolverHighsConfig,
+    apply_glpk_options_to_solver,
     apply_highs_options_to_model,
+    resolve_glpk_config,
     resolve_highs_config,
 )
 
@@ -148,7 +151,12 @@ def _resolve_solver_threads(settings: object) -> int:
 
 
 def _apply_solver_runtime_options(
-    solver: object, *, candidate: str, settings: object, highs_config: SolverHighsConfig | None = None
+    solver: object,
+    *,
+    candidate: str,
+    settings: object,
+    highs_config: SolverHighsConfig | None = None,
+    glpk_config: SolverGlpkConfig | None = None,
 ) -> int | None:
     if highs_config is None:
         highs_config = resolve_highs_config(settings)
@@ -177,6 +185,17 @@ def _apply_solver_runtime_options(
             except Exception:  # pragma: no cover
                 pass
         return threads_used
+
+    if candidate == "glpk":
+        if glpk_config is None:
+            glpk_config = resolve_glpk_config(settings)
+        options = apply_glpk_options_to_solver(solver, glpk_config)
+        logger.info(
+            "Configurando GLPK: profile=%s options=%s",
+            glpk_config.profile,
+            options,
+        )
+        return None
 
     if candidate == "gurobi":
         gurobi_options = getattr(solver, "options", None)
@@ -863,6 +882,7 @@ def solve_model(
     """Resuelve el modelo usando Pyomo SolverFactory o highspy directo."""
     settings = get_settings()
     highs_config = resolve_highs_config(settings)
+    glpk_config = resolve_glpk_config(settings)
 
     if lp_path is not None and solver_name != "highs":
         write_lp_file(instance, lp_path)
@@ -894,7 +914,11 @@ def solve_model(
         logger.info("Resolviendo con %s (SolverFactory('%s'))...", candidate, factory_name)
         solver = pyo.SolverFactory(factory_name)
         threads_used = _apply_solver_runtime_options(
-            solver, candidate=candidate, settings=settings, highs_config=highs_config
+            solver,
+            candidate=candidate,
+            settings=settings,
+            highs_config=highs_config,
+            glpk_config=glpk_config,
         )
         solver_timings: dict[str, float] = {}
         if on_stage:
@@ -945,6 +969,11 @@ def solve_model(
             "reserve_margin_dual": reserve_margin_dual,
             "infeasibility_diagnostics": diagnostics,
             "solver_timings": solver_timings,
+            "solver_glpk_config": {
+                "profile": glpk_config.profile,
+                "time_limit": glpk_config.time_limit,
+                "options": apply_glpk_options_to_solver(solver, glpk_config),
+            } if candidate == "glpk" else None,
         }
 
         if on_solver_finished is not None:

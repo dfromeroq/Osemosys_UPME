@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 SolverProfile = Literal["default", "balanced", "fast", "memory"]
 HighsMethod = Literal["default", "choose", "simplex", "ipm", "ipx", "hipo"]
 OnOffChoose = Literal["default", "off", "on", "choose"]
+GlpkProfile = Literal["default", "fast", "strict"]
 
 
 class SolverSettingsPublic(BaseModel):
@@ -29,6 +30,9 @@ class SolverSettingsPublic(BaseModel):
     highs_primal_feasibility_tolerance: float = Field(default=1e-7, gt=0.0)
     highs_dual_feasibility_tolerance: float = Field(default=1e-7, gt=0.0)
     highs_options_json: str = ""
+    glpk_profile: GlpkProfile = "fast"
+    glpk_time_limit: float = Field(default=0.0, ge=0.0)
+    glpk_options_json: str = ""
     updated_at: datetime | None = None
     updated_by_username: str | None = None
 
@@ -49,4 +53,7 @@ class SolverSettingsUpdate(BaseModel):
     highs_primal_feasibility_tolerance: float = Field(default=1e-7, gt=0.0)
     highs_dual_feasibility_tolerance: float = Field(default=1e-7, gt=0.0)
     highs_options_json: str = ""
+    glpk_profile: GlpkProfile = "fast"
+    glpk_time_limit: float = Field(default=0.0, ge=0.0)
+    glpk_options_json: str = ""
 

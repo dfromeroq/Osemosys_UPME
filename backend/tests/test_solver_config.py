@@ -4,8 +4,11 @@ from types import SimpleNamespace
 
 import app.simulation.core.solver as solver_module
 from app.simulation.core.solver_config import (
+    SolverGlpkConfig,
     SolverHighsConfig,
+    apply_glpk_options_to_solver,
     apply_highs_options_to_model,
+    resolve_glpk_config,
     resolve_highs_config,
 )
 
@@ -20,6 +23,7 @@ class _FakeSolver:
         self._status = status
         self.last_kwargs: dict[str, object] | None = None
         self.highs_options: dict[str, object] = {}
+        self.options: dict[str, object] = {}
         self.config = SimpleNamespace(stream_solver=True, load_solution=True, report_timing=False)
 
     def solve(self, instance, **kwargs):
@@ -49,6 +53,10 @@ def _fake_settings(**overrides: object) -> SimpleNamespace:
         sim_solver_highs_time_limit=0.0,
         sim_solver_highs_ipm_tol=1e-7,
         sim_solver_highs_primal_tol=1e-7,
+        sim_solver_highs_dual_tol=1e-7,
+        sim_solver_glpk_profile="fast",
+        sim_solver_glpk_time_limit=0.0,
+        sim_solver_glpk_options_json="",
     )
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -117,6 +125,32 @@ def test_extra_options_json_is_parsed_and_applied() -> None:
     apply_highs_options_to_model(opts, cfg)
     assert cfg.extra_options == {"simplex_strategy": 1}
     assert opts["simplex_strategy"] == 1
+
+
+def test_glpk_fast_and_strict_profiles_are_isolated() -> None:
+    fast = resolve_glpk_config(_fake_settings(sim_solver_glpk_profile="fast"))
+    strict = resolve_glpk_config(_fake_settings(sim_solver_glpk_profile="strict"))
+    fast_solver = SimpleNamespace(options={})
+    strict_solver = SimpleNamespace(options={})
+
+    apply_glpk_options_to_solver(fast_solver, fast)
+    apply_glpk_options_to_solver(strict_solver, strict)
+
+    assert fast_solver.options == {}
+    assert strict_solver.options == {"exact": None}
+
+
+def test_glpk_extra_options_and_time_limit() -> None:
+    cfg = resolve_glpk_config(
+        _fake_settings(
+            sim_solver_glpk_profile="default",
+            sim_solver_glpk_time_limit=12.8,
+            sim_solver_glpk_options_json='{"memlim": 4096}',
+        )
+    )
+    solver = SimpleNamespace(options={})
+    options = apply_glpk_options_to_solver(solver, cfg)
+    assert options == {"tmlim": 12, "memlim": 4096}
 
 
 def test_apply_highs_options_default_applies_only_tolerances() -> None:
@@ -203,6 +237,8 @@ def test_solve_model_uses_settings_for_tee_and_keepfiles(monkeypatch) -> None:
     assert fake_solver.last_kwargs["keepfiles"] is False
     assert fake_solver.last_kwargs["load_solutions"] is False
     assert "solver_timings" in result
+    assert result["solver_glpk_config"]["profile"] == "fast"
+    assert fake_solver.options == {}
 
 
 def test_solve_model_sets_highs_threads_and_options_when_appsi(monkeypatch) -> None:
