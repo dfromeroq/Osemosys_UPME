@@ -17,44 +17,44 @@ Los escenarios CSV 11/12 se generaron exportando los inputs efectivos de los
 escenarios Excel 6/8 desde la propia aplicación y reimportándolos. Esto prueba
 el roundtrip real de la aplicación, no un conversor externo.
 
-## Jobs públicos
+## Jobs públicos canónicos
 
 | Job | Resultado | Solver | Estado | Objetivo |
 |---:|---|---|---|---:|
-| 5 | Nacional Excel · HiGHS | HiGHS | SUCCEEDED | 1117470.2926387491 |
-| 13 | Nacional CSV · HiGHS | HiGHS | SUCCEEDED | 1117470.2926387491 |
-| 7 | Regional Excel · HiGHS | HiGHS | SUCCEEDED | 1828936.3163885893 |
-| 14 | Regional CSV · HiGHS | HiGHS | SUCCEEDED | 1828936.3163885896 |
+| 17 | Nacional Excel · HiGHS canónico | HiGHS | SUCCEEDED | 1117470.2926387503 |
+| 21 | Nacional CSV · HiGHS canónico | HiGHS | SUCCEEDED | 1117470.2926387503 |
+| 19 | Regional Excel · HiGHS canónico | HiGHS | SUCCEEDED | 1828936.3163885893 |
+| 22 | Regional CSV · HiGHS canónico | HiGHS | SUCCEEDED | 1828936.3163885893 |
+| 23 | Nacional Excel · GLPK A canónico | GLPK | SUCCEEDED | 1117470.292646065 |
+| 24 | Nacional CSV · GLPK A canónico | GLPK | SUCCEEDED | 1117470.292646065 |
 | 9 | Nacional 4 estaciones · HiGHS | HiGHS | SUCCEEDED | 1117959.7702730515 |
-| 10 | Nacional Excel · GLPK A | GLPK | SUCCEEDED | 1117470.2926460647 |
-| 15 | Nacional CSV · GLPK A | GLPK | SUCCEEDED | 1117470.2926460651 |
 | 12 | Regional Excel · GLPK A (cancelado tras 2 h 48 min) | GLPK | CANCELLED por UI | sin solución |
 
-## Paridad
+Los jobs anteriores permanecen identificados como `[Histórico pre-canónico]`.
 
-### Nacional HiGHS Excel vs CSV
+## Paridad canónica
 
-- Objetivo: diferencia 0.
-- Demanda: diferencia 0.
-- Unmet: diferencia 0.
-- Dispatch anual: máximo `9.09e-13`.
-- NewCapacity anual: máximo `5.40e-13`.
-- AnnualEmissions anual: máximo `7.28e-12`.
+Los CSV finales entregados a Pyomo son idénticos byte por byte:
 
-### Regional HiGHS Excel vs CSV
+- nacional: 44/44 archivos;
+- regional: 28/28 archivos.
 
-- Objetivo: diferencia absoluta `2.33e-10`, relativa `1.27e-16`.
-- Demanda: diferencia 0.
-- Unmet: diferencia 0.
-- Hay redistribución de dispatch/capacidad/emisiones entre soluciones óptimas
-  degeneradas; no cambia objetivo ni cobertura.
+La comparación multiconjunto incluye todas las dimensiones tipadas,
+`index_json`, `value` y `value2` de cada resultado persistido:
 
-### Nacional GLPK Excel vs CSV
+| Par | Filas Excel | Filas CSV | Sólo Excel | Sólo CSV |
+|---|---:|---:|---:|---:|
+| Nacional HiGHS (17 vs 21) | 171365 | 171365 | 0 | 0 |
+| Regional HiGHS (19 vs 22) | 398539 | 398539 | 0 | 0 |
+| Nacional GLPK (23 vs 24) | 171005 | 171005 | 0 | 0 |
 
-- Objetivo: diferencia absoluta `4.66e-10`, relativa `4.17e-16`.
-- Demanda/unmet: idénticos.
-- GLPK puede seleccionar bases óptimas distintas y redistribuir dispatch y
-  capacidad, igual que se documentó en la validación inicial.
+Por tanto, objetivo, dispatch, capacidad, emisiones y el resto de variables son
+idénticos dentro de cada par, no sólo equivalentes dentro de una tolerancia.
+
+La implementación conserva el orden SAND durante las reglas heredadas del
+notebook —algunas usan `groupby().first()`— y aplica orden canónico únicamente
+al resultado procesado. También conserva en escenarios CSV los IDs reales de
+catálogo; antes se reemplazaban accidentalmente por posiciones 1..N.
 
 ## Timeslices
 
