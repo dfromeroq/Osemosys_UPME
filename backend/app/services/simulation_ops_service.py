@@ -290,6 +290,8 @@ class SimulationOpsService:
                 "APP_GIT_SHA",
                 "COMPOSE_PROJECT_NAME",
                 "SIM_SOLVER_THREADS",
+                "SIM_SOLVER_PROFILE",
+                "SIM_SOLVER_GLPK_PROFILE",
                 "SIM_MAX_CONCURRENCY",
                 "SIM_TOTAL_WEIGHT_LIMIT",
                 "OMP_NUM_THREADS",

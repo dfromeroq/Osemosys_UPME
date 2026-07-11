@@ -1,8 +1,10 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import { simulationOpsApi } from "@/features/simulation/api/simulationOpsApi";
 import type { ResourceTimelineCapacity } from "@/features/simulation/components/ResourceTimeline";
 import { ResourceTimeline } from "@/features/simulation/components/ResourceTimeline";
 import type { SimulationOpsDashboard, SimulationOpsEnvironment, SimulationOpsJob } from "@/types/domain";
+import "./SimulationOpsPage.css";
 
 function formatBytes(value: number | null | undefined): string {
   const bytes = Number(value ?? 0);
@@ -43,6 +45,32 @@ function formatGb(value: number | null | undefined): string {
 
 function formatTimestamp(value: string | null | undefined): string {
   return value ? new Date(value).toLocaleString("es-CO") : "—";
+}
+
+function statusTone(status: string | null | undefined): "success" | "active" | "warning" | "danger" | "neutral" {
+  const value = (status ?? "").toUpperCase();
+  if (["SUCCEEDED", "RUNNING", "AVAILABLE", "HEALTHY"].includes(value)) return value === "RUNNING" ? "active" : "success";
+  if (["QUEUED", "PENDING"].includes(value)) return "warning";
+  if (["FAILED", "CANCELLED", "OOMKILLED", "UNREACHABLE"].includes(value)) return "danger";
+  return "neutral";
+}
+
+function StatusBadge({ status, label }: { status?: string | null | undefined; label?: string | undefined }) {
+  return (
+    <span className="ops-status-badge" data-tone={statusTone(status)}>
+      {label ?? status ?? "desconocido"}
+    </span>
+  );
+}
+
+function OpsKpi({ label, value, hint, color }: { label: string; value: string | number; hint: string; color?: string }) {
+  return (
+    <div className="ops-kpi-card" style={{ "--ops-kpi-color": color ?? "#38bdf8" } as CSSProperties}>
+      <div className="ops-kpi-label">{label}</div>
+      <div className="ops-kpi-value">{value}</div>
+      <div className="ops-kpi-hint">{hint}</div>
+    </div>
+  );
 }
 
 function jobDurationSeconds(job: SimulationOpsJob): number | null {
@@ -120,8 +148,8 @@ function JobTable({
   }
 
   return (
-    <div style={{ overflowX: "auto" }}>
-      <table className="w-full text-sm" style={{ borderCollapse: "collapse", minWidth: 960 }}>
+    <div className="ops-table-wrap">
+      <table className="ops-table w-full text-sm" style={{ borderCollapse: "collapse", minWidth: 960 }}>
         <thead className="text-slate-500">
           <tr>
             <th className="py-2 pr-3 text-left font-medium">ID</th>
@@ -149,10 +177,15 @@ function JobTable({
                   style={{ background: selected ? "rgba(14,165,233,0.07)" : undefined }}
                 >
                   <td className="py-2 pr-3 font-mono text-slate-200">{job.id}</td>
-                  <td className="py-2 pr-3 text-slate-200">{job.status}</td>
+                  <td className="py-2 pr-3"><StatusBadge status={job.status} /></td>
                   <td className="py-2 pr-3 text-slate-300">{job.simulation_type}</td>
                   <td className="py-2 pr-3 text-right font-mono text-slate-300">
-                    {typeof job.progress === "number" ? `${job.progress.toFixed(0)}%` : "—"}
+                    <div style={{ display: "grid", gap: 5, minWidth: 76 }}>
+                      <span>{typeof job.progress === "number" ? `${job.progress.toFixed(0)}%` : "—"}</span>
+                      <div className="ops-meter" aria-hidden="true">
+                        <span style={{ "--ops-progress": `${Math.max(0, Math.min(100, job.progress ?? 0))}%` } as CSSProperties} />
+                      </div>
+                    </div>
                   </td>
                   <td className="py-2 pr-3 text-slate-300">{sample?.stage ?? "—"}</td>
                   <td className="py-2 pr-3 text-right font-mono text-slate-300">
@@ -251,8 +284,8 @@ function RecentJobsHistory({
         ) : null}
       </div>
 
-      <div style={{ overflowX: "auto" }}>
-        <table className="w-full text-sm" style={{ borderCollapse: "collapse", minWidth: 980 }}>
+      <div className="ops-table-wrap">
+        <table className="ops-table w-full text-sm" style={{ borderCollapse: "collapse", minWidth: 980 }}>
           <thead className="text-slate-500">
             <tr>
               <th className="py-2 pr-3 text-left font-medium">ID</th>
@@ -278,7 +311,7 @@ function RecentJobsHistory({
                   style={{ background: selected ? "rgba(14,165,233,0.07)" : undefined }}
                 >
                   <td className="py-2 pr-3 font-mono text-slate-200">{job.id}</td>
-                  <td className="py-2 pr-3 text-slate-200">{job.status}</td>
+                  <td className="py-2 pr-3"><StatusBadge status={job.status} /></td>
                   <td className="py-2 pr-3 text-slate-300">{job.simulation_type}</td>
                   <td className="py-2 pr-3 text-slate-300">{formatTimestamp(job.finished_at)}</td>
                   <td className="py-2 pr-3 text-right font-mono text-slate-300">
@@ -350,20 +383,20 @@ function EnvironmentPanel({
     currentRamUsedGb: usedRamGb,
   };
   return (
-    <section
-      style={{
-        display: "grid",
-        gap: 14,
-        padding: "16px 0",
-        borderTop: "1px solid rgba(148,163,184,0.18)",
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: 20 }}>{env.name}</h2>
-          <div className="text-sm text-slate-500">
-            {env.reachable ? "Disponible" : env.error ?? "No disponible"} ·{" "}
-            {new Date(env.generated_at).toLocaleString("es-CO")}
+    <section className="ops-environment-panel">
+      <div className="ops-environment-header">
+        <div style={{ display: "grid", gap: 7 }}>
+          <div className="ops-section-label">Módulo de ambiente</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+            <h2 style={{ margin: 0, fontSize: 21 }}>{env.name}</h2>
+            <StatusBadge
+              status={env.reachable ? "AVAILABLE" : "UNREACHABLE"}
+              label={env.reachable ? "Disponible" : "No disponible"}
+            />
+          </div>
+          <div className="text-xs text-slate-500">
+            Telemetría {new Date(env.generated_at).toLocaleString("es-CO")}
+            {!env.reachable && env.error ? ` · ${env.error}` : ""}
           </div>
         </div>
         <div className="grid grid-cols-5 gap-3 text-right">
@@ -436,13 +469,9 @@ function EnvironmentPanel({
       </div>
 
       {env.services_memory.length > 0 ? (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-            gap: 8,
-          }}
-        >
+        <div style={{ display: "grid", gap: 8 }}>
+          <div className="ops-section-label">Servicios y procesos</div>
+          <div className="ops-service-grid">
           {env.services_memory.map((service) => {
             const processes = (service.processes ?? []).filter((process) =>
               ["python", "glpsol", "highs", "celery"].some((name) =>
@@ -450,16 +479,13 @@ function EnvironmentPanel({
               ),
             );
             return (
-              <div
-                key={service.service_name}
-                className="rounded border border-slate-700 px-3 py-2 text-xs text-slate-300"
-                style={{ display: "grid", gap: 5 }}
-              >
+              <div key={service.service_name} className="ops-service-card text-xs text-slate-300">
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                   <strong className="font-mono text-slate-200">{service.service_name}</strong>
-                  <span className={service.oom_killed ? "text-red-400" : "text-slate-500"}>
-                    {service.oom_killed ? "OOMKilled" : service.status ?? "—"}
-                  </span>
+                  <StatusBadge
+                    status={service.oom_killed ? "OOMKILLED" : service.status}
+                    label={service.oom_killed ? "OOMKilled" : service.status ?? "—"}
+                  />
                 </div>
                 <div className="font-mono">
                   CPU {service.cpu_percent != null ? `${service.cpu_percent.toFixed(1)}%` : "—"}
@@ -468,6 +494,9 @@ function EnvironmentPanel({
                 <div className="font-mono">
                   RAM {formatBytes(service.memory_working_set_bytes ?? service.memory_usage_bytes)} /{" "}
                   {formatBytes(service.memory_limit_bytes)} · pico {formatBytes(service.memory_peak_bytes)}
+                </div>
+                <div className="ops-meter" aria-hidden="true">
+                  <span style={{ "--ops-progress": `${Math.max(0, Math.min(100, service.memory_used_percent ?? 0))}%` } as CSSProperties} />
                 </div>
                 <div className="font-mono text-slate-500">
                   PID host {service.host_pid ?? "—"} · procesos {service.pids_current ?? "—"} · reinicios{" "}
@@ -483,10 +512,14 @@ function EnvironmentPanel({
               </div>
             );
           })}
+          </div>
         </div>
       ) : null}
 
-      <JobTable environment={env.name} jobs={env.active_jobs} onCancel={onCancel} capacity={capacity} />
+      <div style={{ display: "grid", gap: 8 }}>
+        <div className="ops-section-label">Ejecuciones activas</div>
+        <JobTable environment={env.name} jobs={env.active_jobs} onCancel={onCancel} capacity={capacity} />
+      </div>
       <RecentJobsHistory jobs={env.recent_jobs} capacity={capacity} />
     </section>
   );
@@ -527,6 +560,17 @@ export function SimulationOpsPage() {
   }, []);
 
   const environments = useMemo(() => dashboard?.environments ?? [], [dashboard]);
+  const totals = useMemo(() => {
+    const services = environments.flatMap((env) => env.services_memory ?? []);
+    return {
+      reachable: environments.filter((env) => env.reachable).length,
+      active: environments.reduce((sum, env) => sum + Number(env.queue.active_count ?? 0), 0),
+      queued: environments.reduce((sum, env) => sum + Number(env.queue.queued_count ?? 0), 0),
+      running: environments.reduce((sum, env) => sum + Number(env.queue.running_count ?? 0), 0),
+      memory: environments.reduce((sum, env) => sum + Number(env.services_memory_total_bytes ?? 0), 0),
+      cpuCores: services.reduce((sum, service) => sum + Number(service.cpu_used_cores ?? 0), 0),
+    };
+  }, [environments]);
 
   const handleCancel = async (environment: string, jobId: number) => {
     const ok = window.confirm(`Cancelar ejecución ${jobId} en ${environment}?`);
@@ -536,25 +580,38 @@ export function SimulationOpsPage() {
   };
 
   return (
-    <section className="pageSection" style={{ display: "grid", gap: 18 }}>
-      <header style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+    <section className="pageSection ops-shell" style={{ display: "grid" }}>
+      <header className="ops-command-header">
         <div>
-          <h1 style={{ margin: 0 }}>Operación de simulaciones</h1>
-          <p className="text-sm text-slate-500" style={{ margin: "4px 0 0" }}>
-            Colas, recursos y ejecuciones activas por ambiente.
+          <div className="ops-eyebrow">Centro de control · OSeMOSYS</div>
+          <h1 className="ops-title">Operación de simulaciones</h1>
+          <p className="text-sm text-slate-400" style={{ margin: "7px 0 0", maxWidth: 620 }}>
+            Telemetría de solver, capacidad de cómputo, colas y eventos de ejecución en una sola vista.
           </p>
         </div>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => setRefreshKey((v) => v + 1)}
-        >
-          Actualizar
-        </button>
+        <div style={{ display: "grid", justifyItems: "end", gap: 11 }}>
+          <span className="ops-live-indicator">AUTO · 10 S</span>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => setRefreshKey((v) => v + 1)}
+          >
+            Actualizar telemetría
+          </button>
+        </div>
       </header>
 
-      {loading && !dashboard ? <div className="text-sm text-slate-500">Cargando…</div> : null}
-      {error ? <div className="text-sm text-rose-300">{error}</div> : null}
+      <div className="ops-kpi-grid">
+        <OpsKpi label="Ambientes" value={`${totals.reachable}/${environments.length}`} hint="Disponibles ahora" color="#22c55e" />
+        <OpsKpi label="Ejecutando" value={totals.running} hint={`${totals.active} jobs activos`} color="#38bdf8" />
+        <OpsKpi label="En cola" value={totals.queued} hint="Orden FIFO ponderado" color="#f59e0b" />
+        <OpsKpi label="CPU servicios" value={totals.cpuCores.toFixed(2)} hint="Cores usados" color="#818cf8" />
+        <OpsKpi label="RAM servicios" value={formatBytes(totals.memory)} hint="Uso agregado Docker" color="#06b6d4" />
+        <OpsKpi label="Última señal" value={dashboard ? new Date(dashboard.generated_at).toLocaleTimeString("es-CO") : "—"} hint="Actualización operacional" />
+      </div>
+
+      {loading && !dashboard ? <div className="text-sm text-slate-500">Inicializando telemetría…</div> : null}
+      {error ? <div className="ops-error text-sm">{error}</div> : null}
 
       {environments.map((env) => (
         <EnvironmentPanel key={env.name} env={env} onCancel={handleCancel} />
