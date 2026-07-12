@@ -1,0 +1,253 @@
+{
+  "generated_at": "2026-07-11T04:25:55.011520+00:00",
+  "username": "seed",
+  "canonical_order": true,
+  "scenario_ids": {
+    "national_excel": 6,
+    "national_csv": 11,
+    "regional_excel": 8,
+    "regional_csv": 12,
+    "national_4seasons": 10
+  },
+  "jobs": {
+    "national_excel_highs": {
+      "id": 17,
+      "status": "SUCCEEDED",
+      "solver": "highs",
+      "objective_value": 1117470.2926387503,
+      "total_demand": 32969.64562260975,
+      "total_dispatch": 1302333.508032351,
+      "total_unmet": 0.0
+    },
+    "national_csv_highs": {
+      "id": 21,
+      "status": "SUCCEEDED",
+      "solver": "highs",
+      "objective_value": 1117470.2926387503,
+      "total_demand": 32969.64562260975,
+      "total_dispatch": 1302333.508032351,
+      "total_unmet": 0.0
+    },
+    "regional_excel_highs": {
+      "id": 19,
+      "status": "SUCCEEDED",
+      "solver": "highs",
+      "objective_value": 1828936.3163885893,
+      "total_demand": 29967.432500497333,
+      "total_dispatch": 164491.08617046085,
+      "total_unmet": 0.0
+    },
+    "regional_csv_highs": {
+      "id": 22,
+      "status": "SUCCEEDED",
+      "solver": "highs",
+      "objective_value": 1828936.3163885893,
+      "total_demand": 29967.432500497333,
+      "total_dispatch": 164491.08617046085,
+      "total_unmet": 0.0
+    },
+    "national_4seasons_highs": {
+      "id": 9,
+      "status": "SUCCEEDED",
+      "solver": "highs",
+      "objective_value": 1117959.7702730515,
+      "total_demand": 32969.64562260975,
+      "total_dispatch": 181672.52122708893,
+      "total_unmet": 0.0
+    },
+    "national_excel_glpk": {
+      "id": 23,
+      "status": "SUCCEEDED",
+      "solver": "glpk",
+      "objective_value": 1117470.292646065,
+      "total_demand": 32969.64562260975,
+      "total_dispatch": 183859.23833359772,
+      "total_unmet": 0.0
+    },
+    "national_csv_glpk": {
+      "id": 24,
+      "status": "SUCCEEDED",
+      "solver": "glpk",
+      "objective_value": 1117470.292646065,
+      "total_demand": 32969.64562260975,
+      "total_dispatch": 183859.23833359772,
+      "total_unmet": 0.0
+    },
+    "regional_excel_glpk": {
+      "id": 12,
+      "status": "CANCELLED",
+      "solver": "glpk",
+      "objective_value": 0.0,
+      "total_demand": 0.0,
+      "total_dispatch": 0.0,
+      "total_unmet": 0.0
+    }
+  },
+  "failures": {
+    "regional_excel_glpk": "Job 12 cancelado desde UI tras 2 h 48 min; GLPK regional no produjo solución."
+  },
+  "comparisons": {
+    "national_highs_excel_vs_csv": {
+      "left_job_id": 17,
+      "right_job_id": 21,
+      "solver": "highs",
+      "status_equal": true,
+      "objective": {
+        "left": 1117470.2926387503,
+        "right": 1117470.2926387503,
+        "abs_difference": 0.0,
+        "relative_difference": 0.0,
+        "passes": true
+      },
+      "total_demand": {
+        "left": 32969.64562260975,
+        "right": 32969.64562260975,
+        "relative_difference": 0.0,
+        "passes": true
+      },
+      "total_unmet": {
+        "left": 0.0,
+        "right": 0.0,
+        "abs_difference": 0.0,
+        "passes": true
+      },
+      "annual_aggregates": {
+        "Dispatch": {
+          "years": 33,
+          "max_abs_difference": 0.0,
+          "max_relative_difference": 0.0
+        },
+        "NewCapacity": {
+          "years": 33,
+          "max_abs_difference": 5.684341886080802e-14,
+          "max_relative_difference": 3.086320576005258e-16
+        },
+        "AnnualEmissions": {
+          "years": 33,
+          "max_abs_difference": 0.0,
+          "max_relative_difference": 0.0
+        }
+      }
+    },
+    "regional_highs_excel_vs_csv": {
+      "left_job_id": 19,
+      "right_job_id": 22,
+      "solver": "highs",
+      "status_equal": true,
+      "objective": {
+        "left": 1828936.3163885893,
+        "right": 1828936.3163885893,
+        "abs_difference": 0.0,
+        "relative_difference": 0.0,
+        "passes": true
+      },
+      "total_demand": {
+        "left": 29967.432500497333,
+        "right": 29967.432500497333,
+        "relative_difference": 0.0,
+        "passes": true
+      },
+      "total_unmet": {
+        "left": 0.0,
+        "right": 0.0,
+        "abs_difference": 0.0,
+        "passes": true
+      },
+      "annual_aggregates": {
+        "Dispatch": {
+          "years": 34,
+          "max_abs_difference": 1.8189894035458565e-12,
+          "max_relative_difference": 2.8546820290474073e-16
+        },
+        "NewCapacity": {
+          "years": 34,
+          "max_abs_difference": 0.0,
+          "max_relative_difference": 0.0
+        },
+        "AnnualEmissions": {
+          "years": 34,
+          "max_abs_difference": 0.0,
+          "max_relative_difference": 0.0
+        }
+      }
+    },
+    "national_glpk_excel_vs_csv": {
+      "left_job_id": 23,
+      "right_job_id": 24,
+      "solver": "glpk",
+      "status_equal": true,
+      "objective": {
+        "left": 1117470.292646065,
+        "right": 1117470.292646065,
+        "abs_difference": 0.0,
+        "relative_difference": 0.0,
+        "passes": true
+      },
+      "total_demand": {
+        "left": 32969.64562260975,
+        "right": 32969.64562260975,
+        "relative_difference": 0.0,
+        "passes": true
+      },
+      "total_unmet": {
+        "left": 0.0,
+        "right": 0.0,
+        "abs_difference": 0.0,
+        "passes": true
+      },
+      "annual_aggregates": {
+        "Dispatch": {
+          "years": 33,
+          "max_abs_difference": 1.8189894035458565e-12,
+          "max_relative_difference": 3.4170932466229063e-16
+        },
+        "NewCapacity": {
+          "years": 33,
+          "max_abs_difference": 2.842170943040401e-14,
+          "max_relative_difference": 2.74875394095351e-16
+        },
+        "AnnualEmissions": {
+          "years": 33,
+          "max_abs_difference": 0.0,
+          "max_relative_difference": 0.0
+        }
+      }
+    }
+  },
+  "exact_multiset_comparison": {
+    "national_highs": {
+      "left_job_id": 17,
+      "right_job_id": 21,
+      "rows_left": 171365,
+      "rows_right": 171365,
+      "only_left": 0,
+      "only_right": 0
+    },
+    "regional_highs": {
+      "left_job_id": 19,
+      "right_job_id": 22,
+      "rows_left": 398539,
+      "rows_right": 398539,
+      "only_left": 0,
+      "only_right": 0
+    },
+    "national_glpk": {
+      "left_job_id": 23,
+      "right_job_id": 24,
+      "rows_left": 171005,
+      "rows_right": 171005,
+      "only_left": 0,
+      "only_right": 0
+    }
+  },
+  "canonical_input_files": {
+    "national": {
+      "files": 44,
+      "different": 0
+    },
+    "regional": {
+      "files": 28,
+      "different": 0
+    }
+  }
+}

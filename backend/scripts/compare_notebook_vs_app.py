@@ -170,54 +170,61 @@ def SAND_SETS_to_CSV(df, path_csv, div):
         df_set.to_csv(os.path.join(path_csv, f"{s}.csv"), index=False)
 
 
-def completar_Matrix_Act_Ratio(path_csv, variable):
-    df = pd.read_csv(path_csv + variable)
-    regions = df["REGION"].unique()
-    technologies = pd.read_csv(path_csv + "TECHNOLOGY.csv", dtype=str)["VALUE"].unique()
-    fuels = pd.read_csv(path_csv + "FUEL.csv", dtype=str)["VALUE"].unique()
-    modes = pd.read_csv(path_csv + "MODE_OF_OPERATION.csv")["VALUE"].unique()
-    years = pd.read_csv(path_csv + "YEAR.csv")["VALUE"].unique()
+def _canonical_mode(value):
+    text = str(value).strip()
+    try:
+        number = float(text)
+        return str(int(number)) if number.is_integer() else str(number)
+    except (TypeError, ValueError):
+        return text
 
-    all_combinations = pd.DataFrame(itertools.product(
-        regions, technologies, fuels, modes, years),
-        columns=["REGION", "TECHNOLOGY", "FUEL", "MODE_OF_OPERATION", "YEAR"]
+
+def _sparse_matrix_passthrough(path_csv, variable, columns):
+    """Reproduce filas y orden útil del cartesiano legacy sin expandirlo.
+
+    El orden es observable porque el notebook usa luego ``groupby().first()``
+    al combinar emisiones con múltiples combustibles de entrada.
+    """
+    df = pd.read_csv(path_csv + variable).dropna(subset=["VALUE"])
+    dimensions = [col for col in columns if col != "VALUE"]
+    order_cols = []
+    for col in dimensions:
+        if col == "MODE_OF_OPERATION":
+            df[col] = df[col].map(_canonical_mode)
+        set_path = os.path.join(path_csv, f"{col}.csv")
+        if col == "REGION" or not os.path.exists(set_path):
+            ordered_values = list(pd.unique(df[col]))
+        else:
+            ordered_values = pd.read_csv(set_path)["VALUE"].tolist()
+        if col == "MODE_OF_OPERATION":
+            ordered_values = [_canonical_mode(v) for v in ordered_values]
+        rank = {str(value): i for i, value in enumerate(ordered_values)}
+        order_col = f"__order_{col}"
+        df[order_col] = df[col].astype(str).map(rank).fillna(len(rank))
+        order_cols.append(order_col)
+    df = df.sort_values(order_cols, kind="stable").drop(columns=order_cols)
+    df[columns].to_csv(path_csv + variable, index=False)
+
+
+def completar_Matrix_Act_Ratio(path_csv, variable):
+    _sparse_matrix_passthrough(
+        path_csv, variable,
+        ["REGION", "TECHNOLOGY", "FUEL", "MODE_OF_OPERATION", "YEAR", "VALUE"],
     )
-    result = all_combinations.merge(df, on=["REGION", "TECHNOLOGY", "MODE_OF_OPERATION", "FUEL", "YEAR"], how="left")
-    result.dropna(subset=["VALUE"], inplace=True)
-    result.to_csv(path_csv + variable, index=False)
 
 
 def completar_Matrix_Emission(path_csv, variable):
-    df = pd.read_csv(path_csv + variable)
-    regions = df["REGION"].unique()
-    technologies = pd.read_csv(path_csv + "TECHNOLOGY.csv")["VALUE"].unique()
-    emission = pd.read_csv(path_csv + "EMISSION.csv")["VALUE"].unique()
-    modes = pd.read_csv(path_csv + "MODE_OF_OPERATION.csv")["VALUE"].unique()
-    years = pd.read_csv(path_csv + "YEAR.csv")["VALUE"].unique()
-
-    all_combinations = pd.DataFrame(itertools.product(
-        regions, technologies, emission, modes, years),
-        columns=["REGION", "TECHNOLOGY", "EMISSION", "MODE_OF_OPERATION", "YEAR"]
+    _sparse_matrix_passthrough(
+        path_csv, variable,
+        ["REGION", "TECHNOLOGY", "EMISSION", "MODE_OF_OPERATION", "YEAR", "VALUE"],
     )
-    result = all_combinations.merge(df, on=["REGION", "TECHNOLOGY", "EMISSION", "MODE_OF_OPERATION", "YEAR"], how="left")
-    result.dropna(subset=["VALUE"], inplace=True)
-    result.to_csv(path_csv + variable, index=False)
 
 
 def completar_Matrix_Cost(path_csv, variable):
-    df = pd.read_csv(path_csv + variable)
-    regions = df["REGION"].unique()
-    technologies = pd.read_csv(path_csv + "TECHNOLOGY.csv")["VALUE"].unique()
-    modes = pd.read_csv(path_csv + "MODE_OF_OPERATION.csv")["VALUE"].unique()
-    years = pd.read_csv(path_csv + "YEAR.csv")["VALUE"].unique()
-
-    all_combinations = pd.DataFrame(itertools.product(
-        regions, technologies, modes, years),
-        columns=["REGION", "TECHNOLOGY", "MODE_OF_OPERATION", "YEAR"]
+    _sparse_matrix_passthrough(
+        path_csv, variable,
+        ["REGION", "TECHNOLOGY", "MODE_OF_OPERATION", "YEAR", "VALUE"],
     )
-    result = all_combinations.merge(df, on=["REGION", "TECHNOLOGY", "MODE_OF_OPERATION", "YEAR"], how="left")
-    result.dropna(subset=["VALUE"], inplace=True)
-    result.to_csv(path_csv + variable, index=False)
 
 
 def process_and_save_emission_ratios(emission_activity_path, input_activity_path, output_path, path_csv):
@@ -363,8 +370,18 @@ UDC_RESERVE_MARGIN_DICT = {
 #  Pipeline completo: SAND Excel → CSVs → build_instance → solve
 # ========================================================================
 
-def generate_notebook_csvs(excel_path: str, csv_dir: str, div: int = 1) -> None:
+def generate_notebook_csvs(
+    excel_path: str,
+    csv_dir: str,
+    div: int = 1,
+    *,
+    postprocess: bool = True,
+) -> None:
     """Genera CSVs exactamente como lo hace el notebook.
+
+    ``postprocess=False`` genera sólo los CSV base filtrados. Con True, el
+    completado sparse y el tratamiento de emisiones se aplican exactamente una
+    vez, tanto en el script standalone como en la ruta Excel de la app.
 
     ``div`` controla el submuestreo de timeslices (toma una fila de cada ``div``
     en parámetros indexados por TIMESLICE):
@@ -391,25 +408,26 @@ def generate_notebook_csvs(excel_path: str, csv_dir: str, div: int = 1) -> None:
     print("  Filtrando parámetros por sets...")
     filter_params_by_sets(path_csv, df_colombia)
 
-    print("  Completando matrices (ActivityRatio)...")
-    completar_Matrix_Act_Ratio(path_csv, 'InputActivityRatio.csv')
-    completar_Matrix_Act_Ratio(path_csv, 'OutputActivityRatio.csv')
+    if postprocess:
+        print("  Completando matrices (ActivityRatio)...")
+        completar_Matrix_Act_Ratio(path_csv, 'InputActivityRatio.csv')
+        completar_Matrix_Act_Ratio(path_csv, 'OutputActivityRatio.csv')
 
-    if os.path.exists(path_csv + "EMISSION.csv"):
-        print("  Completando matriz (EmissionActivityRatio)...")
-        completar_Matrix_Emission(path_csv, 'EmissionActivityRatio.csv')
+        if os.path.exists(path_csv + "EMISSION.csv"):
+            print("  Completando matriz (EmissionActivityRatio)...")
+            completar_Matrix_Emission(path_csv, 'EmissionActivityRatio.csv')
 
-    print("  Completando matriz (VariableCost)...")
-    completar_Matrix_Cost(path_csv, 'VariableCost.csv')
+        print("  Completando matriz (VariableCost)...")
+        completar_Matrix_Cost(path_csv, 'VariableCost.csv')
 
-    if os.path.exists(path_csv + "EMISSION.csv"):
-        print("  Procesando emisiones a la entrada...")
-        process_and_save_emission_ratios(
-            'EmissionActivityRatio.csv',
-            'InputActivityRatio.csv',
-            'EmissionActivityRatio.csv',
-            path_csv,
-        )
+        if os.path.exists(path_csv + "EMISSION.csv"):
+            print("  Procesando emisiones a la entrada...")
+            process_and_save_emission_ratios(
+                'EmissionActivityRatio.csv',
+                'InputActivityRatio.csv',
+                'EmissionActivityRatio.csv',
+                path_csv,
+            )
 
     ## UDC de margen de reserva desactivada 
     # print("  Generando UDC...")

@@ -1,0 +1,229 @@
+/* Inspirado estructuralmente en Open Design / Mission Control (Apache-2.0).
+   Conserva la paleta slate/sky propia de OSeMOSYS. */
+.ops-shell {
+  --ops-surface: rgba(15, 23, 42, 0.82);
+  --ops-surface-strong: rgba(15, 23, 42, 0.96);
+  --ops-border: rgba(56, 189, 248, 0.18);
+  --ops-grid: rgba(56, 189, 248, 0.035);
+  position: relative;
+  isolation: isolate;
+  gap: 18px;
+}
+
+.ops-shell::before {
+  content: "";
+  position: absolute;
+  inset: -20px;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 82% 2%, rgba(14, 165, 233, 0.12), transparent 28rem),
+    linear-gradient(var(--ops-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--ops-grid) 1px, transparent 1px);
+  background-size: auto, 32px 32px, 32px 32px;
+  mask-image: linear-gradient(to bottom, black, transparent 86%);
+}
+
+.ops-command-header,
+.ops-environment-panel {
+  border: 1px solid var(--ops-border);
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.97), rgba(9, 17, 32, 0.88));
+  box-shadow: 0 18px 45px rgba(2, 6, 23, 0.2), inset 0 1px rgba(255, 255, 255, 0.025);
+}
+
+.ops-command-header {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  padding: 20px 22px;
+  border-radius: 16px;
+}
+
+.ops-command-header::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 2px;
+  background: linear-gradient(90deg, #0ea5e9, #38bdf8 35%, transparent 78%);
+}
+
+.ops-eyebrow,
+.ops-section-label,
+.ops-kpi-label {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.ops-title {
+  margin: 3px 0 0;
+  color: #e2e8f0;
+  font-size: clamp(22px, 3vw, 31px);
+  letter-spacing: -0.035em;
+}
+
+.ops-live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #7dd3fc;
+  font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.ops-live-indicator::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12), 0 0 14px rgba(34, 197, 94, 0.65);
+  animation: ops-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes ops-pulse {
+  50% { opacity: 0.45; transform: scale(0.84); }
+}
+
+.ops-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 10px;
+}
+
+.ops-kpi-card {
+  position: relative;
+  overflow: hidden;
+  min-height: 92px;
+  padding: 13px 15px;
+  border: 1px solid rgba(71, 85, 105, 0.48);
+  border-radius: 12px;
+  background: linear-gradient(160deg, rgba(30, 41, 59, 0.78), rgba(15, 23, 42, 0.78));
+}
+
+.ops-kpi-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--ops-kpi-color, #38bdf8);
+  box-shadow: 0 0 18px var(--ops-kpi-color, #38bdf8);
+}
+
+.ops-kpi-value {
+  margin-top: 9px;
+  color: #f8fafc;
+  font: 700 24px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: -0.04em;
+}
+
+.ops-kpi-hint { margin-top: 7px; color: #64748b; font-size: 11px; }
+
+.ops-environment-panel {
+  display: grid;
+  gap: 15px;
+  padding: 18px;
+  border-radius: 15px;
+}
+
+.ops-environment-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  padding-bottom: 13px;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.55);
+}
+
+.ops-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid rgba(100, 116, 139, 0.45);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.7);
+  color: #94a3b8;
+  font: 700 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.ops-status-badge[data-tone="success"] { color: #86efac; border-color: rgba(34,197,94,.35); background: rgba(20,83,45,.2); }
+.ops-status-badge[data-tone="active"] { color: #7dd3fc; border-color: rgba(14,165,233,.4); background: rgba(12,74,110,.22); }
+.ops-status-badge[data-tone="warning"] { color: #fcd34d; border-color: rgba(245,158,11,.38); background: rgba(120,53,15,.2); }
+.ops-status-badge[data-tone="danger"] { color: #fda4af; border-color: rgba(244,63,94,.38); background: rgba(136,19,55,.2); }
+
+.ops-service-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
+  gap: 9px;
+}
+
+.ops-service-card {
+  position: relative;
+  display: grid;
+  gap: 7px;
+  padding: 13px;
+  overflow: hidden;
+  border: 1px solid rgba(51, 65, 85, 0.7);
+  border-radius: 11px;
+  background: rgba(15, 23, 42, 0.72);
+  transition: border-color .18s ease, transform .18s ease, background .18s ease;
+}
+.ops-service-card:hover { transform: translateY(-1px); border-color: rgba(56,189,248,.35); background: rgba(20,31,51,.9); }
+.ops-service-card::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(56,189,248,.65), transparent 70%);
+}
+
+.ops-meter {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(51, 65, 85, 0.8);
+}
+.ops-meter > span {
+  display: block;
+  height: 100%;
+  width: var(--ops-progress, 0%);
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0284c7, #38bdf8);
+  box-shadow: 0 0 10px rgba(56,189,248,.45);
+}
+
+.ops-table-wrap {
+  overflow-x: auto;
+  border: 1px solid rgba(51,65,85,.55);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.18);
+}
+.ops-table thead { background: rgba(15,23,42,.96); }
+.ops-table th { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.ops-table tbody tr { transition: background .15s ease; }
+.ops-table tbody tr:hover { background: rgba(14,165,233,.045); }
+
+.ops-error {
+  padding: 12px 14px;
+  border: 1px solid rgba(244,63,94,.35);
+  border-radius: 10px;
+  background: rgba(136,19,55,.15);
+  color: #fda4af;
+}
+
+@media (max-width: 720px) {
+  .ops-command-header, .ops-environment-header { align-items: stretch; flex-direction: column; }
+  .ops-command-header { padding: 17px; }
+  .ops-environment-panel { padding: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ops-live-indicator::before { animation: none; }
+  .ops-service-card { transition: none; }
+}

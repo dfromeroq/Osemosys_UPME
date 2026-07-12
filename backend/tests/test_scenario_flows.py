@@ -397,6 +397,15 @@ def test_run_data_processing_skips_postprocessing_for_preprocessed_csv_scenario(
         has_udc=False,
         sets={"YEAR": [2025], "REGION": ["R1"]},
         param_count=3,
+        technology_id_by_name={"T1": 42},
+        technology_name_by_id={42: "T1"},
+    )
+    csv_result = data_processing_module.ProcessingResult(
+        has_storage=False,
+        has_udc=False,
+        sets={"YEAR": [2025], "REGION": ["R1"], "TECHNOLOGY": ["T1"]},
+        technology_id_by_name={"T1": 1},
+        technology_name_by_id={1: "T1"},
     )
     called_steps: list[str] = []
 
@@ -423,7 +432,7 @@ def test_run_data_processing_skips_postprocessing_for_preprocessed_csv_scenario(
     monkeypatch.setattr(
         data_processing_module,
         "_build_processing_result_from_csv_dir",
-        lambda _csv_dir: export_result,
+        lambda _csv_dir: csv_result,
     )
 
     result = data_processing_module.run_data_processing(
@@ -434,6 +443,11 @@ def test_run_data_processing_skips_postprocessing_for_preprocessed_csv_scenario(
 
     assert called_steps == ["light_preprocess"]
     assert result is export_result
+    assert result.sets == csv_result.sets
+    # El escenario CSV persistido conserva IDs reales de catálogo, no los IDs
+    # posicionales usados únicamente por el flujo Excel sin base de datos.
+    assert result.technology_id_by_name == {"T1": 42}
+    assert result.technology_name_by_id == {42: "T1"}
 
 
 def test_excel_preview_detects_inserts_and_apply_creates_missing_catalogs(db_session) -> None:

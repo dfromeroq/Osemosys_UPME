@@ -25,7 +25,6 @@ from app.repositories.simulation_repository import SimulationRepository
 from app.services.official_import_service import OfficialImportService
 from app.services.scenario_service import ScenarioService
 from app.services.simulation_service import SimulationService
-from app.services.sand_notebook_preprocess import run_notebook_preprocess
 
 DEFAULT_EXCEL = (
     r"C:\Users\jchav\OneDrive - Universidad de los Andes\Documentos\Trabajo UPME\Archivos osmosys\Excel\SAND_04_02_2026.xlsm"
@@ -93,6 +92,20 @@ def _build_parser() -> argparse.ArgumentParser:
         "--preserve-timeslices",
         action="store_true",
         help="Importar sin colapsar timeslices (equivalente a desmarcar el checkbox en la UI).",
+    )
+    parser.add_argument(
+        "--extra-notebook-preprocess",
+        action="store_true",
+        help=(
+            "Forzar un preprocesamiento notebook adicional después del import. "
+            "Por defecto NO se ejecuta para evitar doble procesamiento; "
+            "OfficialImportService ya aplica el preprocess requerido en hojas SAND."
+        ),
+    )
+    parser.add_argument(
+        "--extra-emission-ratios-at-input",
+        action="store_true",
+        help="Si se fuerza --extra-notebook-preprocess, también multiplica emisiones por InputActivityRatio.",
     )
     return parser
 
@@ -175,16 +188,24 @@ def main() -> int:
             if len(import_result["warnings"]) > 10:
                 print(f"    ... y {len(import_result['warnings']) - 10} avisos más.")
 
-        print(f"  Aplicando preprocesamiento tipo notebook (paridad UPME)...")
-        run_notebook_preprocess(
-            session,
-            scenario.id,
-            filter_by_sets=True,
-            complete_matrices=False,
-            emission_ratios_at_input=True,
-            generate_udc_matrices=False,
-        )
-        session.commit()
+        if args.extra_notebook_preprocess:
+            from app.services.sand_notebook_preprocess import run_notebook_preprocess
+
+            print("  Aplicando preprocesamiento notebook adicional (modo diagnóstico)...")
+            run_notebook_preprocess(
+                session,
+                scenario.id,
+                filter_by_sets=True,
+                complete_matrices=False,
+                emission_ratios_at_input=bool(args.extra_emission_ratios_at_input),
+                generate_udc_matrices=False,
+            )
+            session.commit()
+        else:
+            print(
+                "  Preprocess adicional omitido: el import oficial ya aplica el "
+                "preprocesamiento SAND necesario."
+            )
         print(f"  Ejecutando simulación (solver={args.solver})...")
         job_payload = SimulationService.submit(
             session,

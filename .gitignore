@@ -160,3 +160,6 @@ image/
 # ──────────────────────────────────────────────
 .agents/
 skills-lock.json
+
+# Backups locales del agente
+.pi-backups/

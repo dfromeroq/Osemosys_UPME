@@ -48,11 +48,18 @@ def _merge_solver_timings(timings: dict[str, float], solver_result: dict) -> Non
                 timings[str(key)] = float(val)
     cfg = solver_result.get("solver_highs_config")
     if isinstance(cfg, dict):
+        timings["solver_highs_profile"] = cfg.get("profile")
+        timings["solver_highs_threads"] = cfg.get("threads")
         timings["solver_highs_method"] = cfg.get("method")
         timings["solver_highs_use_direct"] = cfg.get("use_direct")
         timings["solver_highs_primal_tol"] = cfg.get("primal_feasibility_tolerance")
         timings["solver_highs_dual_tol"] = cfg.get("dual_feasibility_tolerance")
         timings["solver_highs_ipm_tol"] = cfg.get("ipm_optimality_tolerance")
+    glpk_cfg = solver_result.get("solver_glpk_config")
+    if isinstance(glpk_cfg, dict):
+        timings["solver_glpk_profile"] = glpk_cfg.get("profile")
+        timings["solver_glpk_time_limit"] = glpk_cfg.get("time_limit")
+        timings["solver_glpk_options"] = glpk_cfg.get("options")
 
 
 def _maybe_run_constraint_diagnostics(

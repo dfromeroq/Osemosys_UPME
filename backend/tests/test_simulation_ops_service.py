@@ -63,6 +63,11 @@ def test_simulation_ops_dashboard_counts_and_resources(db_session, monkeypatch) 
 
     monkeypatch.setattr(
         ops_module.DockerMetricsService,
+        "list_service_metrics",
+        staticmethod(lambda: []),
+    )
+    monkeypatch.setattr(
+        ops_module.DockerMetricsService,
         "list_service_memory",
         staticmethod(
             lambda: [

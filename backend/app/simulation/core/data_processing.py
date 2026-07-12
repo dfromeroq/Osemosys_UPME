@@ -40,12 +40,21 @@ from app.models import (
     Timeslice,
     UdcSet,
 )
+from app.simulation.core.canonical_csv_order import canonicalize_csv_directory
 from app.simulation.core.mode_of_operation_normalize import (
     normalize_mode_of_operation_scalar,
     normalize_mode_of_operation_series,
 )
 
 logger = logging.getLogger(__name__)
+
+# Los Excel SAND usan valores enormes (1e17/1e22) como "sin límite" de
+# emisiones, mientras las reglas Pyomo sólo reconocen 9_999_999 como sentinel
+# para omitir la restricción. Normalizarlos evita RHS extremos sin cambiar la
+# semántica económica. El umbral es deliberadamente alto para no tocar límites
+# regulatorios reales.
+UNBOUNDED_EMISSION_LIMIT_THRESHOLD = 1e15
+UNBOUNDED_EMISSION_LIMIT_SENTINEL = 9_999_999.0
 
 # Mapeo: nombre del parámetro OSeMOSYS → lista de dimensiones (columnas) del CSV.
 # Define el índice de cada parámetro para leer correctamente la fila de la BD.
@@ -329,6 +338,10 @@ def export_scenario_to_csv(
         param_rows[pname].append(record)
         total_rows += 1
 
+    # No ordenar aquí: el preproceso heredado del notebook usa en algunos
+    # puntos groupby().first(), por lo que el orden SAND del combustible forma
+    # parte de su semántica. El orden canónico se aplica sólo al resultado final.
+
     # ------------------------------------------------------------------
     # Construcción de SETS — replica SAND_SETS_to_CSV del notebook.
     # Los sets principales se derivan de parámetros específicos (no de
@@ -549,12 +562,37 @@ def export_scenario_to_csv(
 #  eliminan (dropna) para que DataPortal use el default del modelo.
 # ========================================================================
 
+def _sparse_matrix_preprocess_enabled() -> bool:
+    return str(os.getenv("OSEMOSYS_SPARSE_MATRIX_PREPROCESS", "1")).strip().lower() not in {
+        "0", "false", "off", "no",
+    }
+
+
+def _sparse_matrix_passthrough(path: str, expected_cols: list[str]) -> None:
+    """Sanea una matriz sparse sin construir el producto cartesiano temporal."""
+    df = pd.read_csv(path)
+    if "MODE_OF_OPERATION" in df.columns:
+        df["MODE_OF_OPERATION"] = normalize_mode_of_operation_series(df["MODE_OF_OPERATION"])
+    if "VALUE" in df.columns:
+        df = df.dropna(subset=["VALUE"])
+    cols = [col for col in expected_cols if col in df.columns]
+    if len(cols) == len(expected_cols):
+        df = df[expected_cols]
+    df.to_csv(path, index=False)
+
+
 def completar_Matrix_Act_Ratio(path_csv: str, variable: str) -> None:
-    """Completa la matriz de InputActivityRatio o OutputActivityRatio.
-    Genera todas las combinaciones REGION×TECHNOLOGY×FUEL×MODE_OF_OPERATION×YEAR,
-    hace merge left con los datos existentes y elimina filas sin VALUE (dropna).
-    Así DataPortal no rellena con 0 sino que usa el default del modelo para índices faltantes.
+    """Sanea Input/OutputActivityRatio; legacy puede expandir el cartesiano.
+
+    La ruta sparse produce la misma salida útil que el algoritmo legacy porque
+    éste elimina con ``dropna`` todas las combinaciones recién creadas sin
+    ``VALUE``. Evita decenas de millones de filas temporales en regional.
     """
+    expected = ["REGION", "TECHNOLOGY", "FUEL", "MODE_OF_OPERATION", "YEAR", "VALUE"]
+    if _sparse_matrix_preprocess_enabled():
+        _sparse_matrix_passthrough(path_csv + variable, expected)
+        return
+
     df = pd.read_csv(path_csv + variable)
     df["MODE_OF_OPERATION"] = normalize_mode_of_operation_series(df["MODE_OF_OPERATION"])
 
@@ -578,7 +616,11 @@ def completar_Matrix_Act_Ratio(path_csv: str, variable: str) -> None:
 
 
 def completar_Matrix_Emission(path_csv: str, variable: str) -> None:
-    """Completa la matriz de EmissionActivityRatio (REGION×TECHNOLOGY×EMISSION×MODE×YEAR)."""
+    """Sanea EmissionActivityRatio, con fallback cartesiano legacy."""
+    expected = ["REGION", "TECHNOLOGY", "EMISSION", "MODE_OF_OPERATION", "YEAR", "VALUE"]
+    if _sparse_matrix_preprocess_enabled():
+        _sparse_matrix_passthrough(path_csv + variable, expected)
+        return
     df = pd.read_csv(path_csv + variable)
     df["MODE_OF_OPERATION"] = normalize_mode_of_operation_series(df["MODE_OF_OPERATION"])
 
@@ -602,7 +644,11 @@ def completar_Matrix_Emission(path_csv: str, variable: str) -> None:
 
 
 def completar_Matrix_Storage(path_csv: str, variable: str) -> None:
-    """Completa TechnologyToStorage o TechnologyFromStorage (REGION×TECHNOLOGY×STORAGE×MODE)."""
+    """Sanea TechnologyTo/FromStorage, con fallback cartesiano legacy."""
+    expected = ["REGION", "TECHNOLOGY", "STORAGE", "MODE_OF_OPERATION", "VALUE"]
+    if _sparse_matrix_preprocess_enabled():
+        _sparse_matrix_passthrough(path_csv + variable, expected)
+        return
     df = pd.read_csv(path_csv + variable)
     df["MODE_OF_OPERATION"] = normalize_mode_of_operation_series(df["MODE_OF_OPERATION"])
 
@@ -625,6 +671,10 @@ def completar_Matrix_Storage(path_csv: str, variable: str) -> None:
 
 
 def completar_Matrix_Cost(path_csv: str, variable: str) -> None:
+    expected = ["REGION", "TECHNOLOGY", "MODE_OF_OPERATION", "YEAR", "VALUE"]
+    if _sparse_matrix_preprocess_enabled():
+        _sparse_matrix_passthrough(path_csv + variable, expected)
+        return
 
     df = pd.read_csv(path_csv + variable)
     df["MODE_OF_OPERATION"] = normalize_mode_of_operation_series(df["MODE_OF_OPERATION"])
@@ -991,6 +1041,81 @@ def apply_udc_config(db: Session, scenario_id: int, csv_dir: str) -> None:
             logger.warning("No se pudo actualizar UDCTag: %s", e)
 
 
+def normalize_effectively_unbounded_emission_limits(csv_dir: str) -> dict[str, int]:
+    """Convierte placeholders enormes de límites de emisión al sentinel del modelo.
+
+    Sólo modifica ``AnnualEmissionLimit.csv`` y ``ModelPeriodEmissionLimit.csv``
+    cuando ``abs(VALUE) >= 1e15``. Devuelve conteos por archivo para trazabilidad.
+    """
+    changed: dict[str, int] = {}
+    for filename in ("AnnualEmissionLimit.csv", "ModelPeriodEmissionLimit.csv"):
+        path = os.path.join(csv_dir, filename)
+        if not os.path.exists(path):
+            continue
+        df = pd.read_csv(path)
+        if df.empty or "VALUE" not in df.columns:
+            continue
+        values = pd.to_numeric(df["VALUE"], errors="coerce")
+        mask = values.abs() >= UNBOUNDED_EMISSION_LIMIT_THRESHOLD
+        count = int(mask.sum())
+        if count:
+            df.loc[mask, "VALUE"] = UNBOUNDED_EMISSION_LIMIT_SENTINEL
+            df.to_csv(path, index=False)
+            logger.info(
+                "%s: %d límites de emisión enormes normalizados a sentinel %.0f",
+                filename,
+                count,
+                UNBOUNDED_EMISSION_LIMIT_SENTINEL,
+            )
+        changed[filename] = count
+    return changed
+
+
+def prune_small_activity_lower_limits(
+    csv_dir: str,
+    *,
+    tolerance: float | None = None,
+) -> int:
+    """Poda mínimos de actividad positivos por debajo de una tolerancia explícita.
+
+    GLPK puede ignorar estos mínimos en modelos mal escalados, mientras HiGHS los
+    cumple estrictamente. La poda permite reproducir el comportamiento del
+    notebook GLPK, pero está desactivada por defecto. Se activa con
+    ``OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL`` o pasando ``tolerance``.
+    """
+    if tolerance is None:
+        try:
+            tolerance = float(os.getenv("OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL", "0") or 0)
+        except ValueError:
+            logger.warning("OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL inválido; se ignora")
+            tolerance = 0.0
+    tolerance = max(0.0, float(tolerance))
+    if tolerance <= 0:
+        return 0
+
+    path = os.path.join(csv_dir, "TotalTechnologyAnnualActivityLowerLimit.csv")
+    if not os.path.exists(path):
+        return 0
+    df = pd.read_csv(path)
+    if df.empty or "VALUE" not in df.columns:
+        return 0
+    values = pd.to_numeric(df["VALUE"], errors="coerce")
+    mask = (values > 0) & (values <= tolerance)
+    count = int(mask.sum())
+    if count:
+        total = float(values[mask].sum())
+        df.loc[mask, "VALUE"] = 0.0
+        df.to_csv(path, index=False)
+        logger.warning(
+            "TotalTechnologyAnnualActivityLowerLimit.csv: %d mínimos <= %.6g "
+            "podados a cero (suma=%.9g) para paridad numérica",
+            count,
+            tolerance,
+            total,
+        )
+    return count
+
+
 def apply_light_csv_preprocess(csv_dir: str) -> None:
     """Preproceso ligero alineado con el notebook (``preprocess_csv_dir``).
 
@@ -1003,6 +1128,8 @@ def apply_light_csv_preprocess(csv_dir: str) -> None:
     normalize_mode_of_operation_in_csv_dir(csv_dir)
     strip_whitespace_in_set_csvs(csv_dir)
     eliminar_valores_fuera_de_indices(csv_dir)
+    normalize_effectively_unbounded_emission_limits(csv_dir)
+    prune_small_activity_lower_limits(csv_dir)
 
 
 def reorder_activity_ratio_csvs_for_dataportal(csv_dir: str) -> None:
@@ -1184,30 +1311,17 @@ def run_data_processing_from_excel(
     # 2. Eliminar valores fuera de índices (celda 8)
     eliminar_valores_fuera_de_indices(csv_dir)
 
-    # 3. Completar matrices (celdas 9-12)
+    # 3-4. generate_csvs_from_excel ya aplicó exactamente una vez el
+    # completado sparse y las emisiones del notebook. No repetir aquí: además
+    # de trabajo duplicado, normalizar MODE antes del join cambia 660 filas del
+    # caso nacional frente a la referencia notebook.
     path_csv = csv_dir + os.sep
-    completar_Matrix_Act_Ratio(path_csv, "InputActivityRatio.csv")
-    completar_Matrix_Act_Ratio(path_csv, "OutputActivityRatio.csv")
-
-    if os.path.exists(os.path.join(csv_dir, "EMISSION.csv")):
-        completar_Matrix_Emission(path_csv, "EmissionActivityRatio.csv")
-
     storage_csvs = ["STORAGE", "SEASON", "DAYTYPE", "DAILYTIMEBRACKET"]
     has_storage = all(os.path.exists(os.path.join(csv_dir, f"{s}.csv")) for s in storage_csvs)
     if has_storage:
+        # El script notebook no incluye este paso opcional.
         completar_Matrix_Storage(path_csv, "TechnologyFromStorage.csv")
         completar_Matrix_Storage(path_csv, "TechnologyToStorage.csv")
-
-    completar_Matrix_Cost(path_csv, "VariableCost.csv")
-
-    # 4. Emisiones a la entrada (celda 13 del notebook)
-    if os.path.exists(os.path.join(csv_dir, "EMISSION.csv")):
-        process_and_save_emission_ratios(
-            "EmissionActivityRatio.csv",
-            "InputActivityRatio.csv",
-            "EmissionActivityRatio.csv",
-            path_csv,
-        )
 
     # 5. UDC — deshabilitado en modo Excel (generate_notebook_csvs crea UDC con Tag=0;
     #    eliminamos esos archivos para que has_udc=False y no se apliquen restricciones)
@@ -1229,6 +1343,7 @@ def run_data_processing_from_excel(
     #    Aplica dead_year exclusion automáticamente y reporta bound_conflicts
     #    como warnings sin corregirlos.
     quality = _apply_data_quality_validation(csv_dir, detected_during="excel")
+    canonicalize_csv_directory(csv_dir, PARAM_INDEX)
 
     # Re-leer ProcessingResult tras la posible exclusión de años.
     result = _build_processing_result_from_csv_dir(csv_dir)
@@ -1266,6 +1381,7 @@ def get_processing_result_from_csv_dir(
         quality = _apply_data_quality_validation(csv_dir, detected_during="csv")
     else:
         quality = {}
+    canonicalize_csv_directory(csv_dir, PARAM_INDEX)
     result = _build_processing_result_from_csv_dir(csv_dir)
     result.data_quality_warnings = quality
     return result
@@ -1288,6 +1404,8 @@ def _apply_data_quality_validation(
     """
     from app.simulation.core import data_validation as dv
 
+    normalize_effectively_unbounded_emission_limits(csv_dir)
+    prune_small_activity_lower_limits(csv_dir)
     report = dv.build_report(csv_dir, detected_during=detected_during)
     if report.year_exclusions:
         n_files = dv.apply_dead_year_exclusion(csv_dir, report.year_exclusions)
@@ -1329,7 +1447,15 @@ def run_data_processing(
             scenario_id,
         )
         apply_light_csv_preprocess(csv_dir)
-        return _build_processing_result_from_csv_dir(csv_dir)
+        canonicalize_csv_directory(csv_dir, PARAM_INDEX)
+        result_after = _build_processing_result_from_csv_dir(csv_dir)
+        # En escenarios persistidos los IDs de resultados deben ser los IDs
+        # reales de catálogo cargados por export_scenario_to_csv, no posiciones
+        # 1..N del archivo. Estas últimas sólo aplican al flujo Excel sin BD.
+        result.sets = result_after.sets
+        result.has_storage = result_after.has_storage
+        result.has_udc = result_after.has_udc
+        return result
 
     normalize_mode_of_operation_in_csv_dir(csv_dir)
 
@@ -1377,6 +1503,7 @@ def run_data_processing(
     #    Aplica dead_year exclusion automáticamente y reporta bound_conflicts
     #    como warnings sin corregirlos.
     quality = _apply_data_quality_validation(csv_dir, detected_during="db")
+    canonicalize_csv_directory(csv_dir, PARAM_INDEX)
 
     # Re-leer ProcessingResult tras la posible exclusión de años, y
     # adjuntar warnings.

@@ -18,8 +18,11 @@ Estructura del archivo:
 
 from __future__ import annotations
 
+import os
+
 from pyomo.environ import (
     AbstractModel,
+    Any,
     Constraint,
     NonNegativeIntegers,
     NonNegativeReals,
@@ -54,6 +57,8 @@ def create_abstract_model(
     has_storage: bool = False,
     has_udc: bool = True,
     param_defaults: Mapping[str, float] | None = None,
+    sparse_high_dim_params: bool | None = None,
+    sparse_emission_penalties: bool | None = None,
 ) -> AbstractModel:
     """Construye el AbstractModel OSeMOSYS completo.
 
@@ -63,12 +68,23 @@ def create_abstract_model(
         Si True, incluye sets/params/vars/constraints de almacenamiento.
     has_udc : bool
         Si True, incluye User-Defined Constraints.
+    sparse_high_dim_params : bool | None
+        Si True, ActivityRatio y parámetros afines almacenan sólo índices
+        presentes y usan default para ausentes. None toma la variable de entorno.
 
     Returns
     -------
     AbstractModel listo para ``model.create_instance(data)``.
     """
     defaults = _resolve_defaults(param_defaults)
+    if sparse_high_dim_params is None:
+        sparse_high_dim_params = str(
+            os.getenv("OSEMOSYS_SPARSE_HIGH_DIM_PARAMS", "1")
+        ).strip().lower() not in {"0", "false", "off", "no"}
+    if sparse_emission_penalties is None:
+        sparse_emission_penalties = str(
+            os.getenv("OSEMOSYS_SPARSE_EMISSION_PENALTIES", "1")
+        ).strip().lower() not in {"0", "false", "off", "no"}
 
     model = AbstractModel()
 
@@ -159,13 +175,16 @@ def create_abstract_model(
     )
     model.AvailabilityFactor = Param(model.REGION, model.TECHNOLOGY, model.YEAR, default=_d("availabilityfactor", defaults))
     model.ResidualCapacity = Param(model.REGION, model.TECHNOLOGY, model.YEAR, default=_d("residualcapacity", defaults))
+    _activity_ratio_index = (
+        (Any,)
+        if sparse_high_dim_params
+        else (model.REGION, model.TECHNOLOGY, model.FUEL, model.MODE_OF_OPERATION, model.YEAR)
+    )
     model.InputActivityRatio = Param(
-        model.REGION, model.TECHNOLOGY, model.FUEL, model.MODE_OF_OPERATION, model.YEAR,
-        default=_d("inputactivityratio", defaults),
+        *_activity_ratio_index, default=_d("inputactivityratio", defaults),
     )
     model.OutputActivityRatio = Param(
-        model.REGION, model.TECHNOLOGY, model.FUEL, model.MODE_OF_OPERATION, model.YEAR,
-        default=_d("outputactivityratio", defaults),
+        *_activity_ratio_index, default=_d("outputactivityratio", defaults),
     )
 
     # ====================================================================
@@ -243,9 +262,13 @@ def create_abstract_model(
     #    Parameters — Emissions & Penalties
     # ====================================================================
 
+    _emission_ratio_index = (
+        (Any,)
+        if sparse_high_dim_params
+        else (model.REGION, model.TECHNOLOGY, model.EMISSION, model.MODE_OF_OPERATION, model.YEAR)
+    )
     model.EmissionActivityRatio = Param(
-        model.REGION, model.TECHNOLOGY, model.EMISSION, model.MODE_OF_OPERATION, model.YEAR,
-        default=_d("emissionactivityratio", defaults),
+        *_emission_ratio_index, default=_d("emissionactivityratio", defaults),
     )
     model.EmissionsPenalty = Param(model.REGION, model.EMISSION, model.YEAR, default=_d("emissionspenalty", defaults))
     model.AnnualExogenousEmission = Param(
@@ -261,11 +284,16 @@ def create_abstract_model(
     #    Parameters — MUIO
     # ====================================================================
 
+    _input_capacity_ratio_index = (
+        (Any,)
+        if sparse_high_dim_params
+        else (model.REGION, model.TECHNOLOGY, model.FUEL, model.YEAR)
+    )
     model.InputToNewCapacityRatio = Param(
-        model.REGION, model.TECHNOLOGY, model.FUEL, model.YEAR, within=Reals, default=_d("inputtonewcapacityratio", defaults),
+        *_input_capacity_ratio_index, within=Reals, default=_d("inputtonewcapacityratio", defaults),
     )
     model.InputToTotalCapacityRatio = Param(
-        model.REGION, model.TECHNOLOGY, model.FUEL, model.YEAR, within=Reals, default=_d("inputtototalcapacityratio", defaults),
+        *_input_capacity_ratio_index, within=Reals, default=_d("inputtototalcapacityratio", defaults),
     )
     model.TechnologyActivityByModeLowerLimit = Param(
         model.REGION, model.TECHNOLOGY, model.MODE_OF_OPERATION, model.YEAR,
@@ -284,7 +312,7 @@ def create_abstract_model(
         within=Reals, default=_d("technologyactivityincreasebymodelimit", defaults),
     )
     model.EmissionToActivityChangeRatio = Param(
-        model.REGION, model.TECHNOLOGY, model.EMISSION, model.MODE_OF_OPERATION, model.YEAR,
+        *_emission_ratio_index,
         within=Reals, default=_d("emissiontoactivitychangeratio", defaults),
     )
 
@@ -344,6 +372,29 @@ def create_abstract_model(
 
     model.DisposalCostPerCapacity = Param(model.REGION, model.TECHNOLOGY, default=_d("disposalcostpercapacity", defaults))
     model.RecoveryValuePerCapacity = Param(model.REGION, model.TECHNOLOGY, default=_d("recoveryvaluepercapacity", defaults))
+
+    if sparse_emission_penalties:
+        def _penalty_emission_index_init(m):
+            return (
+                (r, t, e, y)
+                for r in m.REGION
+                for e in m.EMISSION
+                for y in m.YEAR
+                if m.EmissionsPenalty[r, e, y] != 0
+                for t in m.TECHNOLOGY
+            )
+
+        def _penalty_tech_year_index_init(m):
+            active = {
+                (r, t, y)
+                for r, t, _e, y in m.EMISSION_PENALTY_INDEX
+            }
+            return sorted(active, key=lambda item: tuple(map(str, item)))
+
+        model.EMISSION_PENALTY_INDEX = Set(dimen=4, initialize=_penalty_emission_index_init)
+        model.EMISSION_PENALTY_TECH_YEAR_INDEX = Set(
+            dimen=3, initialize=_penalty_tech_year_index_init
+        )
 
     # ====================================================================
     #    Variables — Capacity
@@ -452,18 +503,32 @@ def create_abstract_model(
         model.REGION, model.TECHNOLOGY, model.EMISSION, model.YEAR,
         domain=NonNegativeReals, initialize=0.0,
     )
-    model.AnnualTechnologyEmissionPenaltyByEmission = Var(
-        model.REGION, model.TECHNOLOGY, model.EMISSION, model.YEAR,
-        domain=NonNegativeReals, initialize=0.0,
-    )
-    model.AnnualTechnologyEmissionsPenalty = Var(
-        model.REGION, model.TECHNOLOGY, model.YEAR,
-        domain=NonNegativeReals, initialize=0.0,
-    )
-    model.DiscountedTechnologyEmissionsPenalty = Var(
-        model.REGION, model.TECHNOLOGY, model.YEAR,
-        domain=NonNegativeReals, initialize=0.0,
-    )
+    if sparse_emission_penalties:
+        model.AnnualTechnologyEmissionPenaltyByEmission = Var(
+            model.EMISSION_PENALTY_INDEX,
+            domain=NonNegativeReals, initialize=0.0,
+        )
+        model.AnnualTechnologyEmissionsPenalty = Var(
+            model.EMISSION_PENALTY_TECH_YEAR_INDEX,
+            domain=NonNegativeReals, initialize=0.0,
+        )
+        model.DiscountedTechnologyEmissionsPenalty = Var(
+            model.EMISSION_PENALTY_TECH_YEAR_INDEX,
+            domain=NonNegativeReals, initialize=0.0,
+        )
+    else:
+        model.AnnualTechnologyEmissionPenaltyByEmission = Var(
+            model.REGION, model.TECHNOLOGY, model.EMISSION, model.YEAR,
+            domain=NonNegativeReals, initialize=0.0,
+        )
+        model.AnnualTechnologyEmissionsPenalty = Var(
+            model.REGION, model.TECHNOLOGY, model.YEAR,
+            domain=NonNegativeReals, initialize=0.0,
+        )
+        model.DiscountedTechnologyEmissionsPenalty = Var(
+            model.REGION, model.TECHNOLOGY, model.YEAR,
+            domain=NonNegativeReals, initialize=0.0,
+        )
     model.AnnualEmissions = Var(
         model.REGION, model.EMISSION, model.YEAR,
         domain=NonNegativeReals, initialize=0.0,
@@ -835,10 +900,16 @@ def create_abstract_model(
     # ####################################################################
 
     def TotalDiscountedCostByTechnology_rule(m, r, t, y):
+        emission_penalty = (
+            m.DiscountedTechnologyEmissionsPenalty[r, t, y]
+            if not sparse_emission_penalties
+            or (r, t, y) in m.EMISSION_PENALTY_TECH_YEAR_INDEX
+            else 0.0
+        )
         return (
             m.DiscountedOperatingCost[r, t, y]
             + m.DiscountedCapitalInvestment[r, t, y]
-            + m.DiscountedTechnologyEmissionsPenalty[r, t, y]
+            + emission_penalty
             - m.DiscountedSalvageValue[r, t, y]
             + m.DiscountedDisposalCost[r, t, y]
             - m.DiscountedRecoveryValue[r, t, y]
@@ -1087,18 +1158,34 @@ def create_abstract_model(
             m.AnnualTechnologyEmission[r, t, e, y] * m.EmissionsPenalty[r, e, y]
             == m.AnnualTechnologyEmissionPenaltyByEmission[r, t, e, y]
         )
-    model.EmissionPenaltyByTechAndEmission = Constraint(
-        model.REGION, model.TECHNOLOGY, model.EMISSION, model.YEAR,
-        rule=EmissionPenaltyByTechAndEmission_rule,
-    )
+    if sparse_emission_penalties:
+        model.EmissionPenaltyByTechAndEmission = Constraint(
+            model.EMISSION_PENALTY_INDEX,
+            rule=EmissionPenaltyByTechAndEmission_rule,
+        )
+    else:
+        model.EmissionPenaltyByTechAndEmission = Constraint(
+            model.REGION, model.TECHNOLOGY, model.EMISSION, model.YEAR,
+            rule=EmissionPenaltyByTechAndEmission_rule,
+        )
 
     def EmissionsPenaltyByTechnology_rule(m, r, t, y):
+        active_emissions = (
+            (e for e in m.EMISSION if (r, t, e, y) in m.EMISSION_PENALTY_INDEX)
+            if sparse_emission_penalties
+            else iter(m.EMISSION)
+        )
         return (
-            sum(m.AnnualTechnologyEmissionPenaltyByEmission[r, t, e, y] for e in m.EMISSION)
+            sum(m.AnnualTechnologyEmissionPenaltyByEmission[r, t, e, y] for e in active_emissions)
             == m.AnnualTechnologyEmissionsPenalty[r, t, y]
         )
+    _penalty_tech_year_index = (
+        (model.EMISSION_PENALTY_TECH_YEAR_INDEX,)
+        if sparse_emission_penalties
+        else (model.REGION, model.TECHNOLOGY, model.YEAR)
+    )
     model.EmissionsPenaltyByTechnology = Constraint(
-        model.REGION, model.TECHNOLOGY, model.YEAR,
+        *_penalty_tech_year_index,
         rule=EmissionsPenaltyByTechnology_rule,
     )
 
@@ -1109,7 +1196,7 @@ def create_abstract_model(
             == m.DiscountedTechnologyEmissionsPenalty[r, t, y]
         )
     model.DiscountedEmissionsPenaltyByTechnology = Constraint(
-        model.REGION, model.TECHNOLOGY, model.YEAR,
+        *_penalty_tech_year_index,
         rule=DiscountedEmissionsPenaltyByTechnology_rule,
     )
 
@@ -1226,6 +1313,8 @@ def create_abstract_model(
     )
 
     def LU2_rule(m, r, t, mo, y):
+        if m.TechnologyActivityByModeLowerLimit[r, t, mo, y] == 0:
+            return Constraint.Skip
         return (
             sum(m.RateOfActivity[r, l, t, mo, y] * m.YearSplit[l, y] for l in m.TIMESLICE)
             >= m.TechnologyActivityByModeLowerLimit[r, t, mo, y]
