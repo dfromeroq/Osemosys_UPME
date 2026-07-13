@@ -3,6 +3,7 @@
 Guía E2E complementaria: [README_E2E.md](../README_E2E.md).
 Guía backend local sin Docker: [docs/LOCAL_BACKEND_SIN_DOCKER.md](../docs/LOCAL_BACKEND_SIN_DOCKER.md).
 Arquitectura C4 y mapa de módulos: `docs/ARCHITECTURE.md`.
+Post-procesamiento de factores de empleo: `docs/EMPLOYMENT_FACTORS.md`.
 
 ---
 
