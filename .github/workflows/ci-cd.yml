@@ -113,24 +113,6 @@ jobs:
           echo "Deploying commit ${ACTUAL_SHA}"
           git status --short
 
-      - name: Restore Gurobi License From Persistent Storage
-        run: |
-          PERSISTENT_LIC="${HOME}/actions-runner-upme-backend/persistent-secrets/gurobi.lic"
-          if [ ! -f "${PERSISTENT_LIC}" ]; then
-            echo "::error::Falta la licencia persistente en ${PERSISTENT_LIC}. Cargala una vez en el runner self-hosted (mkdir -p ese directorio y poné ahí gurobi.lic con chmod 600 y chown procesa01)."
-            exit 1
-          fi
-          mkdir -p secrets
-          cp "${PERSISTENT_LIC}" secrets/gurobi.lic
-          chmod 600 secrets/gurobi.lic
-
-      - name: Validate Gurobi License Present
-        run: |
-          if [ ! -e secrets/gurobi.lic ] || [ -d secrets/gurobi.lic ]; then
-            echo "::error::secrets/gurobi.lic no existe o es un directorio. El runner self-hosted debe tener la licencia (o un placeholder vacío) en esa ruta como archivo regular propiedad del usuario del runner."
-            exit 1
-          fi
-
       - name: Validate Required Secrets
         env:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
@@ -174,15 +156,31 @@ jobs:
           SIM_TOTAL_WEIGHT_LIMIT: ${{ vars.SIM_TOTAL_WEIGHT_LIMIT }}
           SIM_WEIGHT_NATIONAL: ${{ vars.SIM_WEIGHT_NATIONAL }}
           SIM_WEIGHT_REGIONAL: ${{ vars.SIM_WEIGHT_REGIONAL }}
+          SIM_SOLVER_THREADS: ${{ vars.SIM_SOLVER_THREADS }}
+          SIM_SOLVER_PROFILE: ${{ vars.SIM_SOLVER_PROFILE }}
           SIM_SOLVER_HIGHS_METHOD: ${{ vars.SIM_SOLVER_HIGHS_METHOD }}
           SIM_SOLVER_HIGHS_PRESOLVE: ${{ vars.SIM_SOLVER_HIGHS_PRESOLVE }}
           SIM_SOLVER_HIGHS_PARALLEL: ${{ vars.SIM_SOLVER_HIGHS_PARALLEL }}
           SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE: ${{ vars.SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE }}
           SIM_SOLVER_HIGHS_CROSSOVER: ${{ vars.SIM_SOLVER_HIGHS_CROSSOVER }}
+          SIM_SOLVER_HIGHS_OPTIONS_JSON: ${{ vars.SIM_SOLVER_HIGHS_OPTIONS_JSON }}
           SIM_SOLVER_HIGHS_DIRECT: ${{ vars.SIM_SOLVER_HIGHS_DIRECT }}
           SIM_SOLVER_HIGHS_TIME_LIMIT: ${{ vars.SIM_SOLVER_HIGHS_TIME_LIMIT }}
           SIM_SOLVER_HIGHS_IPM_TOL: ${{ vars.SIM_SOLVER_HIGHS_IPM_TOL }}
           SIM_SOLVER_HIGHS_PRIMAL_TOL: ${{ vars.SIM_SOLVER_HIGHS_PRIMAL_TOL }}
+          SIM_SOLVER_HIGHS_DUAL_TOL: ${{ vars.SIM_SOLVER_HIGHS_DUAL_TOL }}
+          SIM_SOLVER_GLPK_PROFILE: ${{ vars.SIM_SOLVER_GLPK_PROFILE }}
+          SIM_SOLVER_GLPK_TIME_LIMIT: ${{ vars.SIM_SOLVER_GLPK_TIME_LIMIT }}
+          SIM_SOLVER_GLPK_OPTIONS_JSON: ${{ vars.SIM_SOLVER_GLPK_OPTIONS_JSON }}
+          OSEMOSYS_FAST_DATAPORTAL: ${{ vars.OSEMOSYS_FAST_DATAPORTAL }}
+          OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL: ${{ vars.OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL }}
+          OSEMOSYS_SPARSE_MATRIX_PREPROCESS: ${{ vars.OSEMOSYS_SPARSE_MATRIX_PREPROCESS }}
+          OSEMOSYS_SPARSE_HIGH_DIM_PARAMS: ${{ vars.OSEMOSYS_SPARSE_HIGH_DIM_PARAMS }}
+          OSEMOSYS_SPARSE_EMISSION_PENALTIES: ${{ vars.OSEMOSYS_SPARSE_EMISSION_PENALTIES }}
+          OSEMOSYS_PYOMO_REPORT_TIMING: ${{ vars.OSEMOSYS_PYOMO_REPORT_TIMING }}
+          OMP_NUM_THREADS: ${{ vars.OMP_NUM_THREADS }}
+          OPENBLAS_NUM_THREADS: ${{ vars.OPENBLAS_NUM_THREADS }}
+          MKL_NUM_THREADS: ${{ vars.MKL_NUM_THREADS }}
           HIGHS_BUILD_FROM_SOURCE: ${{ vars.HIGHS_BUILD_FROM_SOURCE }}
           HIGHS_GIT_REF: ${{ vars.HIGHS_GIT_REF }}
           HIGHS_ENABLE_HIPO: ${{ vars.HIGHS_ENABLE_HIPO }}
@@ -215,21 +213,37 @@ jobs:
           BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}" \
           RUN_SEED="${RUN_SEED:-0}" \
           SYNC_APP_USERS="${SYNC_APP_USERS:-0}" \
-          SIM_WORKER_REPLICAS="${SIM_WORKER_REPLICAS:-2}" \
-          SIM_MAX_CONCURRENCY="${SIM_MAX_CONCURRENCY:-2}" \
+          SIM_WORKER_REPLICAS="${SIM_WORKER_REPLICAS:-1}" \
+          SIM_MAX_CONCURRENCY="${SIM_MAX_CONCURRENCY:-1}" \
           SIM_USER_ACTIVE_LIMIT="${SIM_USER_ACTIVE_LIMIT:-3}" \
           SIM_TOTAL_WEIGHT_LIMIT="${SIM_TOTAL_WEIGHT_LIMIT:-8}" \
           SIM_WEIGHT_NATIONAL="${SIM_WEIGHT_NATIONAL:-1}" \
           SIM_WEIGHT_REGIONAL="${SIM_WEIGHT_REGIONAL:-3}" \
-          SIM_SOLVER_HIGHS_METHOD="${SIM_SOLVER_HIGHS_METHOD:-ipm}" \
-          SIM_SOLVER_HIGHS_PRESOLVE="${SIM_SOLVER_HIGHS_PRESOLVE:-on}" \
-          SIM_SOLVER_HIGHS_PARALLEL="${SIM_SOLVER_HIGHS_PARALLEL:-on}" \
+          SIM_SOLVER_THREADS="${SIM_SOLVER_THREADS:-0}" \
+          SIM_SOLVER_PROFILE="${SIM_SOLVER_PROFILE:-default}" \
+          SIM_SOLVER_HIGHS_METHOD="${SIM_SOLVER_HIGHS_METHOD:-}" \
+          SIM_SOLVER_HIGHS_PRESOLVE="${SIM_SOLVER_HIGHS_PRESOLVE:-}" \
+          SIM_SOLVER_HIGHS_PARALLEL="${SIM_SOLVER_HIGHS_PARALLEL:-}" \
           SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE="${SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE:-}" \
-          SIM_SOLVER_HIGHS_CROSSOVER="${SIM_SOLVER_HIGHS_CROSSOVER:-choose}" \
+          SIM_SOLVER_HIGHS_CROSSOVER="${SIM_SOLVER_HIGHS_CROSSOVER:-}" \
+          SIM_SOLVER_HIGHS_OPTIONS_JSON="${SIM_SOLVER_HIGHS_OPTIONS_JSON:-}" \
           SIM_SOLVER_HIGHS_DIRECT="${SIM_SOLVER_HIGHS_DIRECT:-true}" \
           SIM_SOLVER_HIGHS_TIME_LIMIT="${SIM_SOLVER_HIGHS_TIME_LIMIT:-0}" \
           SIM_SOLVER_HIGHS_IPM_TOL="${SIM_SOLVER_HIGHS_IPM_TOL:-1e-7}" \
           SIM_SOLVER_HIGHS_PRIMAL_TOL="${SIM_SOLVER_HIGHS_PRIMAL_TOL:-1e-7}" \
+          SIM_SOLVER_HIGHS_DUAL_TOL="${SIM_SOLVER_HIGHS_DUAL_TOL:-1e-7}" \
+          SIM_SOLVER_GLPK_PROFILE="${SIM_SOLVER_GLPK_PROFILE:-fast}" \
+          SIM_SOLVER_GLPK_TIME_LIMIT="${SIM_SOLVER_GLPK_TIME_LIMIT:-0}" \
+          SIM_SOLVER_GLPK_OPTIONS_JSON="${SIM_SOLVER_GLPK_OPTIONS_JSON:-}" \
+          OSEMOSYS_FAST_DATAPORTAL="${OSEMOSYS_FAST_DATAPORTAL:-1}" \
+          OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL="${OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL:-0}" \
+          OSEMOSYS_SPARSE_MATRIX_PREPROCESS="${OSEMOSYS_SPARSE_MATRIX_PREPROCESS:-1}" \
+          OSEMOSYS_SPARSE_HIGH_DIM_PARAMS="${OSEMOSYS_SPARSE_HIGH_DIM_PARAMS:-1}" \
+          OSEMOSYS_SPARSE_EMISSION_PENALTIES="${OSEMOSYS_SPARSE_EMISSION_PENALTIES:-1}" \
+          OSEMOSYS_PYOMO_REPORT_TIMING="${OSEMOSYS_PYOMO_REPORT_TIMING:-0}" \
+          OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}" \
+          OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-4}" \
+          MKL_NUM_THREADS="${MKL_NUM_THREADS:-4}" \
           HIGHS_BUILD_FROM_SOURCE="${HIGHS_BUILD_FROM_SOURCE:-0}" \
           HIGHS_GIT_REF="${HIGHS_GIT_REF:-master}" \
           HIGHS_ENABLE_HIPO="${HIGHS_ENABLE_HIPO:-0}" \
@@ -295,24 +309,6 @@ jobs:
           echo "Deploying commit ${ACTUAL_SHA}"
           git status --short
 
-      - name: Restore Gurobi License From Persistent Storage
-        run: |
-          PERSISTENT_LIC="${HOME}/actions-runner-upme-backend/persistent-secrets/gurobi.lic"
-          if [ ! -f "${PERSISTENT_LIC}" ]; then
-            echo "::error::Falta la licencia persistente en ${PERSISTENT_LIC}. Cargala una vez en el runner self-hosted (mkdir -p ese directorio y poné ahí gurobi.lic con chmod 600 y chown procesa01)."
-            exit 1
-          fi
-          mkdir -p secrets
-          cp "${PERSISTENT_LIC}" secrets/gurobi.lic
-          chmod 600 secrets/gurobi.lic
-
-      - name: Validate Gurobi License Present
-        run: |
-          if [ ! -e secrets/gurobi.lic ] || [ -d secrets/gurobi.lic ]; then
-            echo "::error::secrets/gurobi.lic no existe o es un directorio. El runner self-hosted debe tener la licencia (o un placeholder vacío) en esa ruta como archivo regular propiedad del usuario del runner."
-            exit 1
-          fi
-
       - name: Validate Required Secrets
         env:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
@@ -356,15 +352,31 @@ jobs:
           SIM_TOTAL_WEIGHT_LIMIT: ${{ vars.SIM_TOTAL_WEIGHT_LIMIT }}
           SIM_WEIGHT_NATIONAL: ${{ vars.SIM_WEIGHT_NATIONAL }}
           SIM_WEIGHT_REGIONAL: ${{ vars.SIM_WEIGHT_REGIONAL }}
+          SIM_SOLVER_THREADS: ${{ vars.SIM_SOLVER_THREADS }}
+          SIM_SOLVER_PROFILE: ${{ vars.SIM_SOLVER_PROFILE }}
           SIM_SOLVER_HIGHS_METHOD: ${{ vars.SIM_SOLVER_HIGHS_METHOD }}
           SIM_SOLVER_HIGHS_PRESOLVE: ${{ vars.SIM_SOLVER_HIGHS_PRESOLVE }}
           SIM_SOLVER_HIGHS_PARALLEL: ${{ vars.SIM_SOLVER_HIGHS_PARALLEL }}
           SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE: ${{ vars.SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE }}
           SIM_SOLVER_HIGHS_CROSSOVER: ${{ vars.SIM_SOLVER_HIGHS_CROSSOVER }}
+          SIM_SOLVER_HIGHS_OPTIONS_JSON: ${{ vars.SIM_SOLVER_HIGHS_OPTIONS_JSON }}
           SIM_SOLVER_HIGHS_DIRECT: ${{ vars.SIM_SOLVER_HIGHS_DIRECT }}
           SIM_SOLVER_HIGHS_TIME_LIMIT: ${{ vars.SIM_SOLVER_HIGHS_TIME_LIMIT }}
           SIM_SOLVER_HIGHS_IPM_TOL: ${{ vars.SIM_SOLVER_HIGHS_IPM_TOL }}
           SIM_SOLVER_HIGHS_PRIMAL_TOL: ${{ vars.SIM_SOLVER_HIGHS_PRIMAL_TOL }}
+          SIM_SOLVER_HIGHS_DUAL_TOL: ${{ vars.SIM_SOLVER_HIGHS_DUAL_TOL }}
+          SIM_SOLVER_GLPK_PROFILE: ${{ vars.SIM_SOLVER_GLPK_PROFILE }}
+          SIM_SOLVER_GLPK_TIME_LIMIT: ${{ vars.SIM_SOLVER_GLPK_TIME_LIMIT }}
+          SIM_SOLVER_GLPK_OPTIONS_JSON: ${{ vars.SIM_SOLVER_GLPK_OPTIONS_JSON }}
+          OSEMOSYS_FAST_DATAPORTAL: ${{ vars.OSEMOSYS_FAST_DATAPORTAL }}
+          OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL: ${{ vars.OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL }}
+          OSEMOSYS_SPARSE_MATRIX_PREPROCESS: ${{ vars.OSEMOSYS_SPARSE_MATRIX_PREPROCESS }}
+          OSEMOSYS_SPARSE_HIGH_DIM_PARAMS: ${{ vars.OSEMOSYS_SPARSE_HIGH_DIM_PARAMS }}
+          OSEMOSYS_SPARSE_EMISSION_PENALTIES: ${{ vars.OSEMOSYS_SPARSE_EMISSION_PENALTIES }}
+          OSEMOSYS_PYOMO_REPORT_TIMING: ${{ vars.OSEMOSYS_PYOMO_REPORT_TIMING }}
+          OMP_NUM_THREADS: ${{ vars.OMP_NUM_THREADS }}
+          OPENBLAS_NUM_THREADS: ${{ vars.OPENBLAS_NUM_THREADS }}
+          MKL_NUM_THREADS: ${{ vars.MKL_NUM_THREADS }}
           HIGHS_BUILD_FROM_SOURCE: ${{ vars.HIGHS_BUILD_FROM_SOURCE }}
           HIGHS_GIT_REF: ${{ vars.HIGHS_GIT_REF }}
           HIGHS_ENABLE_HIPO: ${{ vars.HIGHS_ENABLE_HIPO }}
@@ -416,21 +428,37 @@ jobs:
           BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}" \
           RUN_SEED="${RUN_SEED:-1}" \
           SYNC_APP_USERS="${SYNC_APP_USERS:-1}" \
-          SIM_WORKER_REPLICAS="${SIM_WORKER_REPLICAS:-2}" \
-          SIM_MAX_CONCURRENCY="${SIM_MAX_CONCURRENCY:-2}" \
+          SIM_WORKER_REPLICAS="${SIM_WORKER_REPLICAS:-1}" \
+          SIM_MAX_CONCURRENCY="${SIM_MAX_CONCURRENCY:-1}" \
           SIM_USER_ACTIVE_LIMIT="${SIM_USER_ACTIVE_LIMIT:-3}" \
           SIM_TOTAL_WEIGHT_LIMIT="${SIM_TOTAL_WEIGHT_LIMIT:-8}" \
           SIM_WEIGHT_NATIONAL="${SIM_WEIGHT_NATIONAL:-1}" \
           SIM_WEIGHT_REGIONAL="${SIM_WEIGHT_REGIONAL:-3}" \
-          SIM_SOLVER_HIGHS_METHOD="${SIM_SOLVER_HIGHS_METHOD:-ipm}" \
-          SIM_SOLVER_HIGHS_PRESOLVE="${SIM_SOLVER_HIGHS_PRESOLVE:-on}" \
-          SIM_SOLVER_HIGHS_PARALLEL="${SIM_SOLVER_HIGHS_PARALLEL:-on}" \
+          SIM_SOLVER_THREADS="${SIM_SOLVER_THREADS:-0}" \
+          SIM_SOLVER_PROFILE="${SIM_SOLVER_PROFILE:-default}" \
+          SIM_SOLVER_HIGHS_METHOD="${SIM_SOLVER_HIGHS_METHOD:-}" \
+          SIM_SOLVER_HIGHS_PRESOLVE="${SIM_SOLVER_HIGHS_PRESOLVE:-}" \
+          SIM_SOLVER_HIGHS_PARALLEL="${SIM_SOLVER_HIGHS_PARALLEL:-}" \
           SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE="${SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE:-}" \
-          SIM_SOLVER_HIGHS_CROSSOVER="${SIM_SOLVER_HIGHS_CROSSOVER:-choose}" \
+          SIM_SOLVER_HIGHS_CROSSOVER="${SIM_SOLVER_HIGHS_CROSSOVER:-}" \
+          SIM_SOLVER_HIGHS_OPTIONS_JSON="${SIM_SOLVER_HIGHS_OPTIONS_JSON:-}" \
           SIM_SOLVER_HIGHS_DIRECT="${SIM_SOLVER_HIGHS_DIRECT:-true}" \
           SIM_SOLVER_HIGHS_TIME_LIMIT="${SIM_SOLVER_HIGHS_TIME_LIMIT:-0}" \
           SIM_SOLVER_HIGHS_IPM_TOL="${SIM_SOLVER_HIGHS_IPM_TOL:-1e-7}" \
           SIM_SOLVER_HIGHS_PRIMAL_TOL="${SIM_SOLVER_HIGHS_PRIMAL_TOL:-1e-7}" \
+          SIM_SOLVER_HIGHS_DUAL_TOL="${SIM_SOLVER_HIGHS_DUAL_TOL:-1e-7}" \
+          SIM_SOLVER_GLPK_PROFILE="${SIM_SOLVER_GLPK_PROFILE:-fast}" \
+          SIM_SOLVER_GLPK_TIME_LIMIT="${SIM_SOLVER_GLPK_TIME_LIMIT:-0}" \
+          SIM_SOLVER_GLPK_OPTIONS_JSON="${SIM_SOLVER_GLPK_OPTIONS_JSON:-}" \
+          OSEMOSYS_FAST_DATAPORTAL="${OSEMOSYS_FAST_DATAPORTAL:-1}" \
+          OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL="${OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL:-0}" \
+          OSEMOSYS_SPARSE_MATRIX_PREPROCESS="${OSEMOSYS_SPARSE_MATRIX_PREPROCESS:-1}" \
+          OSEMOSYS_SPARSE_HIGH_DIM_PARAMS="${OSEMOSYS_SPARSE_HIGH_DIM_PARAMS:-1}" \
+          OSEMOSYS_SPARSE_EMISSION_PENALTIES="${OSEMOSYS_SPARSE_EMISSION_PENALTIES:-1}" \
+          OSEMOSYS_PYOMO_REPORT_TIMING="${OSEMOSYS_PYOMO_REPORT_TIMING:-0}" \
+          OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}" \
+          OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-4}" \
+          MKL_NUM_THREADS="${MKL_NUM_THREADS:-4}" \
           HIGHS_BUILD_FROM_SOURCE="${HIGHS_BUILD_FROM_SOURCE:-0}" \
           HIGHS_GIT_REF="${HIGHS_GIT_REF:-master}" \
           HIGHS_ENABLE_HIPO="${HIGHS_ENABLE_HIPO:-0}" \
