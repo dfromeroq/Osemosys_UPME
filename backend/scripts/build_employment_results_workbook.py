@@ -25,6 +25,8 @@ if str(BACKEND_DIR) not in sys.path:
 from app.services.employment_factors_service import (  # noqa: E402
     CONSTRUCTION_FACTOR_TYPE,
     DIRECT_JOB_TYPE,
+    EMPLOYMENT_FTEYEAR_CONSMANU_DIRECT,
+    EMPLOYMENT_FTE_OM_DIRECT_ANNUAL,
     OM_FACTOR_TYPE,
     OPTIMIZATION_START_YEAR,
     load_model_employment_factors,
@@ -38,8 +40,8 @@ INPUT_VARIABLES = {
     "AccumulatedNewCapacity": OM_FACTOR_TYPE,
 }
 EMPLOYMENT_VARIABLE_BY_FACTOR_TYPE = {
-    CONSTRUCTION_FACTOR_TYPE: "EmploymentConstructionManufacturingDirect",
-    OM_FACTOR_TYPE: "EmploymentOMDirect",
+    CONSTRUCTION_FACTOR_TYPE: EMPLOYMENT_FTEYEAR_CONSMANU_DIRECT,
+    OM_FACTOR_TYPE: EMPLOYMENT_FTE_OM_DIRECT_ANNUAL,
 }
 FORMULA_COLUMNS = {
     "value_pj_per_year",
