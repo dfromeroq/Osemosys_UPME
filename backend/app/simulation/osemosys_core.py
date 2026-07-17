@@ -39,13 +39,17 @@ from app.simulation.core.solver import solve_model
 logger = logging.getLogger(__name__)
 
 
-def _merge_solver_timings(timings: dict[str, float], solver_result: dict) -> None:
-    """Inyecta sub-etapas del solve en ``model_timings`` del job."""
+def _merge_solver_timings(timings: dict[str, Any], solver_result: dict) -> None:
+    """Inyecta sub-etapas y estados del solve en ``model_timings`` del job."""
     st = solver_result.get("solver_timings")
     if isinstance(st, dict):
         for key, val in st.items():
-            if isinstance(val, (int, float)):
+            if isinstance(val, bool):
+                timings[str(key)] = val
+            elif isinstance(val, (int, float)):
                 timings[str(key)] = float(val)
+            elif isinstance(val, str):
+                timings[str(key)] = val
     cfg = solver_result.get("solver_highs_config")
     if isinstance(cfg, dict):
         timings["solver_highs_profile"] = cfg.get("profile")

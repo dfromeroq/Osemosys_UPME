@@ -56,6 +56,15 @@ logger = logging.getLogger(__name__)
 UNBOUNDED_EMISSION_LIMIT_THRESHOLD = 1e15
 UNBOUNDED_EMISSION_LIMIT_SENTINEL = 9_999_999.0
 
+# Algunos archivos regionales contienen 2.56e-308 como placeholder de cero.
+# Esas magnitudes no tienen significado físico y generan RHS subnormales que
+# vuelven numéricamente frágil la factorización simplex de HiGHS.
+SUBNORMAL_PARAMETER_THRESHOLD = 1e-300
+SUBNORMAL_PARAMETER_FILES = (
+    "ResidualCapacity.csv",
+    "TotalTechnologyAnnualActivityLowerLimit.csv",
+)
+
 # Mapeo: nombre del parámetro OSeMOSYS → lista de dimensiones (columnas) del CSV.
 # Define el índice de cada parámetro para leer correctamente la fila de la BD.
 PARAM_INDEX: dict[str, list[str]] = {
@@ -1071,6 +1080,48 @@ def normalize_effectively_unbounded_emission_limits(csv_dir: str) -> dict[str, i
     return changed
 
 
+def normalize_subnormal_parameter_values(
+    csv_dir: str,
+    *,
+    threshold: float = SUBNORMAL_PARAMETER_THRESHOLD,
+) -> dict[str, int]:
+    """Convierte placeholders subnormales efectivamente nulos a cero.
+
+    Se limita a parámetros donde el dataset regional histórico usa valores
+    cercanos al mínimo representable de ``float64`` como sentinel. No toca
+    valores físicos pequeños ordinarios ni aplica escalado al modelo.
+    """
+    threshold = max(0.0, float(threshold))
+    changed: dict[str, int] = {}
+    if threshold <= 0:
+        return changed
+
+    for filename in SUBNORMAL_PARAMETER_FILES:
+        path = os.path.join(csv_dir, filename)
+        if not os.path.exists(path):
+            continue
+        df = pd.read_csv(path)
+        if df.empty or "VALUE" not in df.columns:
+            continue
+        values = pd.to_numeric(df["VALUE"], errors="coerce")
+        mask = (values != 0) & (values.abs() < threshold)
+        count = int(mask.sum())
+        if count:
+            min_abs = float(values[mask].abs().min())
+            df.loc[mask, "VALUE"] = 0.0
+            df.to_csv(path, index=False)
+            logger.warning(
+                "%s: %d valores subnormales (min=%.3g, abs<%.1e) "
+                "normalizados a cero",
+                filename,
+                count,
+                min_abs,
+                threshold,
+            )
+        changed[filename] = count
+    return changed
+
+
 def prune_small_activity_lower_limits(
     csv_dir: str,
     *,
@@ -1129,6 +1180,7 @@ def apply_light_csv_preprocess(csv_dir: str) -> None:
     strip_whitespace_in_set_csvs(csv_dir)
     eliminar_valores_fuera_de_indices(csv_dir)
     normalize_effectively_unbounded_emission_limits(csv_dir)
+    normalize_subnormal_parameter_values(csv_dir)
     prune_small_activity_lower_limits(csv_dir)
 
 
@@ -1405,6 +1457,7 @@ def _apply_data_quality_validation(
     from app.simulation.core import data_validation as dv
 
     normalize_effectively_unbounded_emission_limits(csv_dir)
+    normalize_subnormal_parameter_values(csv_dir)
     prune_small_activity_lower_limits(csv_dir)
     report = dv.build_report(csv_dir, detected_during=detected_during)
     if report.year_exclusions:
