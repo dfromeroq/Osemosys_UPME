@@ -23,6 +23,16 @@ from app.simulation.pipeline import run_pipeline, run_pipeline_from_csv
 logger = logging.getLogger(__name__)
 
 
+def _persist_solver_failure_metadata(job: SimulationJob, exc: Exception) -> None:
+    metadata = getattr(exc, "solver_failure_metadata", None)
+    if not isinstance(metadata, dict):
+        return
+    job.model_timings_json = {
+        **dict(job.model_timings_json or {}),
+        **metadata,
+    }
+
+
 def _resolve_csv_upload_cleanup_root(input_ref: str | None) -> Path | None:
     if not input_ref:
         return None
@@ -228,6 +238,7 @@ def run_simulation_job(self, job_id: int) -> None:
                 job.status = "FAILED"
                 job.finished_at = func.now()
                 job.error_message = str(exc)
+                _persist_solver_failure_metadata(job, exc)
                 SimulationRepository.add_event(
                     db,
                     job_id=job_id,
@@ -244,6 +255,7 @@ def run_simulation_job(self, job_id: int) -> None:
                 job.status = "FAILED"
                 job.finished_at = func.now()
                 job.error_message = str(exc)
+                _persist_solver_failure_metadata(job, exc)
                 SimulationRepository.add_event(
                     db,
                     job_id=job_id,

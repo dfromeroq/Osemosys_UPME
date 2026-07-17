@@ -37,7 +37,10 @@ DEFAULT_EXCEL = (
 
 
 def SAND_to_CSV(df, param, path_csv, div):
-    df_param = df[df["Parameter"] == param].dropna(axis=1)
+    # Una columna anual parcialmente vacía sigue siendo un año válido. El
+    # comportamiento anterior (how="any") eliminaba, por ejemplo, 2055 para
+    # TODO el parámetro si una sola tecnología tenía la celda vacía.
+    df_param = df[df["Parameter"] == param].dropna(axis=1, how="all")
     year = df_param.columns[df_param.columns.to_series().apply(pd.to_numeric, errors='coerce').notna()]
     sets = df_param.columns[~df_param.columns.isin(year) & (df_param.columns != 'Parameter')].tolist()
 
@@ -98,14 +101,16 @@ def SAND_to_CSV(df, param, path_csv, div):
             df_TUPLES[sets] = pd.DataFrame(df_TUPLES['SETS'].tolist(), index=df_TUPLES.index)
             df_TUPLES = df_TUPLES.drop(['index', 'SETS'], axis=1)
             df_TUPLES = df_TUPLES[sets + ['YEAR'] + ['VALUE']]
-            df_TUPLES = df_TUPLES.dropna(axis=1)
+            # Las celdas anuales vacías representan combinaciones no
+            # especificadas; se omiten las filas, no la columna VALUE completa.
+            df_TUPLES = df_TUPLES.dropna(subset=["VALUE"])
 
     df_TUPLES.to_csv(os.path.join(path_csv, f"{param}.csv"), index=False)
     return df_param, df_param_indexed, year, df_TUPLES
 
 
 def SAND_SETS_to_CSV(df, path_csv, div):
-    df_param = df[df["Parameter"] == 'YearSplit'].dropna(axis=1).reset_index(drop=True)
+    df_param = df[df["Parameter"] == 'YearSplit'].dropna(axis=1, how="all").reset_index(drop=True)
     df_param = df_param[df_param.index % div == 0]
     year = df_param.columns[df_param.columns.to_series().apply(pd.to_numeric, errors='coerce').notna()]
     df_year = pd.DataFrame(year, columns=['VALUE'])
@@ -116,7 +121,7 @@ def SAND_SETS_to_CSV(df, path_csv, div):
         df_set.to_csv(os.path.join(path_csv, f"{s}.csv"), index=False)
     df_year.to_csv(os.path.join(path_csv, "YEAR.csv"), index=False)
 
-    df_param = df[df["Parameter"] == 'EmissionActivityRatio'].dropna(axis=1)
+    df_param = df[df["Parameter"] == 'EmissionActivityRatio'].dropna(axis=1, how="all")
     sets = df_param.columns[~df_param.columns.isin(year) & (df_param.columns != 'Parameter')].tolist()
     df_param_indexed = df_param.set_index(sets).drop(columns='Parameter').loc[~(df_param.set_index(sets).drop(columns='Parameter') == 0).all(axis=1)]
 
@@ -136,7 +141,7 @@ def SAND_SETS_to_CSV(df, path_csv, div):
     df_set = pd.DataFrame(df_TUPLES['EMISSION'].unique(), columns=['VALUE'])
     df_set.to_csv(os.path.join(path_csv, 'EMISSION.csv'), index=False)
 
-    df_param = df[df["Parameter"] == 'OutputActivityRatio'].dropna(axis=1)
+    df_param = df[df["Parameter"] == 'OutputActivityRatio'].dropna(axis=1, how="all")
     sets = df_param.columns[~df_param.columns.isin(year) & (df_param.columns != 'Parameter')].tolist()
     df_param_indexed = df_param.set_index(sets).drop(columns='Parameter').loc[~(df_param.set_index(sets).drop(columns='Parameter') == 0).all(axis=1)]
 
@@ -157,7 +162,7 @@ def SAND_SETS_to_CSV(df, path_csv, div):
         df_set = pd.DataFrame(df_TUPLES[s].unique(), columns=['VALUE'])
         df_set.to_csv(os.path.join(path_csv, f"{s}.csv"), index=False)
 
-    df_param = df[df["Parameter"] == 'CapacityToActivityUnit'].dropna(axis=1)
+    df_param = df[df["Parameter"] == 'CapacityToActivityUnit'].dropna(axis=1, how="all")
     sets = df_param.columns[~df_param.columns.isin(year) & (df_param.columns != 'Parameter')].tolist()
     sets.remove("Time indipendent variables")
     df_TUPLES = df_param.drop(['Parameter'], axis=1).rename(
@@ -442,8 +447,15 @@ def generate_notebook_csvs(
     print(f"  Total CSVs generados: {len(csv_files)}")
 
 
-def run_app_solver(csv_dir: str, solver_name: str = "glpk") -> dict:
+def run_app_solver(
+    csv_dir: str,
+    solver_name: str = "glpk",
+    *,
+    simulation_type: str = "NATIONAL",
+) -> dict:
     """Usa build_instance y solve_model de la app para resolver."""
+    from app.simulation.core.canonical_csv_order import canonicalize_csv_directory
+    from app.simulation.core.data_processing import PARAM_INDEX
     from app.simulation.core.instance_builder import build_instance
     from app.simulation.core.model_definition import create_abstract_model
     from app.simulation.core.solver import solve_model
@@ -455,6 +467,7 @@ def run_app_solver(csv_dir: str, solver_name: str = "glpk") -> dict:
     has_udc = os.path.exists(os.path.join(csv_dir, "UDC.csv"))
 
     print(f"  has_storage={has_storage}, has_udc={has_udc}")
+    canonicalize_csv_directory(csv_dir, PARAM_INDEX)
 
     print("  Creando AbstractModel...")
     model = create_abstract_model(has_storage=has_storage, has_udc=has_udc)
@@ -463,7 +476,11 @@ def run_app_solver(csv_dir: str, solver_name: str = "glpk") -> dict:
     instance = build_instance(model, csv_dir, has_storage=has_storage, has_udc=has_udc)
 
     print(f"  Resolviendo con {solver_name}...")
-    result = solve_model(instance, solver_name=solver_name)
+    result = solve_model(
+        instance,
+        solver_name=solver_name,
+        simulation_type=simulation_type,
+    )
 
     import pyomo.environ as pyo
     obj = 0.0
@@ -519,6 +536,12 @@ def main() -> int:
         help="Solver a usar (default: glpk)",
     )
     parser.add_argument(
+        "--simulation-type",
+        choices=("NATIONAL", "REGIONAL"),
+        default="NATIONAL",
+        help="Tipo de simulación para aplicar defaults del solver.",
+    )
+    parser.add_argument(
         "--keep-csvs", action="store_true",
         help="Mantener CSVs temporales en backend/tmp/comparison_csvs/",
     )
@@ -545,7 +568,11 @@ def main() -> int:
         print(f"\n{'='*60}")
         print("PASO 2: Resolver con build_instance + solve_model de la app")
         print(f"{'='*60}")
-        result = run_app_solver(csv_dir, solver_name=args.solver)
+        result = run_app_solver(
+            csv_dir,
+            solver_name=args.solver,
+            simulation_type=args.simulation_type,
+        )
 
         if result["solver_result"]["solver_status"].lower() == "optimal":
             print("\n*** RESULTADO: Solución óptima encontrada ***")

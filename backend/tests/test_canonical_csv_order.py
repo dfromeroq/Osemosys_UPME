@@ -64,6 +64,29 @@ def test_canonical_csv_order_is_independent_of_source_row_order(tmp_path: Path) 
     assert pd.read_csv(left / "TIMESLICE.csv")["VALUE"].tolist() == ["S1", "S2", "S10"]
 
 
+def test_canonical_csv_normalizes_one_ulp_value_differences(tmp_path: Path) -> None:
+    left = tmp_path / "left"
+    right = tmp_path / "right"
+    left.mkdir()
+    right.mkdir()
+    columns = ["REGION", "TECHNOLOGY", "YEAR", "VALUE"]
+    pd.DataFrame(
+        [["RE1", "T1", 2030, 2.7341160000000013e-8]],
+        columns=columns,
+    ).to_csv(left / "ResidualCapacity.csv", index=False)
+    pd.DataFrame(
+        [["RE1", "T1", 2030, 2.7341160000000000e-8]],
+        columns=columns,
+    ).to_csv(right / "ResidualCapacity.csv", index=False)
+
+    canonicalize_csv_directory(left, PARAM_INDEX)
+    canonicalize_csv_directory(right, PARAM_INDEX)
+
+    assert (left / "ResidualCapacity.csv").read_bytes() == (
+        right / "ResidualCapacity.csv"
+    ).read_bytes()
+
+
 def test_canonical_record_key_uses_dimensions_before_value() -> None:
     dimensions = ["REGION", "TECHNOLOGY", "YEAR"]
     rows = [
