@@ -246,7 +246,8 @@ COLORES_GRUPOS = {
 
 def asignar_grupo(nombre: str) -> str:
     """Retorna la clave del combustible que aparece dentro de *nombre*."""
-    for grupo in COLORES_GRUPOS:
+    grupos = active_colores_grupos()
+    for grupo in grupos:
         if grupo in nombre:
             return grupo
     return "OTRO"
@@ -264,7 +265,7 @@ def generar_colores_tecnologias(df, columna: str = "COLOR"):
 
     for grupo in sorted(df["GRUPO"].unique()):
         subitems = sorted(df[df["GRUPO"] == grupo][columna].unique())
-        base_color = COLORES_GRUPOS.get(grupo, "#999999")
+        base_color = active_colores_grupos().get(grupo, "#999999")
         rgb = _hex_to_rgb(base_color)
         h, l, s = colorsys.rgb_to_hls(*rgb)
         n = len(subitems)
@@ -335,9 +336,36 @@ COLORES_EMISIONES = {
 }
 
 
+def _palette_from_cache(attr: str, fallback: dict):
+    """Lee paleta desde cache BD; fallback estático solo fuera de runtime API."""
+    try:
+        from app.visualization.catalog_cache import get_catalog_cache
+
+        val = getattr(get_catalog_cache(), attr, None)
+        return val if val else fallback
+    except RuntimeError:
+        return fallback
+
+
+def active_colores_grupos() -> dict[str, str]:
+    return _palette_from_cache("colores_grupos", COLORES_GRUPOS)
+
+
+def active_colores_emisiones() -> dict[str, str]:
+    return _palette_from_cache("colores_emisiones", COLORES_EMISIONES)
+
+
+def active_color_map_pwr() -> dict[str, str]:
+    return _palette_from_cache("color_map_pwr", COLOR_MAP_PWR)
+
+
+def active_familias_tec() -> dict[str, list[str]]:
+    return _palette_from_cache("familias_tec", FAMILIAS_TEC)
+
+
 def _color_por_emision(df, columna: str = "COLOR"):
     """Paleta fija por tipo de emisión (GEI y contaminantes criterio)."""
-    return _ordered_color_list(COLORES_EMISIONES, df, columna)
+    return _ordered_color_list(active_colores_emisiones(), df, columna)
 
 
 def _color_por_region(df, columna: str = "COLOR"):
@@ -352,8 +380,9 @@ def _color_por_region(df, columna: str = "COLOR"):
 
 def _color_por_grupo_fijo(df, columna: str = "COLOR"):
     """Paleta fija según COLORES_GRUPOS — para gas y refinerías."""
+    grupos = active_colores_grupos()
     grupos_presentes = df[columna].unique()
-    colores = [COLORES_GRUPOS.get(g, _COLOR_FALLBACK) for g in grupos_presentes]
+    colores = [grupos.get(g, _COLOR_FALLBACK) for g in grupos_presentes]
     return colores, list(grupos_presentes)
 
 
@@ -468,10 +497,13 @@ _color_liquidos_import = _make_color_fn_fija(COLOR_MAP_LIQUIDOS_IMPORT)
 
 
 # Paleta fija para agrupación TRANSPORTE_GRUPO
-_color_transporte_grupo = _make_color_fn_fija(COLORES_GRUPOS)
+def _color_transporte_grupo(df, columna: str = "COLOR"):
+    return _ordered_color_list(active_colores_grupos(), df, columna)
+
 
 # Paleta fija para agrupación MODO
-_color_por_modo = _make_color_fn_fija(COLORES_GRUPOS)
+def _color_por_modo(df, columna: str = "COLOR"):
+    return _ordered_color_list(active_colores_grupos(), df, columna)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -504,19 +536,25 @@ def _color_electricidad(df, columna: str = "COLOR"):
         "EOLICA",
     ]
 
+    familias = active_familias_tec()
+    pwr_map = active_color_map_pwr()
+    techs_clasificadas: frozenset[str] = frozenset(
+        t for fam in familias.values() for t in fam
+    )
+
     # Crear orden basado en familias
     orden_final: list[str] = []
     for familia in orden_familias:
-        techs_familia = [t for t in FAMILIAS_TEC[familia] if t in tecnologias_presentes]
+        techs_familia = [t for t in familias.get(familia, []) if t in tecnologias_presentes]
         orden_final.extend(sorted(techs_familia))
 
     techs_no_clasificadas = [
-        t for t in tecnologias_presentes if t not in _TECHS_CLASIFICADAS
+        t for t in tecnologias_presentes if t not in techs_clasificadas
     ]
     orden_final.extend(sorted(techs_no_clasificadas))
 
     # Generar lista de colores en el orden correcto
-    colores = [COLOR_MAP_PWR.get(t, "#CCCCCC") for t in orden_final]
+    colores = [pwr_map.get(t, "#CCCCCC") for t in orden_final]
 
     return colores, orden_final
 

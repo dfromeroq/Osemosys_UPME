@@ -74,4 +74,6 @@ def generate_csvs_from_excel(
     os.makedirs(csv_dir, exist_ok=True)
     path_csv = str(csv_dir) + os.sep
     logger.info("Generando CSVs desde Excel %s hacia %s", excel_path, csv_dir)
-    generate_notebook_csvs(str(excel_path), path_csv, div=div)
+    # El script aplica el postproceso notebook una sola vez. Sus completados de
+    # matrices son sparse, por lo que no materializan productos cartesianos.
+    generate_notebook_csvs(str(excel_path), path_csv, div=div, postprocess=True)

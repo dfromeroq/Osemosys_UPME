@@ -29,6 +29,7 @@ import { ChartPickerModal } from "@/features/reports/components/ChartPickerModal
 import { IconEye, IconPencil, IconSwap } from "@/features/reports/components/CardActionIcons";
 import { RowScenarioPicker } from "@/features/reports/components/RowScenarioPicker";
 import { ChartSeriesConfigTab } from "@/features/reports/components/ChartSeriesConfigTab";
+import { VisualizationCatalogAdminTab } from "@/features/reports/components/VisualizationCatalogAdminTab";
 import { pickRepresentativeJob } from "@/features/reports/pickRepresentativeJob";
 import {
   loadReportScenarios,
@@ -47,7 +48,7 @@ import {
   reconcileLayout,
 } from "@/features/reports/layout";
 
-type TabId = "saved" | "generator" | "reports" | "chart_series";
+type TabId = "saved" | "generator" | "reports" | "chart_series" | "viz_catalog";
 
 function formatDate(iso: string): string {
   try {
@@ -498,7 +499,10 @@ export function ReportsPage() {
           { id: "generator" as TabId, label: "Generador de reporte" },
           { id: "saved" as TabId, label: `Mis gráficas guardadas (${templates.length})` },
           ...(isAdminReports
-            ? [{ id: "chart_series" as TabId, label: "Series por gráfica" }]
+            ? [
+                { id: "chart_series" as TabId, label: "Series por gráfica" },
+                { id: "viz_catalog" as TabId, label: "Catálogo de gráficas" },
+              ]
             : []),
         ].map((t) => {
           const active = t.id === tab;
@@ -552,6 +556,10 @@ export function ReportsPage() {
       ) : tab === "chart_series" ? (
         <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6">
           <ChartSeriesConfigTab />
+        </div>
+      ) : tab === "viz_catalog" ? (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6">
+          <VisualizationCatalogAdminTab />
         </div>
       ) : (
         <ReportGeneratorTab

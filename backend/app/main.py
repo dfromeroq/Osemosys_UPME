@@ -50,20 +50,27 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     def sync_visualization_catalog() -> None:
-        """Sincroniza ``catalog_meta_*`` con los dicts hardcodeados.
+        """Carga cache del catálogo y sync idempotente de entradas nuevas."""
+        from app.db.session import SessionLocal
+        from app.visualization.catalog_cache import warm_catalog_cache
 
-        Inserta sólo entradas que no existan (idempotente). Garantiza que al
-        agregar una gráfica nueva en código, basta reiniciar el API para que
-        aparezca en BD con sus defaults — sin pisar ediciones del curador.
-        """
+        db = SessionLocal()
+        try:
+            warm_catalog_cache(db)
+        except Exception as exc:
+            logger.error(
+                "No se pudo cargar el catálogo de visualización desde BD: %s. "
+                "Ejecute `alembic upgrade head`.",
+                exc,
+            )
+            raise
+        finally:
+            db.close()
+
         try:
             from app.visualization.catalog_sync import sync_catalog_safely
         except ImportError as exc:
-            logger.warning(
-                "Se omite sync de catalogo de visualizacion: no se pudo importar "
-                "catalog_sync (%s). La app continuara con fallback hardcoded.",
-                exc,
-            )
+            logger.warning("sync_catalog omitido: %s", exc)
             return
         sync_catalog_safely()
 

@@ -24,7 +24,7 @@ TRA_SUB = [
     "LDV", "FWD", "BUS", "TCK_C2P", "TCK_CSG",
     "MOT", "MIC", "TAX", "STT", "MET",
 ]
-RES_SUB = ["CKN", "WHT", "AIR", "REF", "ILU", "TV", "OTH"]
+RES_SUB = ["CKN", "WHT", "AIR", "REF", "ILU", "TV", "FAN", "WSH", "OTH"]
 IND_SUB = ["BOI", "FUR", "MPW", "AIR", "REF", "ILU", "OTH"]
 TER_SUB = ["AIR", "ILU", "OTH"]
 DEM_COMB = [

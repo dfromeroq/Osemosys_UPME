@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -80,9 +80,10 @@ class SimulationJobPublic(BaseModel):
     user_id: str
     username: str | None = None
     solver_name: SimulationSolver
-    #: Hilos efectivamente entregados al solver (NULL si el solver no soporta
-    #: multihilo o si la lectura del valor efectivo falló).
+    #: Hilos efectivamente entregados al solver (NULL si no aplica).
     solver_threads_used: int | None = None
+    #: Hilos pedidos en admin/env antes del cap por hardware.
+    solver_threads_configured: int | None = None
     input_mode: SimulationInputMode = "SCENARIO"
     input_name: str | None = None
     simulation_type: SimulationType = "NATIONAL"
@@ -116,6 +117,10 @@ class SimulationJobPublic(BaseModel):
     diagnostic_finished_at: str | None = None
     #: Duración total del diagnóstico en segundos.
     diagnostic_seconds: float | None = None
+    #: Tiempos macro del pipeline (extract_data_seconds, solve_seconds, …).
+    stage_times: dict[str, float | str] = Field(default_factory=dict)
+    #: Tiempos granulares medidos en el worker (solver_run_seconds, …).
+    model_timings: dict[str, Any] = Field(default_factory=dict)
 
 
 class SimulationOverviewPublic(BaseModel):

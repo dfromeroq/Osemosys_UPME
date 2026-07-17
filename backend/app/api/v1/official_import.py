@@ -82,16 +82,19 @@ def import_official_xlsm(
             detail="El archivo está vacío.",
         )
 
-    result = OfficialImportService.import_xlsm(
-        db,
-        filename=filename,
-        content=content,
-        imported_by=current_user.username,
-        selected_sheet_name=sheet_name,
-        use_default_scenario=True,
-        replace_scenario_data=True,
-        collapse_timeslices=_collapse_timeslices_from_form(collapse_timeslices),
-    )
+    from app.services.model_parameter_defaults_service import model_defaults_runtime
+
+    with model_defaults_runtime(db):
+        result = OfficialImportService.import_xlsm(
+            db,
+            filename=filename,
+            content=content,
+            imported_by=current_user.username,
+            selected_sheet_name=sheet_name,
+            use_default_scenario=True,
+            replace_scenario_data=True,
+            collapse_timeslices=_collapse_timeslices_from_form(collapse_timeslices),
+        )
 
     if result["inserted"] + result["updated"] == 0:
         raise HTTPException(

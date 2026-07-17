@@ -3,6 +3,14 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import app.simulation.core.solver as solver_module
+from app.simulation.core.solver_config import (
+    SolverGlpkConfig,
+    SolverHighsConfig,
+    apply_glpk_options_to_solver,
+    apply_highs_options_to_model,
+    resolve_glpk_config,
+    resolve_highs_config,
+)
 
 
 class _FakeResults:
@@ -14,6 +22,9 @@ class _FakeSolver:
     def __init__(self, status: str) -> None:
         self._status = status
         self.last_kwargs: dict[str, object] | None = None
+        self.highs_options: dict[str, object] = {}
+        self.options: dict[str, object] = {}
+        self.config = SimpleNamespace(stream_solver=True, load_solution=True, report_timing=False)
 
     def solve(self, instance, **kwargs):
         self.last_kwargs = kwargs
@@ -26,22 +37,186 @@ class _FakeInstance:
         self.solutions = SimpleNamespace(load_from=lambda _results: None)
 
 
+def _fake_settings(**overrides: object) -> SimpleNamespace:
+    base = dict(
+        sim_solver_tee=False,
+        sim_solver_keepfiles=False,
+        sim_solver_profile="default",
+        sim_solver_threads=0,
+        sim_solver_highs_method="",
+        sim_solver_highs_presolve="",
+        sim_solver_highs_parallel="",
+        sim_solver_highs_hipo_parallel_type="",
+        sim_solver_highs_crossover="",
+        sim_solver_highs_options_json="",
+        sim_solver_highs_direct=False,
+        sim_solver_highs_time_limit=0.0,
+        sim_solver_highs_ipm_tol=1e-7,
+        sim_solver_highs_primal_tol=1e-7,
+        sim_solver_highs_dual_tol=1e-7,
+        sim_solver_glpk_profile="fast",
+        sim_solver_glpk_time_limit=0.0,
+        sim_solver_glpk_options_json="",
+    )
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
 def test_normalize_solver_status_display_maps_infeasible_to_spanish() -> None:
     assert solver_module.normalize_solver_status_display("infeasible") == "infactible"
     assert solver_module.normalize_solver_status_display("optimal") == "optimal"
 
 
+def test_resolve_highs_config_defaults_match_notebook() -> None:
+    cfg = resolve_highs_config(_fake_settings())
+    assert cfg.method == ""
+    assert cfg.presolve == ""
+    assert cfg.parallel == ""
+    assert cfg.run_crossover == ""
+    assert cfg.threads == 0
+
+
+def test_resolve_highs_config_from_env() -> None:
+    cfg = resolve_highs_config(
+        _fake_settings(
+            sim_solver_threads=8,
+            sim_solver_highs_method="hipo",
+            sim_solver_highs_presolve="on",
+            sim_solver_highs_parallel="on",
+            sim_solver_highs_hipo_parallel_type="both",
+        )
+    )
+    assert cfg.method == "hipo"
+    assert cfg.presolve == "on"
+    assert cfg.parallel == "on"
+    assert cfg.hipo_parallel_type == "both"
+    assert cfg.threads == 8
+
+
+def test_resolve_highs_fast_profile_fills_empty_overrides() -> None:
+    cfg = resolve_highs_config(
+        _fake_settings(sim_solver_profile="fast", sim_solver_highs_direct=True)
+    )
+    assert cfg.profile == "fast"
+    assert cfg.method == "ipm"
+    assert cfg.presolve == "on"
+    assert cfg.parallel == "on"
+    assert cfg.run_crossover == "off"
+    assert cfg.use_direct is True
+
+
+def test_specific_env_override_wins_over_profile() -> None:
+    cfg = resolve_highs_config(
+        _fake_settings(
+            sim_solver_profile="fast",
+            sim_solver_highs_method="simplex",
+            sim_solver_highs_parallel="off",
+        )
+    )
+    assert cfg.method == "simplex"
+    assert cfg.parallel == "off"
+
+
+def test_extra_options_json_is_parsed_and_applied() -> None:
+    cfg = resolve_highs_config(
+        _fake_settings(sim_solver_highs_options_json='{"simplex_strategy": 1}')
+    )
+    opts: dict[str, object] = {}
+    apply_highs_options_to_model(opts, cfg)
+    assert cfg.extra_options == {"simplex_strategy": 1}
+    assert opts["simplex_strategy"] == 1
+
+
+def test_glpk_fast_and_strict_profiles_are_isolated() -> None:
+    fast = resolve_glpk_config(_fake_settings(sim_solver_glpk_profile="fast"))
+    strict = resolve_glpk_config(_fake_settings(sim_solver_glpk_profile="strict"))
+    fast_solver = SimpleNamespace(options={})
+    strict_solver = SimpleNamespace(options={})
+
+    apply_glpk_options_to_solver(fast_solver, fast)
+    apply_glpk_options_to_solver(strict_solver, strict)
+
+    assert fast_solver.options == {}
+    assert strict_solver.options == {"exact": None}
+
+
+def test_glpk_extra_options_and_time_limit() -> None:
+    cfg = resolve_glpk_config(
+        _fake_settings(
+            sim_solver_glpk_profile="default",
+            sim_solver_glpk_time_limit=12.8,
+            sim_solver_glpk_options_json='{"memlim": 4096}',
+        )
+    )
+    solver = SimpleNamespace(options={})
+    options = apply_glpk_options_to_solver(solver, cfg)
+    assert options == {"tmlim": 12, "memlim": 4096}
+
+
+def test_apply_highs_options_default_applies_only_tolerances() -> None:
+    opts: dict[str, object] = {}
+    threads = apply_highs_options_to_model(opts, SolverHighsConfig())
+    assert threads is None
+    assert opts == {
+        "primal_feasibility_tolerance": 1e-7,
+        "dual_feasibility_tolerance": 1e-7,
+    }
+
+
+def test_apply_highs_options_to_dict() -> None:
+    opts: dict[str, object] = {}
+    cfg = SolverHighsConfig(threads=4, method="ipm", presolve="on", parallel="on")
+    threads = apply_highs_options_to_model(opts, cfg)
+    assert threads == 4
+    assert opts["solver"] == "ipm"
+    assert opts["presolve"] == "on"
+    assert opts["parallel"] == "on"
+    assert "ipm_optimality_tolerance" in opts
+    assert "log_to_console" not in opts
+
+
+def test_apply_highs_options_to_dict_includes_hipo_parallel_type() -> None:
+    opts: dict[str, object] = {}
+    cfg = SolverHighsConfig(
+        threads=4,
+        method="hipo",
+        presolve="on",
+        parallel="on",
+        hipo_parallel_type="both",
+    )
+    apply_highs_options_to_model(opts, cfg)
+
+    assert opts["solver"] == "hipo"
+    assert opts["hipo_parallel_type"] == "both"
+
+
+def test_apply_highs_options_raises_when_hipo_is_rejected() -> None:
+    class _RejectingHighs:
+        def setOptionValue(self, key, value):  # noqa: ANN001, N802
+            if key == "solver" and value == "hipo":
+                return "HighsStatus.kError"
+            return "HighsStatus.kOk"
+
+    cfg = SolverHighsConfig(method="hipo")
+
+    try:
+        apply_highs_options_to_model(_RejectingHighs(), cfg)
+    except ValueError as exc:
+        assert "solver=hipo" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("Expected ValueError when HiGHS rejects hipo")
+
+
+def test_pyomo_lp_name_highs_underscore_format() -> None:
+    pyomo = "RateOfActivity[COL,1,AN_PWRSOL,1,2030]"
+    lp = solver_module._pyomo_name_to_lp(pyomo)
+    assert lp == "RateOfActivity(COL_1_AN_PWRSOL_1_2030)"
+    assert solver_module._lp_name_to_pyomo(lp) == "RateOfActivity[COL_1_AN_PWRSOL_1_2030]"
+
+
 def test_solve_model_uses_settings_for_tee_and_keepfiles(monkeypatch) -> None:
     fake_solver = _FakeSolver(status="optimal")
-    monkeypatch.setattr(
-        solver_module,
-        "get_settings",
-        lambda: SimpleNamespace(
-            sim_solver_tee=False,
-            sim_solver_keepfiles=False,
-            sim_solver_threads=0,
-        ),
-    )
+    monkeypatch.setattr(solver_module, "get_settings", lambda: _fake_settings(sim_solver_threads=0))
     monkeypatch.setattr(
         solver_module,
         "get_solver_availability",
@@ -61,18 +236,27 @@ def test_solve_model_uses_settings_for_tee_and_keepfiles(monkeypatch) -> None:
     assert fake_solver.last_kwargs["tee"] is False
     assert fake_solver.last_kwargs["keepfiles"] is False
     assert fake_solver.last_kwargs["load_solutions"] is False
+    assert "solver_timings" in result
+    assert result["solver_glpk_config"]["profile"] == "fast"
+    assert fake_solver.options == {}
 
 
-def test_solve_model_sets_highs_threads_when_configured(monkeypatch) -> None:
+def test_solve_model_sets_highs_threads_and_options_when_appsi(monkeypatch) -> None:
     fake_solver = _FakeSolver(status="optimal")
-    fake_solver.highs_options = {}
     monkeypatch.setattr(
         solver_module,
         "get_settings",
-        lambda: SimpleNamespace(
-            sim_solver_tee=False,
-            sim_solver_keepfiles=False,
-            sim_solver_threads=8,
+        lambda: _fake_settings(sim_solver_highs_direct=False),
+    )
+    monkeypatch.setattr(
+        solver_module,
+        "resolve_highs_config",
+        lambda _settings: SolverHighsConfig(
+            threads=8,
+            method="ipm",
+            presolve="on",
+            parallel="on",
+            use_direct=False,
         ),
     )
     monkeypatch.setattr(
@@ -91,6 +275,40 @@ def test_solve_model_sets_highs_threads_when_configured(monkeypatch) -> None:
 
     assert result["solver_status"] == "optimal"
     assert fake_solver.highs_options["threads"] == 8
+    assert fake_solver.highs_options["solver"] == "ipm"
+    assert fake_solver.config.stream_solver is False
+
+
+def test_solve_model_routes_to_direct_highspy(monkeypatch, tmp_path) -> None:
+    calls: dict[str, object] = {}
+
+    def _fake_direct(instance, *, highs_config, lp_path, timings, on_stage=None):
+        calls["direct"] = True
+        timings["solver_backend"] = "direct_highspy"
+        return "optimal", 123.0, 16
+
+    monkeypatch.setattr(solver_module, "_solve_with_direct_highspy", _fake_direct)
+    monkeypatch.setattr(
+        solver_module,
+        "get_settings",
+        lambda: _fake_settings(sim_solver_highs_direct=True),
+    )
+    monkeypatch.setattr(
+        solver_module,
+        "resolve_highs_config",
+        lambda _settings: SolverHighsConfig(threads=16, use_direct=True),
+    )
+    monkeypatch.setattr(
+        solver_module,
+        "get_solver_availability",
+        lambda: {"glpk": False, "highs": True},
+    )
+
+    result = solver_module.solve_model(_FakeInstance(), solver_name="highs")
+
+    assert calls.get("direct") is True
+    assert result["objective_value"] == 123.0
+    assert result["solver_timings"]["solver_backend"] == "direct_highspy"
 
 
 def test_solve_model_does_not_set_glpk_threads(monkeypatch) -> None:
@@ -98,11 +316,7 @@ def test_solve_model_does_not_set_glpk_threads(monkeypatch) -> None:
     monkeypatch.setattr(
         solver_module,
         "get_settings",
-        lambda: SimpleNamespace(
-            sim_solver_tee=False,
-            sim_solver_keepfiles=False,
-            sim_solver_threads=8,
-        ),
+        lambda: _fake_settings(sim_solver_threads=8),
     )
     monkeypatch.setattr(
         solver_module,
@@ -119,7 +333,7 @@ def test_solve_model_does_not_set_glpk_threads(monkeypatch) -> None:
     result = solver_module.solve_model(_FakeInstance(), solver_name="glpk")
 
     assert result["solver_status"] == "optimal"
-    assert not hasattr(fake_solver, "highs_options")
+    assert not hasattr(fake_solver, "highs_options") or fake_solver.highs_options == {}
 
 
 class _FakeConstraint:

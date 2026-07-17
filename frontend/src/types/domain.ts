@@ -10,6 +10,13 @@ export type ScenarioPermissionScope = "mine" | "readable" | "editable" | "readon
 export type RunStatus = "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
 export type SimulationSolver = "highs" | "glpk" | "gurobi";
 export type SimulationInputMode = "SCENARIO" | "CSV_UPLOAD";
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
 
 export type CatalogEntity =
   | "parameter"
@@ -39,6 +46,7 @@ export type User = {
   /** Admin de configuración del sistema — puede modificar runtime settings
    * (ej. hilos del solver) desde el panel admin. */
   can_manage_system_settings?: boolean;
+  can_manage_model_defaults?: boolean;
 };
 
 /** Categoría jerárquica de etiquetas de escenario. */
@@ -193,10 +201,10 @@ export type SimulationRun = {
   user_id: string;
   username?: string | null;
   solver_name: SimulationSolver;
-  /** Hilos efectivamente entregados al solver (leídos del propio optimizador
-   * tras configurarlo). null si el solver es single-thread o si la lectura
-   * falló. */
+  /** Hilos que HiGHS aplicó post-solve (getOptionValue). */
   solver_threads_used?: number | null;
+  /** Hilos pedidos en admin/env (antes del cap por hardware). */
+  solver_threads_configured?: number | null;
   input_mode: SimulationInputMode;
   input_name?: string | null;
   simulation_type: SimulationType;
@@ -228,6 +236,10 @@ export type SimulationRun = {
   is_public?: boolean;
   /** True si el usuario actual marcó este resultado como favorito. */
   is_favorite?: boolean;
+  /** Tiempos macro del pipeline (extract_data_seconds, solve_seconds, …). */
+  stage_times?: Record<string, number | string>;
+  /** Tiempos granulares medidos en el worker (solver_run_seconds, …). */
+  model_timings?: Record<string, JsonValue>;
 };
 
 export type SimulationOverview = {
@@ -236,6 +248,125 @@ export type SimulationOverview = {
   active_count: number;
   total_count: number;
   services_memory_total_bytes: number;
+};
+
+export type RuntimeResourceSample = {
+  stage?: string;
+  pid?: number;
+  elapsed_seconds?: number;
+  delta_seconds?: number;
+  process_cpu_percent?: number;
+  rss_mb?: number | null;
+  vms_mb?: number | null;
+  peak_rss_mb?: number | null;
+  threads?: number | null;
+  open_fds?: number | null;
+  cgroup_memory_current_mb?: number | null;
+  cgroup_memory_max_mb?: number | null;
+  cgroup_memory_peak_mb?: number | null;
+  cgroup_swap_current_mb?: number | null;
+  cgroup_swap_max_mb?: number | null;
+  cgroup_oom_count?: number | null;
+  cgroup_oom_kill_count?: number | null;
+};
+
+export type SimulationOpsEvent = {
+  id: number;
+  event_type: string;
+  stage?: string | null;
+  message?: string | null;
+  progress?: number | null;
+  created_at?: string | null;
+};
+
+export type SimulationOpsJob = {
+  id: number;
+  status: RunStatus;
+  simulation_type: SimulationType;
+  scenario_id: number | null;
+  solver_name: SimulationSolver;
+  solver_threads_configured?: number | null;
+  solver_threads_used?: number | null;
+  queued_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  progress?: number | null;
+  objective_value?: number | null;
+  total_dispatch?: number | null;
+  stage_times?: Record<string, number | string>;
+  solver_status?: string | null;
+  runtime?: {
+    commit?: string | null;
+    branch?: string | null;
+    deploy_env?: string | null;
+    hostname?: string | null;
+    pid?: number | null;
+    cpu_visible?: number | null;
+    cpu_context?: Record<string, unknown>;
+    memory_context?: Record<string, unknown>;
+    last_resource_sample?: RuntimeResourceSample | null;
+    resource_samples?: RuntimeResourceSample[];
+  };
+  events?: SimulationOpsEvent[];
+};
+
+export type SimulationOpsEnvironment = {
+  name: string;
+  generated_at: string;
+  reachable: boolean;
+  error?: string | null;
+  queue: {
+    queued_count?: number;
+    running_count?: number;
+    active_count?: number;
+    total_count?: number;
+    counts_by_status_type?: Record<string, Record<string, number>>;
+    limits?: Record<string, number>;
+  };
+  runtime_env: Record<string, string | null>;
+  system_resources?: {
+    cpu_logical_count?: number | null;
+    cpu_percent?: number | null;
+    cpu_used_cores?: number | null;
+    memory_total_bytes?: number | null;
+    memory_available_bytes?: number | null;
+    memory_used_bytes?: number | null;
+    memory_used_percent?: number | null;
+  };
+  services_memory: Array<{
+    service_name: string;
+    memory_usage_bytes?: number | null;
+    memory_working_set_bytes?: number | null;
+    memory_limit_bytes?: number | null;
+    memory_peak_bytes?: number | null;
+    memory_used_percent?: number | null;
+    cpu_percent?: number | null;
+    cpu_used_cores?: number | null;
+    online_cpus?: number | null;
+    pids_current?: number | null;
+    host_pid?: number | null;
+    oom_killed?: boolean;
+    restart_count?: number;
+    status?: string | null;
+    container_id?: string | null;
+    processes?: Array<{
+      pid?: string | null;
+      ppid?: string | null;
+      cpu_percent?: number | null;
+      memory_percent?: number | null;
+      rss_kb?: number | null;
+      command?: string | null;
+      args?: string | null;
+    }>;
+  }>;
+  services_memory_total_bytes: number;
+  active_jobs: SimulationOpsJob[];
+  recent_jobs: SimulationOpsJob[];
+};
+
+export type SimulationOpsDashboard = {
+  generated_at: string;
+  environments: SimulationOpsEnvironment[];
 };
 
 export type ConstraintViolation = {
@@ -332,6 +463,7 @@ export type RunResult = {
   scenario_id: number | null;
   solver_name: SimulationSolver;
   solver_threads_used?: number | null;
+  solver_threads_configured?: number | null;
   records_used: number;
   osemosys_param_records: number;
   objective_value: number;
@@ -373,7 +505,7 @@ export type RunResult = {
     total_value: number;
   }>;
   stage_times: Record<string, number | string>;
-  model_timings: Record<string, number | string>;
+  model_timings: Record<string, JsonValue>;
   /** Diccionario de solución por variable: lista de { index, value } (tipo HiGHS). */
   sol?: Record<string, Array<{ index: (string | number)[]; value: number }>>;
   /** Variables intermedias: ProductionByTechnology, UseByTechnology, etc. */
@@ -403,7 +535,7 @@ export type CsvSimulationResult = {
   new_capacity: Array<Record<string, unknown>>;
   annual_emissions: Array<Record<string, unknown>>;
   stage_times: Record<string, number | string>;
-  model_timings: Record<string, number | string>;
+  model_timings: Record<string, JsonValue>;
   sol?: Record<string, Array<{ index: (string | number)[]; value: number }>>;
   intermediate_variables?: Record<string, Array<{ index: (string | number)[]; value: number }>>;
   infeasibility_diagnostics?: InfeasibilityDiagnostics | null;

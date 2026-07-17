@@ -12,7 +12,7 @@ El resto se mantiene sin cambios — no hay lambdas, solo prefijos string.
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Prefijo de TECHNOLOGY (6 chars) → nombre formal del sector
-MAPA_SECTOR = {
+_LEGACY_MAPA_SECTOR = {
     'DEMRES': 'Residencial',
     'DEMIND': 'Industrial',
     'DEMTRA': 'Transporte',
@@ -24,7 +24,7 @@ MAPA_SECTOR = {
 }
 
 # Colores fijos para cada sector (usados cuando agrupacion='SECTOR')
-COLORES_SECTOR = {
+_LEGACY_COLORES_SECTOR = {
     'Residencial':              '#58bbf0',
     'Industrial':               '#fe5026',
     'Transporte':               '#fed519',
@@ -68,7 +68,7 @@ COLORES_SECTOR = {
 #   variable_default    str         Nombre de la variable en BD (chart_service la usa)
 # ══════════════════════════════════════════════════════════════════════════════
 
-CONFIGS_COMPARACION = {
+_LEGACY_CONFIGS_COMPARACION = {
 
     # ════════════════════════════════════════════════════════════════════════
     # TRANSPORTE  (Figuras 3 y 4)
@@ -189,3 +189,90 @@ CONFIGS_COMPARACION = {
         'variable_default':    'UseByTechnology',
     },
 }
+
+
+def _cached_comparacion() -> dict:
+    try:
+        from app.visualization.catalog_reader import get_configs_comparacion
+
+        return get_configs_comparacion()
+    except RuntimeError:
+        return _LEGACY_CONFIGS_COMPARACION
+
+
+def _cached_mapa_sector() -> dict:
+    try:
+        from app.visualization.catalog_reader import get_mapa_sector
+
+        return get_mapa_sector()
+    except RuntimeError:
+        return _LEGACY_MAPA_SECTOR
+
+
+def _cached_colores_sector() -> dict:
+    try:
+        from app.visualization.catalog_reader import get_colores_sector
+
+        return get_colores_sector()
+    except RuntimeError:
+        return _LEGACY_COLORES_SECTOR
+
+
+class _ComparacionView:
+    def __getitem__(self, key: str):
+        return _cached_comparacion()[key]
+
+    def get(self, key: str, default=None):
+        return _cached_comparacion().get(key, default)
+
+    def __contains__(self, key: object) -> bool:
+        return key in _cached_comparacion()
+
+    def keys(self):
+        return _cached_comparacion().keys()
+
+    def values(self):
+        return _cached_comparacion().values()
+
+    def items(self):
+        return _cached_comparacion().items()
+
+    def __iter__(self):
+        return iter(_cached_comparacion())
+
+    def __len__(self) -> int:
+        return len(_cached_comparacion())
+
+
+class _DictView:
+    def __init__(self, loader):
+        self._loader = loader
+
+    def __getitem__(self, key: str):
+        return self._loader()[key]
+
+    def get(self, key: str, default=None):
+        return self._loader().get(key, default)
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._loader()
+
+    def keys(self):
+        return self._loader().keys()
+
+    def values(self):
+        return self._loader().values()
+
+    def items(self):
+        return self._loader().items()
+
+    def __iter__(self):
+        return iter(self._loader())
+
+    def __len__(self) -> int:
+        return len(self._loader())
+
+
+CONFIGS_COMPARACION = _ComparacionView()
+MAPA_SECTOR = _DictView(_cached_mapa_sector)
+COLORES_SECTOR = _DictView(_cached_colores_sector)

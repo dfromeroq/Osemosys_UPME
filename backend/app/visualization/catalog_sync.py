@@ -54,7 +54,7 @@ from app.visualization.colors import (
     COLORES_GRUPOS,
     FAMILIAS_TEC,
 )
-from app.visualization.configs import NOMBRES_COMBUSTIBLES, TITULOS_VARIABLES_CAPACIDAD
+from app.visualization.configs_legacy import NOMBRES_COMBUSTIBLES, TITULOS_VARIABLES_CAPACIDAD
 from app.visualization.configs_comparacion import COLORES_SECTOR, MAPA_SECTOR
 from app.visualization.labels import DISPLAY_NAMES
 

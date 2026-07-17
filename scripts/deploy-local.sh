@@ -167,6 +167,19 @@ wait_celery_ping() {
   return 1
 }
 
+wait_db_healthy() {
+  local retries="$1"
+  local sleep_seconds="$2"
+
+  for _ in $(seq 1 "${retries}"); do
+    if docker compose exec -T db sh -lc 'pg_isready -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"' >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "${sleep_seconds}"
+  done
+  return 1
+}
+
 ensure_writable_backup_dir() {
   local desired_dir="$1"
   local fallback_dir="${REPO_ROOT}/backups"
@@ -282,13 +295,43 @@ SIM_USER_ACTIVE_LIMIT="${SIM_USER_ACTIVE_LIMIT:-3}"
 SIM_TOTAL_WEIGHT_LIMIT="${SIM_TOTAL_WEIGHT_LIMIT:-8}"
 SIM_WEIGHT_NATIONAL="${SIM_WEIGHT_NATIONAL:-1}"
 SIM_WEIGHT_REGIONAL="${SIM_WEIGHT_REGIONAL:-3}"
-SIM_SOLVER_THREADS="${SIM_SOLVER_THREADS:-12}"
+SIM_SOLVER_THREADS="${SIM_SOLVER_THREADS:-0}"
+SIM_SOLVER_PROFILE="${SIM_SOLVER_PROFILE:-default}"
+SIM_SOLVER_HIGHS_METHOD="${SIM_SOLVER_HIGHS_METHOD:-}"
+SIM_SOLVER_HIGHS_PRESOLVE="${SIM_SOLVER_HIGHS_PRESOLVE:-}"
+SIM_SOLVER_HIGHS_PARALLEL="${SIM_SOLVER_HIGHS_PARALLEL:-}"
+SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE="${SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE:-}"
+SIM_SOLVER_HIGHS_CROSSOVER="${SIM_SOLVER_HIGHS_CROSSOVER:-}"
+SIM_SOLVER_HIGHS_OPTIONS_JSON="${SIM_SOLVER_HIGHS_OPTIONS_JSON:-}"
+SIM_SOLVER_HIGHS_TIME_LIMIT="${SIM_SOLVER_HIGHS_TIME_LIMIT:-0}"
+SIM_SOLVER_HIGHS_IPM_TOL="${SIM_SOLVER_HIGHS_IPM_TOL:-1e-7}"
+SIM_SOLVER_HIGHS_PRIMAL_TOL="${SIM_SOLVER_HIGHS_PRIMAL_TOL:-1e-7}"
+SIM_SOLVER_HIGHS_DUAL_TOL="${SIM_SOLVER_HIGHS_DUAL_TOL:-1e-7}"
+SIM_SOLVER_HIGHS_DIRECT="${SIM_SOLVER_HIGHS_DIRECT:-true}"
+SIM_SOLVER_GLPK_PROFILE="${SIM_SOLVER_GLPK_PROFILE:-fast}"
+SIM_SOLVER_GLPK_TIME_LIMIT="${SIM_SOLVER_GLPK_TIME_LIMIT:-0}"
+SIM_SOLVER_GLPK_OPTIONS_JSON="${SIM_SOLVER_GLPK_OPTIONS_JSON:-}"
+OSEMOSYS_FAST_DATAPORTAL="${OSEMOSYS_FAST_DATAPORTAL:-1}"
+OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL="${OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL:-0}"
+OSEMOSYS_SPARSE_MATRIX_PREPROCESS="${OSEMOSYS_SPARSE_MATRIX_PREPROCESS:-1}"
+OSEMOSYS_SPARSE_HIGH_DIM_PARAMS="${OSEMOSYS_SPARSE_HIGH_DIM_PARAMS:-1}"
+OSEMOSYS_SPARSE_EMISSION_PENALTIES="${OSEMOSYS_SPARSE_EMISSION_PENALTIES:-1}"
+OSEMOSYS_PYOMO_REPORT_TIMING="${OSEMOSYS_PYOMO_REPORT_TIMING:-0}"
+HIGHS_BUILD_FROM_SOURCE="${HIGHS_BUILD_FROM_SOURCE:-0}"
+HIGHS_GIT_REF="${HIGHS_GIT_REF:-master}"
+HIGHS_ENABLE_HIPO="${HIGHS_ENABLE_HIPO:-0}"
 OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
 OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-4}"
 MKL_NUM_THREADS="${MKL_NUM_THREADS:-4}"
 VITE_API_BASE_URL="${VITE_API_BASE_URL:-/api/v1}"
 VITE_APP_ENV="${VITE_APP_ENV:-production}"
 VITE_SIMULATION_MODE="${VITE_SIMULATION_MODE:-api}"
+APP_GIT_SHA="${APP_GIT_SHA:-$(git rev-parse HEAD 2>/dev/null || true)}"
+APP_GIT_BRANCH="${APP_GIT_BRANCH:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)}"
+APP_DEPLOY_ENV="${APP_DEPLOY_ENV:-${VITE_APP_ENV}}"
+SIMULATION_OPS_ENVIRONMENT_NAME="${SIMULATION_OPS_ENVIRONMENT_NAME:-${APP_DEPLOY_ENV}}"
+SIMULATION_OPS_REMOTE_ENVIRONMENTS="${SIMULATION_OPS_REMOTE_ENVIRONMENTS:-}"
+SIMULATION_OPS_SHARED_TOKEN="${SIMULATION_OPS_SHARED_TOKEN:-}"
 
 if [[ -z "${POSTGRES_PORT}" ]]; then
   if is_port_in_use 5432; then
@@ -321,9 +364,39 @@ upsert_env_key .env SIM_TOTAL_WEIGHT_LIMIT "${SIM_TOTAL_WEIGHT_LIMIT}"
 upsert_env_key .env SIM_WEIGHT_NATIONAL "${SIM_WEIGHT_NATIONAL}"
 upsert_env_key .env SIM_WEIGHT_REGIONAL "${SIM_WEIGHT_REGIONAL}"
 upsert_env_key .env SIM_SOLVER_THREADS "${SIM_SOLVER_THREADS}"
+upsert_env_key .env SIM_SOLVER_PROFILE "${SIM_SOLVER_PROFILE}"
+upsert_env_key .env SIM_SOLVER_HIGHS_METHOD "${SIM_SOLVER_HIGHS_METHOD}"
+upsert_env_key .env SIM_SOLVER_HIGHS_PRESOLVE "${SIM_SOLVER_HIGHS_PRESOLVE}"
+upsert_env_key .env SIM_SOLVER_HIGHS_PARALLEL "${SIM_SOLVER_HIGHS_PARALLEL}"
+upsert_env_key .env SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE "${SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE}"
+upsert_env_key .env SIM_SOLVER_HIGHS_CROSSOVER "${SIM_SOLVER_HIGHS_CROSSOVER}"
+upsert_env_key .env SIM_SOLVER_HIGHS_OPTIONS_JSON "${SIM_SOLVER_HIGHS_OPTIONS_JSON}"
+upsert_env_key .env SIM_SOLVER_HIGHS_TIME_LIMIT "${SIM_SOLVER_HIGHS_TIME_LIMIT}"
+upsert_env_key .env SIM_SOLVER_HIGHS_IPM_TOL "${SIM_SOLVER_HIGHS_IPM_TOL}"
+upsert_env_key .env SIM_SOLVER_HIGHS_PRIMAL_TOL "${SIM_SOLVER_HIGHS_PRIMAL_TOL}"
+upsert_env_key .env SIM_SOLVER_HIGHS_DUAL_TOL "${SIM_SOLVER_HIGHS_DUAL_TOL}"
+upsert_env_key .env SIM_SOLVER_HIGHS_DIRECT "${SIM_SOLVER_HIGHS_DIRECT}"
+upsert_env_key .env SIM_SOLVER_GLPK_PROFILE "${SIM_SOLVER_GLPK_PROFILE}"
+upsert_env_key .env SIM_SOLVER_GLPK_TIME_LIMIT "${SIM_SOLVER_GLPK_TIME_LIMIT}"
+upsert_env_key .env SIM_SOLVER_GLPK_OPTIONS_JSON "${SIM_SOLVER_GLPK_OPTIONS_JSON}"
+upsert_env_key .env OSEMOSYS_FAST_DATAPORTAL "${OSEMOSYS_FAST_DATAPORTAL}"
+upsert_env_key .env OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL "${OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL}"
+upsert_env_key .env OSEMOSYS_SPARSE_MATRIX_PREPROCESS "${OSEMOSYS_SPARSE_MATRIX_PREPROCESS}"
+upsert_env_key .env OSEMOSYS_SPARSE_HIGH_DIM_PARAMS "${OSEMOSYS_SPARSE_HIGH_DIM_PARAMS}"
+upsert_env_key .env OSEMOSYS_SPARSE_EMISSION_PENALTIES "${OSEMOSYS_SPARSE_EMISSION_PENALTIES}"
+upsert_env_key .env OSEMOSYS_PYOMO_REPORT_TIMING "${OSEMOSYS_PYOMO_REPORT_TIMING}"
+upsert_env_key .env HIGHS_BUILD_FROM_SOURCE "${HIGHS_BUILD_FROM_SOURCE}"
+upsert_env_key .env HIGHS_GIT_REF "${HIGHS_GIT_REF}"
+upsert_env_key .env HIGHS_ENABLE_HIPO "${HIGHS_ENABLE_HIPO}"
 upsert_env_key .env OMP_NUM_THREADS "${OMP_NUM_THREADS}"
 upsert_env_key .env OPENBLAS_NUM_THREADS "${OPENBLAS_NUM_THREADS}"
 upsert_env_key .env MKL_NUM_THREADS "${MKL_NUM_THREADS}"
+upsert_env_key .env APP_GIT_SHA "${APP_GIT_SHA}"
+upsert_env_key .env APP_GIT_BRANCH "${APP_GIT_BRANCH}"
+upsert_env_key .env APP_DEPLOY_ENV "${APP_DEPLOY_ENV}"
+upsert_env_key .env SIMULATION_OPS_ENVIRONMENT_NAME "${SIMULATION_OPS_ENVIRONMENT_NAME}"
+upsert_env_key .env SIMULATION_OPS_REMOTE_ENVIRONMENTS "${SIMULATION_OPS_REMOTE_ENVIRONMENTS}"
+upsert_env_key .env SIMULATION_OPS_SHARED_TOKEN "${SIMULATION_OPS_SHARED_TOKEN}"
 upsert_env_key .env VITE_API_BASE_URL "${VITE_API_BASE_URL}"
 upsert_env_key .env VITE_APP_ENV "${VITE_APP_ENV}"
 upsert_env_key .env VITE_SIMULATION_MODE "${VITE_SIMULATION_MODE}"
@@ -335,14 +408,70 @@ upsert_env_key backend/.env SIM_TOTAL_WEIGHT_LIMIT "${SIM_TOTAL_WEIGHT_LIMIT}"
 upsert_env_key backend/.env SIM_WEIGHT_NATIONAL "${SIM_WEIGHT_NATIONAL}"
 upsert_env_key backend/.env SIM_WEIGHT_REGIONAL "${SIM_WEIGHT_REGIONAL}"
 upsert_env_key backend/.env SIM_SOLVER_THREADS "${SIM_SOLVER_THREADS}"
+upsert_env_key backend/.env SIM_SOLVER_PROFILE "${SIM_SOLVER_PROFILE}"
+upsert_env_key backend/.env SIM_SOLVER_HIGHS_METHOD "${SIM_SOLVER_HIGHS_METHOD}"
+upsert_env_key backend/.env SIM_SOLVER_HIGHS_PRESOLVE "${SIM_SOLVER_HIGHS_PRESOLVE}"
+upsert_env_key backend/.env SIM_SOLVER_HIGHS_PARALLEL "${SIM_SOLVER_HIGHS_PARALLEL}"
+upsert_env_key backend/.env SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE "${SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE}"
+upsert_env_key backend/.env SIM_SOLVER_HIGHS_CROSSOVER "${SIM_SOLVER_HIGHS_CROSSOVER}"
+upsert_env_key backend/.env SIM_SOLVER_HIGHS_OPTIONS_JSON "${SIM_SOLVER_HIGHS_OPTIONS_JSON}"
+upsert_env_key backend/.env SIM_SOLVER_HIGHS_TIME_LIMIT "${SIM_SOLVER_HIGHS_TIME_LIMIT}"
+upsert_env_key backend/.env SIM_SOLVER_HIGHS_IPM_TOL "${SIM_SOLVER_HIGHS_IPM_TOL}"
+upsert_env_key backend/.env SIM_SOLVER_HIGHS_PRIMAL_TOL "${SIM_SOLVER_HIGHS_PRIMAL_TOL}"
+upsert_env_key backend/.env SIM_SOLVER_HIGHS_DUAL_TOL "${SIM_SOLVER_HIGHS_DUAL_TOL}"
+upsert_env_key backend/.env SIM_SOLVER_HIGHS_DIRECT "${SIM_SOLVER_HIGHS_DIRECT}"
+upsert_env_key backend/.env SIM_SOLVER_GLPK_PROFILE "${SIM_SOLVER_GLPK_PROFILE}"
+upsert_env_key backend/.env SIM_SOLVER_GLPK_TIME_LIMIT "${SIM_SOLVER_GLPK_TIME_LIMIT}"
+upsert_env_key backend/.env SIM_SOLVER_GLPK_OPTIONS_JSON "${SIM_SOLVER_GLPK_OPTIONS_JSON}"
+upsert_env_key backend/.env OSEMOSYS_FAST_DATAPORTAL "${OSEMOSYS_FAST_DATAPORTAL}"
+upsert_env_key backend/.env OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL "${OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL}"
+upsert_env_key backend/.env OSEMOSYS_SPARSE_MATRIX_PREPROCESS "${OSEMOSYS_SPARSE_MATRIX_PREPROCESS}"
+upsert_env_key backend/.env OSEMOSYS_SPARSE_HIGH_DIM_PARAMS "${OSEMOSYS_SPARSE_HIGH_DIM_PARAMS}"
+upsert_env_key backend/.env OSEMOSYS_SPARSE_EMISSION_PENALTIES "${OSEMOSYS_SPARSE_EMISSION_PENALTIES}"
+upsert_env_key backend/.env OSEMOSYS_PYOMO_REPORT_TIMING "${OSEMOSYS_PYOMO_REPORT_TIMING}"
+upsert_env_key backend/.env HIGHS_BUILD_FROM_SOURCE "${HIGHS_BUILD_FROM_SOURCE}"
+upsert_env_key backend/.env HIGHS_GIT_REF "${HIGHS_GIT_REF}"
+upsert_env_key backend/.env HIGHS_ENABLE_HIPO "${HIGHS_ENABLE_HIPO}"
 upsert_env_key backend/.env OMP_NUM_THREADS "${OMP_NUM_THREADS}"
 upsert_env_key backend/.env OPENBLAS_NUM_THREADS "${OPENBLAS_NUM_THREADS}"
 upsert_env_key backend/.env MKL_NUM_THREADS "${MKL_NUM_THREADS}"
+upsert_env_key backend/.env APP_GIT_SHA "${APP_GIT_SHA}"
+upsert_env_key backend/.env APP_GIT_BRANCH "${APP_GIT_BRANCH}"
+upsert_env_key backend/.env APP_DEPLOY_ENV "${APP_DEPLOY_ENV}"
+upsert_env_key backend/.env SIMULATION_OPS_ENVIRONMENT_NAME "${SIMULATION_OPS_ENVIRONMENT_NAME}"
+upsert_env_key backend/.env SIMULATION_OPS_REMOTE_ENVIRONMENTS "${SIMULATION_OPS_REMOTE_ENVIRONMENTS}"
+upsert_env_key backend/.env SIMULATION_OPS_SHARED_TOKEN "${SIMULATION_OPS_SHARED_TOKEN}"
 
 capture_previous_images
 
-log "Levantando stack con Docker Compose (build + up, workers=${SIM_WORKER_REPLICAS})"
-docker compose up -d --build --scale "simulation-worker=${SIM_WORKER_REPLICAS}"
+log "Construyendo imágenes Docker"
+docker compose build api simulation-worker frontend
+
+log "Levantando dependencias base (db + redis)"
+docker compose up -d db redis
+
+log "Esperando PostgreSQL"
+if ! wait_db_healthy 60 2; then
+  echo "PostgreSQL no quedó listo en el tiempo esperado." >&2
+  exit 1
+fi
+
+if [[ "${BACKUP_BEFORE_MIGRATIONS}" == "1" ]]; then
+  BACKUP_DIR="$(ensure_writable_backup_dir "${BACKUP_DIR}")"
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  LAST_BACKUP_FILE="${BACKUP_DIR}/osemosys_${timestamp}.sql.gz"
+  log "Generando backup de base de datos en ${LAST_BACKUP_FILE}"
+  docker compose exec -T db sh -lc 'pg_dump -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"' | gzip -c > "${LAST_BACKUP_FILE}"
+  if [[ "${BACKUP_RETENTION_DAYS}" =~ ^[0-9]+$ ]]; then
+    find "${BACKUP_DIR}" -type f -name 'osemosys_*.sql.gz' -mtime +"${BACKUP_RETENTION_DAYS}" -delete || true
+  fi
+fi
+
+log "Ejecutando migraciones Alembic (antes de levantar API)"
+docker compose run --rm --no-deps api alembic upgrade head
+
+log "Levantando stack completo (workers=${SIM_WORKER_REPLICAS})"
+docker compose up -d --scale "simulation-worker=${SIM_WORKER_REPLICAS}"
 
 # Forzar recreación de simulation-worker para evitar mounts stale del bind
 # secrets/gurobi.lic. Si el contenedor anterior arrancó cuando ese path era
@@ -360,20 +489,8 @@ if ! wait_http_ok "http://127.0.0.1:${API_PORT}/api/v1/health" 60 2; then
   exit 1
 fi
 
-if [[ "${BACKUP_BEFORE_MIGRATIONS}" == "1" ]]; then
-  BACKUP_DIR="$(ensure_writable_backup_dir "${BACKUP_DIR}")"
-  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-  LAST_BACKUP_FILE="${BACKUP_DIR}/osemosys_${timestamp}.sql.gz"
-  log "Generando backup de base de datos en ${LAST_BACKUP_FILE}"
-  docker compose exec -T db sh -lc 'pg_dump -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"' | gzip -c > "${LAST_BACKUP_FILE}"
-  if [[ "${BACKUP_RETENTION_DAYS}" =~ ^[0-9]+$ ]]; then
-    find "${BACKUP_DIR}" -type f -name 'osemosys_*.sql.gz' -mtime +"${BACKUP_RETENTION_DAYS}" -delete || true
-  fi
-fi
-
-log "Ejecutando migraciones y seed"
-docker compose exec -T api alembic upgrade head
 if [[ "${RUN_SEED}" == "1" ]]; then
+  log "Ejecutando seed"
   docker compose exec -T api python scripts/seed.py
 fi
 

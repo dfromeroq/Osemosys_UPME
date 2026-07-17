@@ -907,7 +907,16 @@ def get_label(code: str) -> str:
     if not code:
         return code
 
-    # 1. Búsqueda exacta
+    try:
+        from app.visualization.catalog_cache import get_catalog_cache
+
+        cached = get_catalog_cache().labels.get(code)
+        if cached:
+            return cached
+    except RuntimeError:
+        pass
+
+    # 1. Búsqueda exacta (fallback estático)
     label = DISPLAY_NAMES.get(code)
     if label:
         return label

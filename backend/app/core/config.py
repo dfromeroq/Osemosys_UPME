@@ -50,7 +50,41 @@ class Settings(BaseSettings):
     sim_stale_task_minutes: int = Field(default=30, alias="SIM_STALE_TASK_MINUTES")
     sim_solver_tee: bool = Field(default=False, alias="SIM_SOLVER_TEE")
     sim_solver_keepfiles: bool = Field(default=False, alias="SIM_SOLVER_KEEPFILES")
+    sim_solver_profile: str = Field(default="default", alias="SIM_SOLVER_PROFILE")
     sim_solver_threads: int = Field(default=0, alias="SIM_SOLVER_THREADS")
+    sim_solver_highs_method: str = Field(default="", alias="SIM_SOLVER_HIGHS_METHOD")
+    sim_solver_highs_presolve: str = Field(default="", alias="SIM_SOLVER_HIGHS_PRESOLVE")
+    sim_solver_highs_parallel: str = Field(default="", alias="SIM_SOLVER_HIGHS_PARALLEL")
+    sim_solver_highs_hipo_parallel_type: str = Field(
+        default="",
+        alias="SIM_SOLVER_HIGHS_HIPO_PARALLEL_TYPE",
+    )
+    sim_solver_highs_crossover: str = Field(default="", alias="SIM_SOLVER_HIGHS_CROSSOVER")
+    sim_solver_highs_options_json: str = Field(default="", alias="SIM_SOLVER_HIGHS_OPTIONS_JSON")
+    sim_solver_highs_direct: bool = Field(default=True, alias="SIM_SOLVER_HIGHS_DIRECT")
+    sim_solver_highs_time_limit: float = Field(default=0.0, alias="SIM_SOLVER_HIGHS_TIME_LIMIT")
+    sim_solver_highs_ipm_tol: float = Field(default=1e-7, alias="SIM_SOLVER_HIGHS_IPM_TOL")
+    sim_solver_highs_primal_tol: float = Field(default=1e-7, alias="SIM_SOLVER_HIGHS_PRIMAL_TOL")
+    sim_solver_highs_dual_tol: float = Field(default=1e-7, alias="SIM_SOLVER_HIGHS_DUAL_TOL")
+    sim_solver_glpk_profile: str = Field(default="fast", alias="SIM_SOLVER_GLPK_PROFILE")
+    sim_solver_glpk_time_limit: float = Field(default=0.0, alias="SIM_SOLVER_GLPK_TIME_LIMIT")
+    sim_solver_glpk_options_json: str = Field(default="", alias="SIM_SOLVER_GLPK_OPTIONS_JSON")
+    osemosys_activity_lower_prune_tol: float = Field(
+        default=0.0,
+        alias="OSEMOSYS_ACTIVITY_LOWER_PRUNE_TOL",
+    )
+    osemosys_sparse_matrix_preprocess: bool = Field(
+        default=True,
+        alias="OSEMOSYS_SPARSE_MATRIX_PREPROCESS",
+    )
+    osemosys_sparse_high_dim_params: bool = Field(
+        default=True,
+        alias="OSEMOSYS_SPARSE_HIGH_DIM_PARAMS",
+    )
+    osemosys_sparse_emission_penalties: bool = Field(
+        default=True,
+        alias="OSEMOSYS_SPARSE_EMISSION_PENALTIES",
+    )
     simulation_artifacts_dir: str = Field(default="/app/tmp", alias="SIMULATION_ARTIFACTS_DIR")
     docker_socket_path: str = Field(default="/var/run/docker.sock", alias="DOCKER_SOCKET_PATH")
     docker_metrics_services: str = Field(
@@ -69,6 +103,18 @@ class Settings(BaseSettings):
     # de la etiqueta `com.docker.compose.project` del propio contenedor (via
     # /containers/{hostname}/json). Fallback: todos los proyectos.
     docker_metrics_project: str = Field(default="", alias="DOCKER_METRICS_PROJECT")
+    simulation_ops_environment_name: str = Field(
+        default="",
+        alias="SIMULATION_OPS_ENVIRONMENT_NAME",
+    )
+    simulation_ops_remote_environments: str = Field(
+        default="",
+        alias="SIMULATION_OPS_REMOTE_ENVIRONMENTS",
+    )
+    simulation_ops_shared_token: str = Field(
+        default="",
+        alias="SIMULATION_OPS_SHARED_TOKEN",
+    )
 
     # Auth
     secret_key: str = Field(default="change-me", alias="SECRET_KEY")
@@ -94,6 +140,25 @@ class Settings(BaseSettings):
         if not self.docker_metrics_services:
             return []
         return [service.strip() for service in self.docker_metrics_services.split(",") if service.strip()]
+
+    def simulation_ops_remote_environments_list(self) -> list[dict]:
+        """Ambientes remotos configurados para el tablero operacional.
+
+        Formato esperado en env:
+        ``[{"name":"prod","base_url":"https://.../api/v1","token":"..."}]``.
+        """
+        import json
+
+        raw = (self.simulation_ops_remote_environments or "").strip()
+        if not raw:
+            return []
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(parsed, list):
+            return []
+        return [item for item in parsed if isinstance(item, dict)]
 
 
 @lru_cache

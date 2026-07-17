@@ -5,6 +5,21 @@ from .change_request_value import ChangeRequestValue
 from .catalog_change_log import CatalogChangeLog
 from .categorie import Categorie
 from .chart_series_config import ChartSeriesConfig
+from .catalog_meta import (
+    CatalogMetaAudit,
+    CatalogMetaChartConfig,
+    CatalogMetaChartModule,
+    CatalogMetaChartSubfilter,
+    CatalogMetaChartSubfilterGroup,
+    CatalogMetaChartSubmodule,
+    CatalogMetaColorPalette,
+    CatalogMetaFilterGroup,
+    CatalogMetaFilterMember,
+    CatalogMetaLabel,
+    CatalogMetaSectorMapping,
+    CatalogMetaTechFamily,
+    CatalogMetaVariableUnit,
+)
 from .deletion_log import DeletionLog
 from .dailytimebracket import Dailytimebracket
 from .daytype import Daytype
@@ -35,6 +50,11 @@ from .scenario_operation_job_event import ScenarioOperationJobEvent
 from .scenario_permission import ScenarioPermission
 from .season import Season
 from .simulation_benchmark import SimulationBenchmark
+from .model_parameter_catalog import ModelParameterCatalog
+from .model_parameter_default_version import (
+    ModelParameterDefaultItem,
+    ModelParameterDefaultVersion,
+)
 from .simulation_job import SimulationJob
 from .simulation_job_event import SimulationJobEvent
 from .simulation_job_favorite import SimulationJobFavorite
@@ -78,8 +98,24 @@ __all__ = [
     "ChangeRequestValue",
     "CatalogChangeLog",
     "ChartSeriesConfig",
+    "CatalogMetaAudit",
+    "CatalogMetaChartConfig",
+    "CatalogMetaChartModule",
+    "CatalogMetaChartSubfilter",
+    "CatalogMetaChartSubfilterGroup",
+    "CatalogMetaChartSubmodule",
+    "CatalogMetaColorPalette",
+    "CatalogMetaFilterGroup",
+    "CatalogMetaFilterMember",
+    "CatalogMetaLabel",
+    "CatalogMetaSectorMapping",
+    "CatalogMetaTechFamily",
+    "CatalogMetaVariableUnit",
     "Categorie",
     "DeletionLog",
+    "ModelParameterCatalog",
+    "ModelParameterDefaultItem",
+    "ModelParameterDefaultVersion",
     "SimulationJob",
     "SimulationJobEvent",
     "SimulationJobFavorite",

@@ -9,6 +9,7 @@ import { Navigate, Outlet, createBrowserRouter, useParams } from "react-router-d
 import { AppLayout } from "@/layouts/AppLayout";
 import { AuthLayout } from "@/layouts/AuthLayout";
 import { RequireAuth } from "@/routes/RequireAuth";
+import { RequireCatalogsArea } from "@/routes/RequireCatalogsArea";
 import { RequireCatalogManager } from "@/routes/RequireCatalogManager";
 import { RequireOfficialDataImporter } from "@/routes/RequireOfficialDataImporter";
 import { RequireSystemSettingsManager } from "@/routes/RequireSystemSettingsManager";
@@ -24,6 +25,7 @@ const ScenarioDetailPage = lazy(() => import("@/pages/ScenarioDetailPage").then(
 const ScenarioHistoryPage = lazy(() => import("@/pages/ScenarioHistoryPage").then((m) => ({ default: m.ScenarioHistoryPage })));
 const CatalogsPage = lazy(() => import("@/pages/CatalogsPage").then((m) => ({ default: m.CatalogsPage })));
 const SimulationPage = lazy(() => import("@/pages/SimulationPage").then((m) => ({ default: m.SimulationPage })));
+const SimulationOpsPage = lazy(() => import("@/pages/SimulationOpsPage").then((m) => ({ default: m.SimulationOpsPage })));
 const ResultsPage = lazy(() => import("@/pages/ResultsPage").then((m) => ({ default: m.ResultsPage })));
 const ResultDetailPage = lazy(() => import("@/pages/ResultDetailPage").then((m) => ({ default: m.ResultDetailPage })));
 const ResultDataExplorerPage = lazy(() => import("@/pages/ResultDataExplorerPage").then((m) => ({ default: m.ResultDataExplorerPage })));
@@ -36,7 +38,6 @@ const ReportsPage = lazy(() => import("@/pages/ReportsPage").then((m) => ({ defa
 const ReportDashboardPage = lazy(() => import("@/pages/ReportDashboardPage").then((m) => ({ default: m.ReportDashboardPage })));
 const HistoryPage = lazy(() => import("@/pages/HistoryPage").then((m) => ({ default: m.HistoryPage })));
 const ScenarioTagsAdminPage = lazy(() => import("@/pages/ScenarioTagsAdminPage").then((m) => ({ default: m.ScenarioTagsAdminPage })));
-const SystemSettingsAdminPage = lazy(() => import("@/pages/SystemSettingsAdminPage").then((m) => ({ default: m.SystemSettingsAdminPage })));
 const ChartViewerPage = lazy(() => import("@/pages/ChartViewerPage").then((m) => ({ default: m.ChartViewerPage })));
 
 /** Placeholder mínimo mientras se carga una página lazy (sin artefactos visuales). */
@@ -102,6 +103,12 @@ export const router = createBrowserRouter([
               { path: "scenarios/:id/history", element: <SuspenseWrapper><ScenarioHistoryPage /></SuspenseWrapper> },
               { path: "change-requests", element: <SuspenseWrapper><ChangeRequestsPage /></SuspenseWrapper> },
               { path: "simulation", element: <SuspenseWrapper><SimulationPage /></SuspenseWrapper> },
+              {
+                element: <RequireSystemSettingsManager />,
+                children: [
+                  { path: "simulation-ops", element: <SuspenseWrapper><SimulationOpsPage /></SuspenseWrapper> },
+                ],
+              },
               { path: "results", element: <SuspenseWrapper><ResultsPage /></SuspenseWrapper> },
               { path: "results/:runId", element: <SuspenseWrapper><ResultDetailRoute /></SuspenseWrapper> },
               { path: "results/:runId/data", element: <SuspenseWrapper><ResultDataExplorerPage /></SuspenseWrapper> },
@@ -115,13 +122,22 @@ export const router = createBrowserRouter([
                 children: [{ path: "users-admin", element: <SuspenseWrapper><UsersAdminPage /></SuspenseWrapper> }],
               },
               {
-                element: <RequireSystemSettingsManager />,
-                children: [{ path: "system-settings", element: <SuspenseWrapper><SystemSettingsAdminPage /></SuspenseWrapper> }],
+                element: <RequireCatalogsArea />,
+                children: [
+                  { path: "catalogs", element: <SuspenseWrapper><CatalogsPage /></SuspenseWrapper> },
+                  {
+                    path: "system-settings",
+                    element: <Navigate to={`${paths.catalogs}?tab=solver_config`} replace />,
+                  },
+                  {
+                    path: "model-parameter-defaults",
+                    element: <Navigate to={`${paths.catalogs}?tab=model_defaults`} replace />,
+                  },
+                ],
               },
               {
                 element: <RequireCatalogManager />,
                 children: [
-                  { path: "catalogs", element: <SuspenseWrapper><CatalogsPage /></SuspenseWrapper> },
                   { path: "scenario-tags-admin", element: <SuspenseWrapper><ScenarioTagsAdminPage /></SuspenseWrapper> },
                 ],
               },
@@ -137,4 +153,3 @@ export const router = createBrowserRouter([
     ],
   },
 ]);
-

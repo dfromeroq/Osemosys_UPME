@@ -162,6 +162,14 @@ export const simulationApi = {
     return data;
   },
 
+  /** Última página de logs (etapas recientes del solver y post-proceso). */
+  async listLatestLogs(jobId: number, cantidad = 100) {
+    const probe = await this.listLogs(jobId, cantidad, 1);
+    const lastPage = Math.max(1, probe.meta.total_pages);
+    if (lastPage === 1) return probe;
+    return this.listLogs(jobId, cantidad, lastPage);
+  },
+
   async getResult(jobId: number) {
     const { data } = await httpClient.get<RunResult>(`/simulations/${jobId}/result`, {
       timeout: 5 * 60 * 1000,

@@ -13,10 +13,12 @@ export const paths = {
   scenarioHistory: (id: string | number) => `/app/scenarios/${id}/history`,
   scenarioTagsAdmin: "/app/scenario-tags-admin",
   systemSettingsAdmin: "/app/system-settings",
+  modelParameterDefaults: "/app/model-parameter-defaults",
   changeRequests: "/app/change-requests",
   catalogs: "/app/catalogs",
   officialImport: "/app/official-import",
   simulation: "/app/simulation",
+  simulationOps: "/app/simulation-ops",
   results: "/app/results",
   resultsDetail: (runId: string | number) => `/app/results/${runId}`,
   resultsDataExplorer: (
@@ -56,4 +58,3 @@ export const paths = {
   chartViewer: (jobId: string | number) => `/app/charts/viewer/${jobId}`,
   history: "/app/history",
 } as const;
-

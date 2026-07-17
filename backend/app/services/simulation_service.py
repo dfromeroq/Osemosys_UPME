@@ -24,6 +24,7 @@ from sqlalchemy.orm import joinedload
 from app.repositories.simulation_repository import SimulationRepository
 from app.services.docker_metrics_service import DockerMetricsService
 from app.services.pagination import build_meta, normalize_pagination
+from app.simulation.celery_app import celery_app
 from app.simulation.tasks import run_simulation_job
 
 logger = logging.getLogger(__name__)
@@ -343,6 +344,7 @@ class SimulationService:
             "username": username,
             "solver_name": job.solver_name,
             "solver_threads_used": getattr(job, "solver_threads_used", None),
+            "solver_threads_configured": getattr(job, "solver_threads_configured", None),
             "input_mode": getattr(job, "input_mode", "SCENARIO"),
             "input_name": getattr(job, "input_name", None),
             "simulation_type": getattr(job, "simulation_type", "NATIONAL"),
@@ -361,6 +363,8 @@ class SimulationService:
             "is_public": bool(getattr(job, "is_public", True)),
             "is_favorite": bool(is_favorite),
             "is_infeasible_result": SimulationService._is_infeasible_succeeded_job(job),
+            "stage_times": getattr(job, "stage_times_json", None) or {},
+            "model_timings": getattr(job, "model_timings_json", None) or {},
             **SimulationService._diagnostic_info_for(job),
         }
 
@@ -981,21 +985,42 @@ class SimulationService:
         if job.status not in ("QUEUED", "RUNNING"):
             raise ConflictError("Solo se pueden cancelar simulaciones en cola o ejecucion.")
 
+        previous_status = str(job.status)
+        task_id = str(job.celery_task_id) if job.celery_task_id else None
         job.cancel_requested = True
-        if job.status == "QUEUED":
-            job.status = "CANCELLED"
-            job.progress = max(job.progress, 0.0)
+        job.status = "CANCELLED"
+        job.progress = max(job.progress, 0.0)
+        job.finished_at = func.now()
         SimulationRepository.add_event(
             db,
             job_id=job.id,
             event_type="INFO",
             stage="cancel",
-            message="Solicitud de cancelacion registrada.",
+            message=(
+                "Simulacion cancelada por el usuario."
+                if previous_status == "QUEUED"
+                else "Simulacion cancelada por el usuario; terminando task del worker."
+            ),
             progress=job.progress,
         )
         db.commit()
-        if job.status == "CANCELLED":
-            SimulationService._dispatch_queued_jobs(db)
+
+        if task_id:
+            try:
+                celery_app.control.revoke(
+                    task_id,
+                    terminate=(previous_status == "RUNNING"),
+                    signal="SIGTERM",
+                )
+            except Exception:  # pragma: no cover
+                logger.warning(
+                    "No se pudo revocar la task Celery %s del job %s cancelado",
+                    task_id,
+                    job_id,
+                    exc_info=True,
+                )
+
+        SimulationService._dispatch_queued_jobs(db)
         db.refresh(job)
         tags_by_sid = SimulationService._batch_scenario_tags_by_scenario_ids(
             db, {int(job.scenario_id)} if job.scenario_id else set()
@@ -1158,6 +1183,7 @@ class SimulationService:
             "scenario_id": job.scenario_id,
             "solver_name": job.solver_name,
             "solver_threads_used": getattr(job, "solver_threads_used", None),
+            "solver_threads_configured": getattr(job, "solver_threads_configured", None),
             "records_used": job.records_used or 0,
             "osemosys_param_records": job.osemosys_param_records or 0,
             "objective_value": job.objective_value or 0.0,
@@ -1173,8 +1199,8 @@ class SimulationService:
             "sol": sol,
             "intermediate_variables": dict(intermediate_variables),
             "osemosys_inputs_summary": job.inputs_summary_json or [],
-            "stage_times": job.stage_times_json or {},
-            "model_timings": job.model_timings_json or {},
+            "stage_times": getattr(job, "stage_times_json", None) or {},
+            "model_timings": getattr(job, "model_timings_json", None) or {},
             "infeasibility_diagnostics": infeasibility_diagnostics,
         }
 
