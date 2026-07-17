@@ -258,9 +258,11 @@ def _highs_status_to_raw(status: object) -> str:
         return str(status)
 
     mapping = {
+        getattr(highspy.HighsModelStatus, "kNotset", None): "notset",
         getattr(highspy.HighsModelStatus, "kOptimal", None): "optimal",
         getattr(highspy.HighsModelStatus, "kInfeasible", None): "infeasible",
         getattr(highspy.HighsModelStatus, "kUnbounded", None): "unbounded",
+        getattr(highspy.HighsModelStatus, "kUnknown", None): "unknown",
         getattr(highspy.HighsModelStatus, "kTimeLimit", None): "maxTimeLimit",
         getattr(highspy.HighsModelStatus, "kIterationLimit", None): "maxIterations",
         getattr(highspy.HighsModelStatus, "kObjectiveBound", None): "objectiveLimit",
@@ -269,6 +271,120 @@ def _highs_status_to_raw(status: object) -> str:
         if hs is not None and status == hs:
             return label
     return str(status)
+
+
+def _is_highs_status_error(status: object) -> bool:
+    """Indica si una llamada highspy devolvió ``HighsStatus.kError``."""
+    if status is None:
+        return False
+    if isinstance(status, str):
+        return status.lower().endswith("kerror")
+    try:
+        import highspy
+
+        return status == highspy.HighsStatus.kError
+    except Exception:  # pragma: no cover - depende de la versión highspy
+        return str(status).lower().endswith("kerror")
+
+
+def _is_highs_notset(status: object) -> bool:
+    normalized = _highs_status_to_raw(status).strip().lower()
+    return normalized == "notset" or normalized.endswith(".knotset")
+
+
+def _is_highs_unusable_status(status: object) -> bool:
+    """Estados sin solución utilizable que nunca deben persistirse como éxito."""
+    normalized = _highs_status_to_raw(status).strip().lower()
+    return (
+        _is_highs_notset(status)
+        or normalized == "unknown"
+        or normalized.endswith(".kunknown")
+        or "error" in normalized
+    )
+
+
+def _reset_highspy_scheduler() -> None:
+    """Libera el scheduler global antes de reintentar un ``kNotset``."""
+    try:
+        import highspy
+
+        reset = getattr(highspy.Highs, "resetGlobalScheduler", None)
+        if callable(reset):
+            try:
+                reset(True)
+            except TypeError:  # compatibilidad con versiones anteriores
+                reset()
+    except Exception:  # pragma: no cover - best effort según highspy
+        logger.debug(
+            "No fue posible resetear el scheduler global de HiGHS",
+            exc_info=True,
+        )
+
+
+def _run_highspy_with_retry(
+    h: object,
+    *,
+    timings: dict[str, Any],
+) -> str:
+    """Ejecuta HiGHS y reintenta una vez tras ``kNotset``.
+
+    Esta protección existía antes del merge ``c10c8fd``. Se registran por
+    separado los retornos de ``run()`` y los estados de modelo para que un
+    fallo numérico no vuelva a quedar oculto como un job exitoso.
+    """
+    run = getattr(h, "run")
+    get_model_status = getattr(h, "getModelStatus")
+
+    t_run = perf_counter()
+    run_status = run()
+    elapsed = perf_counter() - t_run
+    model_status = get_model_status()
+    raw_status = _highs_status_to_raw(model_status)
+    timings["solver_run_seconds"] = elapsed
+    timings["solver_run_status"] = str(run_status)
+    timings["solver_model_status_initial"] = raw_status
+    logger.info(
+        "HiGHS run() terminó en %.2fs: run_status=%s model_status=%s",
+        elapsed,
+        run_status,
+        raw_status,
+    )
+
+    if not _is_highs_notset(model_status):
+        if _is_highs_status_error(run_status):
+            raise RuntimeError(
+                "HiGHS run() devolvió error con estado de modelo "
+                f"{raw_status}: {run_status}"
+            )
+        return raw_status
+
+    logger.warning(
+        "HiGHS devolvió kNotset; resetGlobalScheduler() y único reintento run()"
+    )
+    _reset_highspy_scheduler()
+    t_retry = perf_counter()
+    retry_status = run()
+    retry_elapsed = perf_counter() - t_retry
+    retry_model_status = get_model_status()
+    retry_raw_status = _highs_status_to_raw(retry_model_status)
+    timings["solver_retry_run_seconds"] = retry_elapsed
+    timings["solver_run_seconds"] = elapsed + retry_elapsed
+    timings["solver_retry_run_status"] = str(retry_status)
+    timings["solver_model_status_retry"] = retry_raw_status
+    logger.info(
+        "HiGHS retry run() terminó en %.2fs: run_status=%s model_status=%s",
+        retry_elapsed,
+        retry_status,
+        retry_raw_status,
+    )
+
+    if _is_highs_notset(retry_model_status) or _is_highs_status_error(retry_status):
+        raise RuntimeError(
+            "HiGHS no estableció un estado del modelo tras resetear el scheduler "
+            f"y reintentar: run_status={retry_status}, "
+            f"model_status={retry_raw_status}"
+        )
+    return retry_raw_status
 
 
 def _ensure_dual_suffix(instance: pyo.ConcreteModel) -> None:
@@ -443,7 +559,7 @@ def _solve_with_direct_highspy(
     *,
     highs_config: SolverHighsConfig,
     lp_path: Path | None,
-    timings: dict[str, float],
+    timings: dict[str, Any],
     on_stage: Callable[[str, float], None] | None = None,
 ) -> tuple[str, float, int | None]:
     import highspy
@@ -488,8 +604,16 @@ def _solve_with_direct_highspy(
             timing_value=timings["solver_write_lp_seconds"],
         )
     t_read = perf_counter()
-    h.readModel(str(lp_path))
+    read_status = h.readModel(str(lp_path))
     timings["solver_read_model_seconds"] = perf_counter() - t_read
+    timings["solver_read_status"] = str(read_status)
+    logger.info(
+        "HiGHS readModel() terminó en %.2fs con status=%s",
+        timings["solver_read_model_seconds"],
+        read_status,
+    )
+    if _is_highs_status_error(read_status):
+        raise RuntimeError(f"HiGHS no pudo leer el LP {lp_path}: {read_status}")
 
     if on_stage:
         on_stage(
@@ -498,11 +622,7 @@ def _solve_with_direct_highspy(
             timing_key="solver_read_model_seconds",
             timing_value=timings["solver_read_model_seconds"],
         )
-    t_run = perf_counter()
-    h.run()
-    timings["solver_run_seconds"] = perf_counter() - t_run
-
-    raw_status = _highs_status_to_raw(h.getModelStatus())
+    raw_status = _run_highspy_with_retry(h, timings=timings)
 
     if on_stage:
         on_stage(
@@ -780,7 +900,7 @@ def _solve_highs(
     on_solver_finished: Callable[[pyo.ConcreteModel, Any, Any, dict], None] | None,
     on_stage: Callable[[str, float], None] | None = None,
 ) -> dict:
-    solver_timings: dict[str, float] = {}
+    solver_timings: dict[str, Any] = {}
     solver_obj: object | None = None
     results_obj: object | None = None
     raw_status: str
@@ -798,6 +918,11 @@ def _solve_highs(
                 timings=solver_timings,
                 on_stage=on_stage,
             )
+            if _is_highs_unusable_status(raw_status):
+                raise RuntimeError(
+                    "HiGHS directo terminó sin una solución utilizable "
+                    f"({raw_status})."
+                )
         except Exception:
             logger.exception(
                 "HiGHS directo falló; reintentando con appsi_highs",
@@ -816,6 +941,14 @@ def _solve_highs(
             settings=settings,
             timings=solver_timings,
             on_stage=on_stage,
+        )
+
+    if _is_highs_unusable_status(raw_status):
+        if solver_obj is not None:
+            _release_solver(solver_obj)
+        raise RuntimeError(
+            "HiGHS no produjo una solución utilizable "
+            f"({raw_status}) tras agotar los backends disponibles."
         )
 
     status_display = normalize_solver_status_display(raw_status)
