@@ -15,6 +15,31 @@ def _load_notebook_module():
     return module
 
 
+def test_sand_to_csv_preserves_partially_populated_year_column(tmp_path) -> None:
+    module = _load_notebook_module()
+    source = pd.DataFrame(
+        [
+            ["ResidualCapacity", "RE1", "T1", 1.0, None],
+            ["ResidualCapacity", "RE1", "T2", 0.0, 5.0],
+        ],
+        columns=["Parameter", "REGION", "TECHNOLOGY", "2022", "2023"],
+    )
+
+    module.SAND_to_CSV(
+        source,
+        "ResidualCapacity",
+        str(tmp_path),
+        1,
+    )
+
+    result = pd.read_csv(tmp_path / "ResidualCapacity.csv")
+    assert result.to_dict("records") == [
+        {"REGION": "RE1", "TECHNOLOGY": "T1", "YEAR": 2022, "VALUE": 1.0},
+        {"REGION": "RE1", "TECHNOLOGY": "T2", "YEAR": 2022, "VALUE": 0.0},
+        {"REGION": "RE1", "TECHNOLOGY": "T2", "YEAR": 2023, "VALUE": 5.0},
+    ]
+
+
 def test_sparse_completion_preserves_legacy_set_order_for_emission_first(tmp_path) -> None:
     module = _load_notebook_module()
     root = str(tmp_path) + "/"

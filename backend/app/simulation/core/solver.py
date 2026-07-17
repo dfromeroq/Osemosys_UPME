@@ -16,6 +16,7 @@ import os
 import re
 import tempfile
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -34,6 +35,15 @@ from app.simulation.core.solver_config import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class HighsIncompleteSolveError(RuntimeError):
+    """HiGHS terminó por límite sin una solución óptima certificada."""
+
+    def __init__(self, message: str, *, metadata: dict[str, Any]) -> None:
+        super().__init__(message)
+        self.solver_failure_metadata = metadata
+
 
 # Alias usado en solve_model -> nombre del factory Pyomo (appsi_highs, glpk, gurobi).
 SOLVER_FACTORIES: dict[str, str] = {
@@ -292,14 +302,52 @@ def _is_highs_notset(status: object) -> bool:
     return normalized == "notset" or normalized.endswith(".knotset")
 
 
+def _is_highs_limit_status(status: object) -> bool:
+    normalized = _highs_status_to_raw(status).strip().lower()
+    compact = re.sub(r"[^a-z]", "", normalized)
+    return compact in {
+        "maxtimelimit",
+        "timelimit",
+        "maxiterations",
+        "iterationlimit",
+        "objectivelimit",
+    }
+
+
 def _is_highs_unusable_status(status: object) -> bool:
-    """Estados sin solución utilizable que nunca deben persistirse como éxito."""
+    """Estados sin solución certificada que nunca deben persistirse como éxito."""
     normalized = _highs_status_to_raw(status).strip().lower()
     return (
         _is_highs_notset(status)
         or normalized == "unknown"
         or normalized.endswith(".kunknown")
         or "error" in normalized
+        or _is_highs_limit_status(status)
+    )
+
+
+def _apply_simulation_highs_defaults(
+    config: SolverHighsConfig,
+    *,
+    simulation_type: str | None,
+) -> SolverHighsConfig:
+    """Aplica un método robusto sólo a regionales sin override explícito.
+
+    El simplex dual default es rápido en nacionales y en el regional histórico,
+    pero diverge numéricamente con regionales altamente degenerados. IPM con
+    crossover produjo una base óptima y factible en esos casos. Un método
+    configurado por env/BD siempre conserva precedencia.
+    """
+    if str(simulation_type or "").strip().upper() != "REGIONAL" or config.method:
+        return config
+    logger.info(
+        "Modelo REGIONAL sin método explícito: usando HiGHS IPM con crossover"
+    )
+    return replace(
+        config,
+        method="ipm",
+        run_crossover=config.run_crossover or "on",
+        parallel=config.parallel or "off",
     )
 
 
@@ -919,10 +967,26 @@ def _solve_highs(
                 on_stage=on_stage,
             )
             if _is_highs_unusable_status(raw_status):
-                raise RuntimeError(
-                    "HiGHS directo terminó sin una solución utilizable "
+                message = (
+                    "HiGHS directo terminó sin una solución óptima certificada "
                     f"({raw_status})."
                 )
+                if _is_highs_limit_status(raw_status):
+                    raise HighsIncompleteSolveError(
+                        message,
+                        metadata={
+                            **solver_timings,
+                            "solver_status_raw": raw_status,
+                            "solver_highs_profile": highs_config.profile,
+                            "solver_highs_method": highs_config.method,
+                            "solver_highs_time_limit": highs_config.time_limit,
+                        },
+                    )
+                raise RuntimeError(message)
+        except HighsIncompleteSolveError:
+            # Repetir el mismo modelo tras agotar un límite sólo duplica el
+            # tiempo y podría volver a producir resultados parciales.
+            raise
         except Exception:
             logger.exception(
                 "HiGHS directo falló; reintentando con appsi_highs",
@@ -946,10 +1010,18 @@ def _solve_highs(
     if _is_highs_unusable_status(raw_status):
         if solver_obj is not None:
             _release_solver(solver_obj)
-        raise RuntimeError(
+        exc = RuntimeError(
             "HiGHS no produjo una solución utilizable "
             f"({raw_status}) tras agotar los backends disponibles."
         )
+        exc.solver_failure_metadata = {  # type: ignore[attr-defined]
+            **solver_timings,
+            "solver_status_raw": raw_status,
+            "solver_highs_profile": highs_config.profile,
+            "solver_highs_method": highs_config.method,
+            "solver_highs_time_limit": highs_config.time_limit,
+        }
+        raise exc
 
     status_display = normalize_solver_status_display(raw_status)
     logger.info(
@@ -1011,10 +1083,14 @@ def solve_model(
     lp_path: str | Path | None = None,
     on_solver_finished: Callable[[pyo.ConcreteModel, Any, Any, dict], None] | None = None,
     on_stage: Callable[[str, float], None] | None = None,
+    simulation_type: str | None = None,
 ) -> dict:
     """Resuelve el modelo usando Pyomo SolverFactory o highspy directo."""
     settings = get_settings()
-    highs_config = resolve_highs_config(settings)
+    highs_config = _apply_simulation_highs_defaults(
+        resolve_highs_config(settings),
+        simulation_type=simulation_type,
+    )
     glpk_config = resolve_glpk_config(settings)
 
     if lp_path is not None and solver_name != "highs":

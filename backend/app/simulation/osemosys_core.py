@@ -123,6 +123,7 @@ def run_osemosys_from_db(
     run_iis_analysis: bool = False,
     job_id: int | None = None,
     materialize_intermediate: bool = True,
+    simulation_type: str | None = None,
 ) -> dict:
     """Pipeline completo: DB → CSVs temporales → DataPortal → solve → results.
 
@@ -242,6 +243,7 @@ def run_osemosys_from_db(
             lp_path=lp_path,
             on_solver_finished=on_solver_finished,
             on_stage=on_stage,
+            simulation_type=simulation_type,
         )
         timings["solver_seconds"] = perf_counter() - t
         _merge_solver_timings(timings, solver_result)
@@ -336,6 +338,7 @@ def run_osemosys_from_csv_dir(
     run_iis_analysis: bool = False,
     job_id: int | None = None,
     materialize_intermediate: bool = True,
+    simulation_type: str | None = None,
 ) -> dict:
     """Pipeline desde directorio de CSVs: lee sets del directorio y ejecuta solve → results.
 
@@ -459,6 +462,7 @@ def run_osemosys_from_csv_dir(
         lp_path=lp_path,
         on_solver_finished=on_solver_finished,
         on_stage=on_stage,
+        simulation_type=simulation_type,
     )
     timings["solver_seconds"] = perf_counter() - t
     _merge_solver_timings(timings, solver_result)
@@ -543,6 +547,7 @@ def run_osemosys_from_excel(
     sheet_name: str = "Parameters",
     div: int = 1,
     materialize_intermediate: bool = True,
+    simulation_type: str | None = None,
 ) -> dict:
     """Pipeline completo desde archivo Excel: Excel → CSVs temporales → solve → results.
 
@@ -663,6 +668,7 @@ def run_osemosys_from_excel(
             solver_name=solver_name,
             lp_path=lp_path,
             on_stage=on_stage,
+            simulation_type=simulation_type,
         )
         timings["solver_seconds"] = perf_counter() - t
         _merge_solver_timings(timings, solver_result)

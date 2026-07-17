@@ -123,6 +123,36 @@ def test_run_highspy_raises_when_retry_remains_knotset(monkeypatch) -> None:
     assert highs.run_calls == 2
 
 
+def test_regional_defaults_use_ipm_with_crossover() -> None:
+    cfg = solver_module._apply_simulation_highs_defaults(
+        SolverHighsConfig(),
+        simulation_type="REGIONAL",
+    )
+    assert cfg.method == "ipm"
+    assert cfg.run_crossover == "on"
+    assert cfg.parallel == "off"
+
+
+def test_regional_defaults_preserve_explicit_method() -> None:
+    cfg = solver_module._apply_simulation_highs_defaults(
+        SolverHighsConfig(method="simplex", run_crossover="off"),
+        simulation_type="REGIONAL",
+    )
+    assert cfg.method == "simplex"
+    assert cfg.run_crossover == "off"
+
+
+def test_national_defaults_do_not_override_highs() -> None:
+    original = SolverHighsConfig()
+    assert (
+        solver_module._apply_simulation_highs_defaults(
+            original,
+            simulation_type="NATIONAL",
+        )
+        is original
+    )
+
+
 def test_resolve_highs_config_defaults_match_notebook() -> None:
     cfg = resolve_highs_config(_fake_settings())
     assert cfg.method == ""
@@ -432,8 +462,52 @@ def test_solve_model_fails_if_appsi_also_returns_knotset(monkeypatch) -> None:
         lambda: {"glpk": False, "highs": True},
     )
 
-    with pytest.raises(RuntimeError, match="agotar los backends"):
+    with pytest.raises(RuntimeError, match="agotar los backends") as caught:
         solver_module.solve_model(_FakeInstance(), solver_name="highs")
+
+    assert (
+        caught.value.solver_failure_metadata["solver_status_raw"]
+        == "HighsModelStatus.kNotset"
+    )
+
+
+def test_solve_model_rejects_time_limit_without_appsi_retry(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def _fake_direct(instance, *, highs_config, lp_path, timings, on_stage=None):
+        return "maxTimeLimit", 123.0, None
+
+    def _fake_appsi(instance, *, highs_config, settings, timings, on_stage=None):
+        calls.append("appsi")
+        raise AssertionError("No debe repetir appsi después del límite")
+
+    monkeypatch.setattr(solver_module, "_solve_with_direct_highspy", _fake_direct)
+    monkeypatch.setattr(solver_module, "_solve_with_appsi_highs", _fake_appsi)
+    monkeypatch.setattr(
+        solver_module,
+        "get_settings",
+        lambda: _fake_settings(sim_solver_highs_direct=True),
+    )
+    monkeypatch.setattr(
+        solver_module,
+        "resolve_highs_config",
+        lambda _settings: SolverHighsConfig(use_direct=True),
+    )
+    monkeypatch.setattr(
+        solver_module,
+        "get_solver_availability",
+        lambda: {"glpk": False, "highs": True},
+    )
+
+    with pytest.raises(
+        solver_module.HighsIncompleteSolveError,
+        match="certificada",
+    ) as caught:
+        solver_module.solve_model(_FakeInstance(), solver_name="highs")
+
+    assert calls == []
+    assert caught.value.solver_failure_metadata["solver_status_raw"] == "maxTimeLimit"
+    assert caught.value.solver_failure_metadata["solver_highs_method"] == ""
 
 
 def test_solve_model_does_not_set_glpk_threads(monkeypatch) -> None:

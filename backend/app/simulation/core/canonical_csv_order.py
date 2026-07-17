@@ -33,6 +33,11 @@ SET_NAMES: tuple[str, ...] = (
 )
 
 _NATURAL_PART_RE = re.compile(r"(\d+(?:\.\d+)?)")
+# PostgreSQL DOUBLE PRECISION y pandas pueden serializar el mismo valor de
+# origen con diferencias de representación al pasar por DOUBLE PRECISION.
+# Doce cifras significativas quedan muy por debajo de las tolerancias del
+# modelo (1e-7) y garantizan el mismo LP para Excel y CSV/BD.
+CANONICAL_VALUE_SIGNIFICANT_DIGITS = 12
 
 
 def canonical_scalar_key(value: object) -> tuple:
@@ -84,6 +89,22 @@ def canonical_set_values(values: Sequence[object]) -> list[object]:
     return sorted(unique.values(), key=canonical_scalar_key)
 
 
+def _canonicalize_numeric_values(df: pd.DataFrame) -> pd.DataFrame:
+    """Cuantiza VALUE al nivel común de precisión Excel↔PostgreSQL."""
+    if df.empty or "VALUE" not in df.columns:
+        return df
+    working = df.copy()
+    numeric = pd.to_numeric(working["VALUE"], errors="coerce")
+    mask = numeric.notna()
+    if mask.any():
+        working.loc[mask, "VALUE"] = numeric[mask].map(
+            lambda value: float(
+                format(float(value), f".{CANONICAL_VALUE_SIGNIFICANT_DIGITS}g")
+            )
+        )
+    return working
+
+
 def _sort_dataframe(df: pd.DataFrame, dimensions: Sequence[str]) -> pd.DataFrame:
     """Ordena con columnas de rango para no materializar dicts por cada fila."""
     if df.empty:
@@ -115,9 +136,11 @@ def canonicalize_csv_directory(
 ) -> None:
     """Ordena sets y parámetros justo antes de construir la instancia Pyomo.
 
-    Se conservan columnas y valores. Para parámetros, la clave es el orden de
-    dimensiones declarado por OSeMOSYS y VALUE sólo actúa como desempate ante
-    duplicados. El resultado no depende del orden de inserción en PostgreSQL.
+    Se conservan columnas y se normaliza VALUE a 12 cifras significativas para
+    eliminar diferencias de un ULP entre Excel y PostgreSQL. Para parámetros,
+    la clave es el orden de dimensiones declarado por OSeMOSYS y VALUE sólo
+    actúa como desempate. El resultado no depende del origen ni del orden de
+    inserción en PostgreSQL.
     """
     root = Path(csv_dir)
 
@@ -140,6 +163,7 @@ def canonicalize_csv_directory(
         present_dimensions = [dim for dim in dimensions if dim in df.columns]
         if not present_dimensions:
             continue
+        df = _canonicalize_numeric_values(df)
         sorted_df = _sort_dataframe(df, present_dimensions)
         sorted_df.to_csv(path, index=False)
         ordered_files += 1
