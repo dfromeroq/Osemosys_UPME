@@ -180,9 +180,13 @@ export const simulationApi = {
   /** Encola el análisis de infactibilidad (IIS + mapeo a parámetros) para un job
    * SUCCEEDED pero infactible. Solo aplica a HiGHS. Devuelve el job actualizado
    * con `diagnostic_status='QUEUED'`. */
-  async runInfeasibilityDiagnostic(jobId: number) {
+  async runInfeasibilityDiagnostic(
+    jobId: number,
+    level: "structural" | "dual_ray" | "iis" | "relaxation" = "structural",
+  ) {
     const { data } = await httpClient.post<SimulationRun>(
       `/simulations/${jobId}/diagnose-infeasibility`,
+      { level },
     );
     return data;
   },

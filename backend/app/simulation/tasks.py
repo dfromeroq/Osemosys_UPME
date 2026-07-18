@@ -279,7 +279,9 @@ def run_simulation_job(self, job_id: int) -> None:
     name="app.simulation.tasks.run_infeasibility_diagnostic_job",
     bind=True,
 )
-def run_infeasibility_diagnostic_job(self, job_id: int) -> None:
+def run_infeasibility_diagnostic_job(
+    self, job_id: int, level: str = "structural"
+) -> None:
     """Ejecuta el análisis enriquecido de infactibilidad (IIS + mapeo a
     parámetros) sobre un job SUCCEEDED ya infactible.
 
@@ -302,6 +304,7 @@ def run_infeasibility_diagnostic_job(self, job_id: int) -> None:
     import gc
     import os
     import tempfile
+    from dataclasses import asdict
     from datetime import datetime, timezone
 
     from app.db.session import SessionLocal
@@ -313,12 +316,19 @@ def run_infeasibility_diagnostic_job(self, job_id: int) -> None:
         run_data_processing,
         strip_whitespace_in_set_csvs,
     )
-    from app.simulation.core.infeasibility_analysis import enrich_solution_dict
+    from app.simulation.core.infeasibility_analysis import (
+        classify_solver_outcome,
+        enrich_solution_dict,
+    )
     from app.simulation.core.instance_builder import build_instance
     from app.simulation.core.model_definition import create_abstract_model
 
     def _utc_now_iso() -> str:
         return datetime.now(timezone.utc).isoformat()
+
+    valid_levels = {"structural", "dual_ray", "iis", "relaxation"}
+    if level not in valid_levels:
+        raise ValueError(f"Nivel de diagnóstico inválido: {level!r}")
 
     class _DiagnosticCancelled(RuntimeError):
         """Interno: se lanza cuando la UI pidió cancelar antes del siguiente chequeo."""
@@ -333,6 +343,47 @@ def run_infeasibility_diagnostic_job(self, job_id: int) -> None:
             if isinstance(d, dict) and d.get("diagnostic_cancel_requested"):
                 raise _DiagnosticCancelled("Cancelado por el usuario.")
 
+    def _on_diagnostic_phase(phase: str) -> None:
+        """Chequea cancelación y persiste progreso entre fases costosas."""
+        _raise_if_cancel_requested(job_id)
+        labels = {
+            "classify": "Clasificando el estado matemático del solver.",
+            "dual_ray": "Calculando certificado de Farkas (dual ray).",
+            "feasibility_relaxation": "Cuantificando cambios mínimos de factibilidad.",
+            "iis": "Calculando subsistema inconsistente irreducible (IIS).",
+            "structural": "Validando rutas de suministro y conflictos estructurales CSV/pandas.",
+        }
+        with SessionLocal() as phase_db:
+            phase_job = SimulationRepository.get_job_by_id(phase_db, job_id=job_id)
+            if not phase_job:
+                raise _DiagnosticCancelled("Job no encontrado")
+            SimulationRepository.add_event(
+                phase_db,
+                job_id=job_id,
+                event_type="INFO",
+                stage=f"infeasibility_{phase}",
+                message=labels.get(phase, f"Fase de diagnóstico: {phase}"),
+                progress=phase_job.progress,
+            )
+            phase_db.commit()
+
+    def _structural_only(solution_seed: dict, csv_dir: str) -> dict:
+        """Nivel barato: sólo CSV/pandas, sin construir el modelo Pyomo."""
+        _on_diagnostic_phase("classify")
+        classification = classify_solver_outcome(str(solution_seed["solver_status"]))
+        _on_diagnostic_phase("structural")
+        from app.simulation.core.structural_infeasibility import (  # noqa: WPS433
+            analyze_structural_infeasibility,
+        )
+
+        diag_seed = dict(solution_seed["infeasibility_diagnostics"])
+        diag_seed["classification"] = asdict(classification)
+        diag_seed["structural_findings"] = [
+            finding.to_dict() for finding in analyze_structural_infeasibility(csv_dir)
+        ]
+        diag_seed["analysis_level"] = "structural"
+        return diag_seed
+
     # 1) Mark RUNNING atomically y persistir el task_id de Celery.
     with SessionLocal() as db:
         job = SimulationRepository.get_job_by_id(db, job_id=job_id)
@@ -342,7 +393,7 @@ def run_infeasibility_diagnostic_job(self, job_id: int) -> None:
         # Si la UI ya había marcado cancelación antes de que el worker tomara
         # la task, respetarla y salir sin trabajo.
         if diag.get("diagnostic_cancel_requested"):
-            diag["diagnostic_status"] = "FAILED"
+            diag["diagnostic_status"] = "CANCELLED"
             diag["diagnostic_finished_at"] = _utc_now_iso()
             diag["diagnostic_error"] = "Cancelado por el usuario antes de iniciar."
             diag.pop("diagnostic_cancel_requested", None)
@@ -381,6 +432,11 @@ def run_infeasibility_diagnostic_job(self, job_id: int) -> None:
             "input_ref": getattr(job, "input_ref", None),
             "scenario_id": job.scenario_id,
             "solver_name": job.solver_name,
+            "solver_status": str(
+                (getattr(job, "model_timings_json", None) or {}).get(
+                    "solver_status", "infactible"
+                )
+            ),
             "model_defaults_version_id": getattr(job, "model_defaults_version_id", None),
             "diagnostics_seed": {
                 "constraint_violations": diag.get("constraint_violations", []),
@@ -421,34 +477,39 @@ def run_infeasibility_diagnostic_job(self, job_id: int) -> None:
                     strip_whitespace_in_set_csvs(str(csv_dir))
                     eliminar_valores_fuera_de_indices(str(csv_dir))
                     _raise_if_cancel_requested(job_id)
-                    proc_result = get_processing_result_from_csv_dir(str(csv_dir))
-                    model = create_abstract_model(
-                        has_storage=proc_result.has_storage,
-                        has_udc=proc_result.has_udc,
-                        param_defaults=_defaults_map,
-                    )
-                    _raise_if_cancel_requested(job_id)
-                    instance = build_instance(
-                        model,
-                        str(csv_dir),
-                        has_storage=proc_result.has_storage,
-                        has_udc=proc_result.has_udc,
-                    )
-                    del model
-                    gc.collect()
-                    _raise_if_cancel_requested(job_id)
                     solution_seed = {
                         "solver_name": job_snapshot["solver_name"],
-                        "solver_status": "infactible",
+                        "solver_status": job_snapshot["solver_status"],
                         "infeasibility_diagnostics": dict(job_snapshot["diagnostics_seed"]),
                     }
-                    enrich_solution_dict(
-                        solution_seed,
-                        instance=instance,
-                        csv_dir=str(csv_dir),
-                        job_id=job_id,
-                    )
-                    enriched = solution_seed["infeasibility_diagnostics"]
+                    if level == "structural":
+                        enriched = _structural_only(solution_seed, str(csv_dir))
+                    else:
+                        proc_result = get_processing_result_from_csv_dir(str(csv_dir))
+                        model = create_abstract_model(
+                            has_storage=proc_result.has_storage,
+                            has_udc=proc_result.has_udc,
+                            param_defaults=_defaults_map,
+                        )
+                        _raise_if_cancel_requested(job_id)
+                        instance = build_instance(
+                            model,
+                            str(csv_dir),
+                            has_storage=proc_result.has_storage,
+                            has_udc=proc_result.has_udc,
+                        )
+                        del model
+                        gc.collect()
+                        _raise_if_cancel_requested(job_id)
+                        enrich_solution_dict(
+                            solution_seed,
+                            instance=instance,
+                            csv_dir=str(csv_dir),
+                            job_id=job_id,
+                            on_phase=_on_diagnostic_phase,
+                            analysis_level=level,
+                        )
+                        enriched = solution_seed["infeasibility_diagnostics"]
                 else:
                     if job_snapshot["scenario_id"] is None:
                         raise RuntimeError(
@@ -462,34 +523,39 @@ def run_infeasibility_diagnostic_job(self, job_id: int) -> None:
                             csv_dir=tmp_csv,
                         )
                         _raise_if_cancel_requested(job_id)
-                        model = create_abstract_model(
-                            has_storage=proc_result.has_storage,
-                            has_udc=proc_result.has_udc,
-                            param_defaults=_defaults_map,
-                        )
-                        instance = build_instance(
-                            model,
-                            tmp_csv,
-                            has_storage=proc_result.has_storage,
-                            has_udc=proc_result.has_udc,
-                        )
-                        del model
-                        gc.collect()
-                        _raise_if_cancel_requested(job_id)
                         solution_seed = {
                             "solver_name": job_snapshot["solver_name"],
-                            "solver_status": "infactible",
+                            "solver_status": job_snapshot["solver_status"],
                             "infeasibility_diagnostics": dict(
                                 job_snapshot["diagnostics_seed"],
                             ),
                         }
-                        enrich_solution_dict(
-                            solution_seed,
-                            instance=instance,
-                            csv_dir=tmp_csv,
-                            job_id=job_id,
-                        )
-                        enriched = solution_seed["infeasibility_diagnostics"]
+                        if level == "structural":
+                            enriched = _structural_only(solution_seed, tmp_csv)
+                        else:
+                            model = create_abstract_model(
+                                has_storage=proc_result.has_storage,
+                                has_udc=proc_result.has_udc,
+                                param_defaults=_defaults_map,
+                            )
+                            instance = build_instance(
+                                model,
+                                tmp_csv,
+                                has_storage=proc_result.has_storage,
+                                has_udc=proc_result.has_udc,
+                            )
+                            del model
+                            gc.collect()
+                            _raise_if_cancel_requested(job_id)
+                            enrich_solution_dict(
+                                solution_seed,
+                                instance=instance,
+                                csv_dir=tmp_csv,
+                                job_id=job_id,
+                                on_phase=_on_diagnostic_phase,
+                                analysis_level=level,
+                            )
+                            enriched = solution_seed["infeasibility_diagnostics"]
             finally:
                 reset_defaults_context(_defaults_token)
     except _DiagnosticCancelled as exc:
@@ -515,7 +581,7 @@ def run_infeasibility_diagnostic_job(self, job_id: int) -> None:
             evt_type = "INFO"
             evt_msg = "Análisis de infactibilidad finalizado."
         elif was_cancelled:
-            diag["diagnostic_status"] = "FAILED"
+            diag["diagnostic_status"] = "CANCELLED"
             diag["diagnostic_finished_at"] = now_iso
             diag["diagnostic_error"] = error_message or "Cancelado por el usuario."
             diag.pop("diagnostic_cancel_requested", None)
@@ -559,8 +625,6 @@ def handle_worker_lost_failure(
     **_: object,
 ) -> None:
     sender_name = getattr(sender, "name", None)
-    if sender_name != run_simulation_job.name:
-        return
     if not _is_worker_lost_error(exception):
         return
 
@@ -572,6 +636,49 @@ def handle_worker_lost_failure(
         f"WorkerLostError detectado por Celery: {exception}. "
         "El proceso del worker fue terminado abruptamente."
     )
+
+    if sender_name == run_infeasibility_diagnostic_job.name:
+        if job_id is None:
+            return
+        from datetime import datetime, timezone
+
+        with SessionLocal() as db:
+            job = SimulationRepository.get_job_by_id(db, job_id=job_id)
+            if not job:
+                return
+            diag = dict(job.infeasibility_diagnostics_json or {})
+            if diag.get("diagnostic_status") != "RUNNING":
+                return
+            now = datetime.now(timezone.utc)
+            diag["diagnostic_status"] = "FAILED"
+            diag["diagnostic_error"] = reason
+            diag["diagnostic_finished_at"] = now.isoformat()
+            started = diag.get("diagnostic_started_at")
+            if started:
+                try:
+                    t0 = datetime.fromisoformat(str(started))
+                    if t0.tzinfo is None:
+                        t0 = t0.replace(tzinfo=timezone.utc)
+                    diag["diagnostic_seconds"] = max(
+                        0.0, (now - t0).total_seconds()
+                    )
+                except ValueError:
+                    pass
+            job.infeasibility_diagnostics_json = diag
+            SimulationRepository.add_event(
+                db,
+                job_id=job_id,
+                event_type="ERROR",
+                stage="infeasibility_analysis_worker_lost",
+                message=reason,
+                progress=job.progress,
+            )
+            db.commit()
+        return
+
+    if sender_name != run_simulation_job.name:
+        return
+
     updated = _mark_failed_by_task_or_job_id(
         task_id=task_id,
         job_id=job_id,

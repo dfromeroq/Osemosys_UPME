@@ -52,6 +52,10 @@ BOUND_PAIRS: tuple[tuple[str, str], ...] = (
         "TotalAnnualMinCapacityInvestment",
         "TotalAnnualMaxCapacityInvestment",
     ),
+    (
+        "TotalTechnologyModelPeriodActivityLowerLimit",
+        "TotalTechnologyModelPeriodActivityUpperLimit",
+    ),
 )
 
 

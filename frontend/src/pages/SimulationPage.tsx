@@ -1199,7 +1199,7 @@ export function SimulationPage() {
           }}
           title={
             solverSupportsIIS(solverName)
-              ? "Cuando el modelo sea infactible, el pipeline corre automáticamente el IIS y mapea las restricciones a los parámetros OSeMOSYS. Tarda más pero te ahorra lanzar el diagnóstico manualmente."
+              ? "Ejecuta el diagnóstico global completo cuando el modelo sea infactible. En escenarios regionales puede consumir varios GB; se recomienda dejarlo desactivado y usar el análisis progresivo CSV → dual ray → IIS → relajación desde el reporte."
               : "El diagnóstico automático requiere HiGHS o Gurobi. Cambia el solver para habilitar esta opción."
           }
         >

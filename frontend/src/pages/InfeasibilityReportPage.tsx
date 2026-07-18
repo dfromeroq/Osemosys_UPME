@@ -10,6 +10,7 @@
  *   - Pestaña "Parámetros del escenario": historial de auditoría, con badge
  *     cuando el parámetro también aparece en el IIS.
  *   - Conflictos de bounds de variables + prefijos sin mapeo.
+ *   - Plan de recuperación seguro: sugerencias, copia de escenario y revalidación.
  *   - Botón de descarga JSON.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -20,16 +21,21 @@ import {
   ScenarioParamsTab,
   type ScenarioParamsForDiagnostics,
 } from "@/features/simulation/components/ScenarioParamsTab";
+import { InfeasibilityRecoveryPlanner } from "@/features/simulation/components/InfeasibilityRecoveryPlanner";
 import { simulationApi } from "@/features/simulation/api/simulationApi";
 import { paths } from "@/routes/paths";
 import { Badge } from "@/shared/components/Badge";
 import { Button } from "@/shared/components/Button";
 import type {
   ConstraintAnalysis,
+  DiagnosisClassification,
+  DualRayReport,
+  FeasibilityRelaxationReport,
   InfeasibilityDiagnostics,
   InfeasibilityOverview,
   ParamHit,
   RunResult,
+  StructuralFinding,
 } from "@/types/domain";
 
 const CARD_STYLE: React.CSSProperties = {
@@ -69,6 +75,7 @@ const TD_STYLE: React.CSSProperties = {
 };
 
 type TabId = "iis" | "scenarioParams";
+type InfeasibilityAnalysisLevel = "structural" | "dual_ray" | "iis" | "relaxation";
 
 const BOUND_TYPE_LABEL: Record<string, string> = {
   lower: "Límite inferior (≥)",
@@ -678,6 +685,231 @@ function OverviewChips({
   );
 }
 
+function EvidenceSection({
+  classification,
+  certificate,
+}: {
+  classification: DiagnosisClassification | null | undefined;
+  certificate: DualRayReport | null | undefined;
+}) {
+  if (!classification && !certificate) return null;
+  return (
+    <section style={CARD_STYLE}>
+      <h2 style={{ margin: "0 0 10px", fontSize: 16 }}>Clasificación y certificado</h2>
+      {classification ? (
+        <div style={{ marginBottom: 10 }}>
+          <Badge variant={classification.code === "INFEASIBLE_CERTIFIED" ? "danger" : "warning"}>
+            {classification.code}
+          </Badge>{" "}
+          <Badge variant="neutral">Evidencia: {classification.evidence_level}</Badge>
+          <p style={{ margin: "6px 0 0", fontSize: 13 }}>{classification.explanation}</p>
+        </div>
+      ) : null}
+      {certificate?.available ? (
+        <div>
+          <strong style={{ fontSize: 13 }}>
+            {certificate.certificate_type === "primal_ray"
+              ? "Dirección de no acotación / primal ray"
+              : `Certificado de Farkas / dual ray ${certificate.validated ? "validado" : "no concluyente"}`}
+          </strong>
+          <p style={{ margin: "4px 0 8px", fontSize: 12, opacity: 0.8 }}>
+            {certificate.certificate_type === "primal_ray"
+              ? "Indica las variables que permiten mejorar el objetivo indefinidamente."
+              : `Es una combinación matemática de restricciones que demuestra la contradicción. Margen del certificado: ${formatNumber(certificate.certificate_margin, 6)}.`}
+          </p>
+          <div style={{ overflowX: "auto", maxHeight: 260 }}>
+            {certificate.certificate_type === "primal_ray" ? (
+              <table style={TABLE_STYLE}>
+                <thead><tr><th style={TH_STYLE}>Variable</th><th style={TH_STYLE}>Dirección</th></tr></thead>
+                <tbody>{certificate.variables.slice(0, 50).map((variable, index) => (
+                  <tr key={`${variable.name}-${index}`}><td style={TD_STYLE}><code>{variable.name}</code></td><td style={TD_STYLE}>{formatNumber(variable.direction, 6)}</td></tr>
+                ))}</tbody>
+              </table>
+            ) : (
+              <table style={TABLE_STYLE}>
+                <thead><tr><th style={TH_STYLE}>Restricción</th><th style={TH_STYLE}>Peso</th><th style={TH_STYLE}>Lado</th><th style={TH_STYLE}>Índices</th></tr></thead>
+                <tbody>{certificate.rows.slice(0, 50).map((row, index) => (
+                  <tr key={`${row.name}-${index}`}>
+                    <td style={TD_STYLE}><code style={{ fontSize: 11 }}>{row.name}</code></td>
+                    <td style={TD_STYLE}>{formatNumber(row.weight, 6)}</td>
+                    <td style={TD_STYLE}>{row.selected_side}</td>
+                    <td style={TD_STYLE}>{renderIndices(row.indices)}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      ) : certificate?.unavailable_reason ? (
+        <small style={{ opacity: 0.75 }}>Certificado no disponible: {certificate.unavailable_reason}</small>
+      ) : null}
+    </section>
+  );
+}
+
+function ProgressiveDiagnosticActions({
+  onRun,
+  disabled,
+  solverName,
+}: {
+  onRun: (level: InfeasibilityAnalysisLevel) => void;
+  disabled: boolean;
+  solverName: string;
+}) {
+  const isHighs = solverName.toLowerCase() === "highs";
+  const levels: Array<{ level: InfeasibilityAnalysisLevel; title: string; description: string; costly?: boolean }> = [
+    { level: "structural", title: "1. CSV / pandas", description: "Rutas de fuel, cotas, capacidad y storage. No construye Pyomo ni resuelve LP." },
+    { level: "dual_ray", title: "2. Certificado Farkas", description: "Relee el modelo/LP para intentar un dual ray validado." },
+    { level: "iis", title: "3. IIS", description: "Busca un subsistema de conflicto; puede agotar su límite de tiempo." },
+    { level: "relaxation", title: "4. Relajación", description: "Cuantifica cambios mínimos. Es la fase de mayor consumo de memoria.", costly: true },
+  ];
+  return (
+    <section style={WARN_CARD_STYLE}>
+      <h2 style={{ margin: "0 0 5px", fontSize: 16 }}>Análisis progresivo</h2>
+      <p style={{ margin: "0 0 10px", fontSize: 12, opacity: 0.85 }}>
+        Ejecuta primero la alternativa más barata. Las fases costosas no se lanzan automáticamente ni convierten un timeout en certificado.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 8 }}>
+        {levels.map((item) => {
+          const unavailable = !isHighs && item.level !== "structural";
+          return <div key={item.level} style={{ padding: 10, border: "1px solid rgba(245,158,11,0.3)", borderRadius: 7 }}>
+            <strong style={{ display: "block", fontSize: 13 }}>{item.title}</strong>
+            <p style={{ minHeight: 34, margin: "5px 0 8px", fontSize: 12, opacity: 0.82 }}>{item.description}</p>
+            <Button variant={item.level === "structural" ? "primary" : "ghost"} disabled={disabled || unavailable} title={unavailable ? "Esta fase focalizada está habilitada actualmente para HiGHS." : undefined} onClick={() => onRun(item.level)}>
+              {unavailable ? "No disponible" : item.costly ? "Solicitar relajación" : "Ejecutar"}
+            </Button>
+          </div>;
+        })}
+      </div>
+    </section>
+  );
+}
+
+function DiagnosticMethodsSection({ diagnostics }: { diagnostics: InfeasibilityDiagnostics }) {
+  const iis = diagnostics.iis;
+  const certificate = diagnostics.certificate;
+  const relaxation = diagnostics.feasibility_relaxation;
+  const methods: Array<{ name: string; level: string; detail: string; variant: "success" | "warning" | "danger" | "neutral" }> = [
+    {
+      name: "Verificación de bounds del modelo",
+      level: "CUANTIFICADO",
+      detail: `${diagnostics.constraint_violations.length} violaciones y ${diagnostics.var_bound_conflicts.length} conflictos LB/UB observados tras el solve.`,
+      variant: "warning",
+    },
+    {
+      name: "Validación CSV / pandas",
+      level: "ESTRUCTURAL",
+      detail: `${diagnostics.structural_findings?.length ?? 0} hallazgos. Incluye cotas min/max, capacidad residual, actividad mínima vs capacidad, rutas de fuel, storage y TradeRoute.`,
+      variant: "success",
+    },
+    {
+      name: "IIS / subsistema de conflicto",
+      level: iis?.available && iis.irreducible ? "CERTIFICADO" : "NO CERTIFICADO",
+      detail: iis?.available
+        ? `${iis.constraint_names.length} filas${iis.irreducible ? "; IIS irreducible." : "; el solver no certificó irreducibilidad."}`
+        : iis?.unavailable_reason ?? "No disponible para este resultado.",
+      variant: iis?.available && iis.irreducible ? "success" : "warning",
+    },
+    {
+      name: certificate?.certificate_type === "primal_ray" ? "Primal ray" : "Certificado Farkas / dual ray",
+      level: certificate?.available && certificate.validated ? "CERTIFICADO" : "NO DISPONIBLE",
+      detail: certificate?.available && certificate.validated
+        ? "El certificado algebraico fue validado antes de mostrarlo."
+        : certificate?.unavailable_reason ?? "No se obtuvo un certificado válido.",
+      variant: certificate?.available && certificate.validated ? "success" : "neutral",
+    },
+    {
+      name: "Relajación de factibilidad",
+      level: relaxation?.available && relaxation.solution_value_valid ? "CUANTIFICADO" : "NO DISPONIBLE",
+      detail: relaxation?.available && relaxation.solution_value_valid
+        ? `${relaxation.relaxations.length} cambios mínimos, con solución válida.`
+        : relaxation?.unavailable_reason ?? "No se muestra una relajación sin solución válida.",
+      variant: relaxation?.available && relaxation.solution_value_valid ? "success" : "neutral",
+    },
+    {
+      name: "Trazabilidad restricción → parámetros",
+      level: diagnostics.constraint_analyses?.length ? "APLICADO" : "SIN FILAS",
+      detail: diagnostics.constraint_analyses?.length
+        ? `${diagnostics.constraint_analyses.length} restricciones enriquecidas con parámetros CSV y desvíos frente a defaults.`
+        : "No hubo filas de IIS/violaciones disponibles para mapear.",
+      variant: diagnostics.constraint_analyses?.length ? "success" : "neutral",
+    },
+  ];
+  return (
+    <section style={CARD_STYLE}>
+      <h2 style={{ margin: "0 0 5px", fontSize: 16 }}>Métodos aplicados y evidencia</h2>
+      <p style={{ margin: "0 0 10px", fontSize: 12, opacity: 0.8 }}>
+        Un timeout, una heurística o una salida sin validación se muestran como no certificados; no se convierten en una causa concluyente.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(235px, 1fr))", gap: 8 }}>
+        {methods.map((method) => (
+          <div key={method.name} style={{ padding: 10, border: "1px solid rgba(148,163,184,0.25)", borderRadius: 7 }}>
+            <strong style={{ display: "block", fontSize: 13 }}>{method.name}</strong>
+            <Badge variant={method.variant}>{method.level}</Badge>
+            <p style={{ margin: "6px 0 0", fontSize: 12, opacity: 0.82 }}>{method.detail}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function StructuralFindingsSection({ findings }: { findings: StructuralFinding[] }) {
+  if (findings.length === 0) return null;
+  return (
+    <section style={WARN_CARD_STYLE}>
+      <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Problemas estructurales ({findings.length})</h2>
+      <p style={{ margin: "0 0 10px", fontSize: 12, opacity: 0.85 }}>
+        Detectados directamente en los datos, sin depender del punto inicial del solver.
+      </p>
+      <div style={{ display: "grid", gap: 8 }}>
+        {findings.map((finding, index) => (
+          <div key={`${finding.code}-${index}`} style={{ padding: 10, borderRadius: 6, background: "rgba(0,0,0,0.15)" }}>
+            <Badge variant={finding.severity === "ERROR" ? "danger" : "warning"}>{finding.code}</Badge>{" "}
+            <Badge variant="neutral">{finding.evidence_level}</Badge>
+            <p style={{ margin: "6px 0", fontSize: 13 }}>{finding.message}</p>
+            <small style={{ opacity: 0.8 }}>
+              {renderIndices(finding.dimensions)}
+              {Object.keys(finding.values).length > 0 ? ` · ${JSON.stringify(finding.values)}` : ""}
+            </small>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function RelaxationSection({ report }: { report: FeasibilityRelaxationReport | null | undefined }) {
+  if (!report) return null;
+  if (!report.available) {
+    return report.unavailable_reason ? (
+      <section style={CARD_STYLE}><strong>Relajación de factibilidad no disponible.</strong><p style={{ marginBottom: 0, fontSize: 12 }}>{report.unavailable_reason}</p></section>
+    ) : null;
+  }
+  return (
+    <section style={WARN_CARD_STYLE}>
+      <h2 style={{ margin: "0 0 6px", fontSize: 16 }}>Cambios mínimos sugeridos ({report.relaxations.length})</h2>
+      <p style={{ margin: "0 0 10px", fontSize: 12, opacity: 0.85 }}>
+        Resultado cuantificado de una copia diagnóstica; no modifica el escenario. Los slacks se normalizan con {report.normalization}.
+      </p>
+      <div style={{ overflowX: "auto" }}>
+        <table style={TABLE_STYLE}>
+          <thead><tr><th style={TH_STYLE}>Restricción</th><th style={TH_STYLE}>Índices</th><th style={TH_STYLE}>Lado</th><th style={TH_STYLE}>Cambio mínimo</th><th style={TH_STYLE}>Sugerencia</th></tr></thead>
+          <tbody>{report.relaxations.map((entry, index) => (
+            <tr key={`${entry.name}-${index}`}>
+              <td style={TD_STYLE}><code style={{ fontSize: 11 }}>{entry.name}</code></td>
+              <td style={TD_STYLE}>{renderIndices(entry.indices)}</td>
+              <td style={TD_STYLE}>{entry.side}</td>
+              <td style={{ ...TD_STYLE, fontWeight: 700 }}>{formatNumber(entry.slack, 6)}</td>
+              <td style={TD_STYLE}>{entry.suggested_change}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function OverviewSection({ overview }: { overview: InfeasibilityOverview }) {
   return (
     <section style={CARD_STYLE}>
@@ -805,11 +1037,14 @@ export function InfeasibilityReportPage() {
     return () => window.clearInterval(id);
   }, [diagStatus, refreshResult]);
 
-  const triggerDiagnostic = useCallback(async () => {
+  const triggerDiagnostic = useCallback(async (level: InfeasibilityAnalysisLevel = "structural") => {
     if (!Number.isFinite(jobId)) return;
+    if (level === "relaxation" && !window.confirm(
+      "La relajación de factibilidad puede consumir varios GB de memoria. ¿Deseas continuar?",
+    )) return;
     setTriggering(true);
     try {
-      await simulationApi.runInfeasibilityDiagnostic(jobId);
+      await simulationApi.runInfeasibilityDiagnostic(jobId, level);
       await refreshResult();
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo encolar el diagnóstico.");
@@ -892,10 +1127,6 @@ export function InfeasibilityReportPage() {
   const isGurobi = solverName === "gurobi";
   const supportsIIS = isHighs || isGurobi;
   const isGlpk = !isHighs && !isGurobi && solverName === "glpk";
-  const isGlpkEnriched =
-    isGlpk &&
-    diagnostics?.iis?.method === "glpk_nopresol" &&
-    diagnostics?.iis?.available;
   const isGlpkTimeout =
     isGlpk &&
     !diagnostics?.iis?.available &&
@@ -1239,14 +1470,15 @@ export function InfeasibilityReportPage() {
           <p style={{ margin: 0, fontSize: 12, opacity: 0.8, color: "#fbbf24" }}>
             <strong>Fuente:</strong> GLPK --nopresol (heurístico, no es un IIS mínimo).
             Lista las restricciones que el modelo no satisface en la solución forzada.
-            Pueden existir falsos positivos secundarios; prioriza los "top sospechosos".
+            Pueden existir falsos positivos secundarios; prioriza los &quot;top sospechosos&quot;.
           </p>
         ) : iis?.available ? (
           <p style={{ margin: 0, fontSize: 12, opacity: 0.8 }}>
-            <strong>Fuente:</strong> IIS de{" "}
-            {solverName === "gurobi" ? "Gurobi" : "HiGHS"} (subsistema
-            irreducible). Remover cualquiera de estas restricciones vuelve el
-            modelo factible.
+            <strong>Fuente:</strong> {iis.irreducible ? "IIS" : "subsistema de conflicto"} de{" "}
+            {solverName === "gurobi" ? "Gurobi" : "HiGHS"}.{" "}
+            {iis.irreducible
+              ? "Es una causa mínima certificada: quitar una fila rompe esta contradicción, aunque podrían existir otros conflictos independientes."
+              : "El solver encontró un conflicto, pero no certificó que sea irreducible."}
           </p>
         ) : supportsIIS ? (
           <p style={{ margin: 0, fontSize: 12, color: "#fbbf24" }}>
@@ -1301,6 +1533,30 @@ export function InfeasibilityReportPage() {
         ) : null}
       </section>
 
+      {diagStatus === "SUCCEEDED" ? (
+        <>
+          <EvidenceSection
+            classification={diagnostics.classification}
+            certificate={diagnostics.certificate}
+          />
+          <DiagnosticMethodsSection diagnostics={diagnostics} />
+          <ProgressiveDiagnosticActions
+            onRun={(level) => void triggerDiagnostic(level)}
+            disabled={triggering}
+            solverName={solverName}
+          />
+          <StructuralFindingsSection findings={diagnostics.structural_findings ?? []} />
+          <RelaxationSection report={diagnostics.feasibility_relaxation} />
+          <InfeasibilityRecoveryPlanner
+            diagnostics={diagnostics}
+            scenarioId={result?.scenario_id ?? null}
+            solverName={result?.solver_name ?? ""}
+            sourceJobId={jobId}
+            navigate={navigate}
+          />
+        </>
+      ) : null}
+
       {/* Banner de estado del diagnóstico on-demand */}
       {!supportsIIS && !isGlpk && diagStatus === "NONE" ? (
         <section style={WARN_CARD_STYLE}>
@@ -1324,9 +1580,11 @@ export function InfeasibilityReportPage() {
               ? "El diagnóstico ejecuta GLPK nuevamente sin preprocesamiento (--nopresol) para detectar qué restricciones no se pueden satisfacer. Puede tardar hasta 25 minutos en modelos grandes."
               : "El análisis enriquecido (IIS + mapeo a parámetros OSeMOSYS + ranking de sospechosos) se ejecuta como una tarea aparte porque puede tardar varios segundos sobre modelos grandes."}
           </p>
-          <Button onClick={() => void triggerDiagnostic()} disabled={triggering}>
-            {triggering ? "Encolando…" : "Correr diagnóstico de infactibilidad"}
-          </Button>
+          <ProgressiveDiagnosticActions
+            onRun={(level) => void triggerDiagnostic(level)}
+            disabled={triggering}
+            solverName={solverName}
+          />
         </section>
       ) : diagStatus === "QUEUED" ? (
         <section style={WARN_CARD_STYLE}>
@@ -1383,6 +1641,16 @@ export function InfeasibilityReportPage() {
               {cancelling ? "Cancelando…" : "Cancelar diagnóstico"}
             </Button>
           </p>
+        </section>
+      ) : diagStatus === "CANCELLED" ? (
+        <section style={WARN_CARD_STYLE}>
+          <strong style={{ fontSize: 14 }}>Diagnóstico cancelado.</strong>
+          <p style={{ margin: "6px 0 10px", fontSize: 13, opacity: 0.9 }}>
+            La cancelación fue solicitada por el usuario. No se presentan resultados parciales como concluyentes.
+          </p>
+          <Button onClick={() => void triggerDiagnostic()} disabled={triggering}>
+            {triggering ? "Encolando…" : "Ejecutar nuevamente"}
+          </Button>
         </section>
       ) : diagStatus === "FAILED" ? (
         <section style={DANGER_CARD_STYLE}>

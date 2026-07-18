@@ -298,7 +298,7 @@ class SimulationService:
         if not isinstance(diag, dict):
             return out
         raw = diag.get("diagnostic_status")
-        if raw in {"QUEUED", "RUNNING", "SUCCEEDED", "FAILED"}:
+        if raw in {"QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED"}:
             out["diagnostic_status"] = raw
         elif diag.get("iis") or diag.get("overview") or diag.get("top_suspects"):
             # Retrocompat: diagnóstico enriquecido ya persistido.
@@ -775,16 +775,17 @@ class SimulationService:
         *,
         current_user: User,
         job_id: int,
+        level: str = "structural",
     ) -> dict:
-        """Encola el análisis enriquecido de infactibilidad (IIS + mapeo) para
+        """Encola un nivel del análisis progresivo de infactibilidad para
         un job ya completado que resultó infactible.
 
         Reglas:
             * El job debe existir y pertenecer al usuario (o el usuario tener
               acceso al escenario).
             * Debe estar en ``SUCCEEDED`` y ser infactible.
-            * El solver debe ser ``highs`` (GLPK no soporta IIS). Con GLPK se
-              devuelve ``ConflictError`` con mensaje explicativo.
+            * El solver debe ser HiGHS, Gurobi o GLPK. GLPK entrega un
+              análisis heurístico; HiGHS/Gurobi pueden entregar IIS.
             * Si ya hay un diagnóstico en curso (``QUEUED``/``RUNNING``), no
               se re-encola; se devuelve el estado actual.
 
@@ -793,6 +794,10 @@ class SimulationService:
         """
         # Import local para evitar import circular (tasks importa este service).
         from app.simulation.tasks import run_infeasibility_diagnostic_job
+
+        valid_levels = {"structural", "dual_ray", "iis", "relaxation"}
+        if level not in valid_levels:
+            raise ConflictError(f"Nivel de diagnóstico inválido: {level!r}.")
 
         job = SimulationRepository.get_job_for_user(
             db, job_id=job_id, user_id=current_user.id
@@ -826,7 +831,30 @@ class SimulationService:
 
         # Marcar como QUEUED antes de encolar Celery.
         diag = dict(job.infeasibility_diagnostics_json or {})
+        # Un reintento no debe mostrar resultados enriquecidos de una ejecución
+        # anterior mientras la nueva está en cola o corriendo.
+        for stale_key in (
+            "classification",
+            "certificate",
+            "feasibility_relaxation",
+            "iis",
+            "overview",
+            "top_suspects",
+            "constraint_analyses",
+            "structural_findings",
+            "unmapped_constraint_prefixes",
+            "diagnostic_started_at",
+            "diagnostic_finished_at",
+            "diagnostic_seconds",
+            "diagnostic_celery_task_id",
+            "analysis_level",
+        ):
+            diag.pop(stale_key, None)
+        # Debe limpiarse antes de publicar la task: una tarea rápida puede
+        # arrancar entre ``delay()`` y el commit posterior.
+        diag.pop("diagnostic_cancel_requested", None)
         diag["diagnostic_status"] = "QUEUED"
+        diag["diagnostic_requested_level"] = level
         diag.pop("diagnostic_error", None)
         job.infeasibility_diagnostics_json = diag
         SimulationRepository.add_event(
@@ -834,7 +862,7 @@ class SimulationService:
             job_id=job.id,
             event_type="INFO",
             stage="infeasibility_analysis_queue",
-            message="Diagnóstico de infactibilidad encolado.",
+            message=f"Diagnóstico de infactibilidad encolado (nivel: {level}).",
             progress=job.progress,
         )
         db.commit()
@@ -843,7 +871,7 @@ class SimulationService:
         # Encolar la task y persistir su task_id (necesario para poder revocar
         # / cancelar desde la UI incluso si aún no inició la ejecución).
         try:
-            celery_task = run_infeasibility_diagnostic_job.delay(job.id)
+            celery_task = run_infeasibility_diagnostic_job.delay(job.id, level)
         except Exception as exc:
             # Revertir el estado a NONE para que el usuario pueda reintentar.
             diag["diagnostic_status"] = "FAILED"
@@ -908,39 +936,26 @@ class SimulationService:
         diag["diagnostic_cancel_requested"] = True
         task_id = diag.get("diagnostic_celery_task_id")
 
-        # Si aún no arrancó (QUEUED), cerramos el ciclo aquí mismo: el worker
-        # al tomar la task verá la bandera y la descartará, pero también
-        # dejamos el estado en FAILED para que la UI reaccione sin esperar.
-        if current_status == "QUEUED":
-            diag["diagnostic_status"] = "FAILED"
-            diag["diagnostic_finished_at"] = datetime.now(timezone.utc).isoformat()
-            diag["diagnostic_error"] = "Cancelado por el usuario antes de iniciar."
-            # Los segundos se quedan en 0 porque started_at no se fijó.
-            diag["diagnostic_seconds"] = 0.0
-
-        # Caso zombie: el diagnóstico figura RUNNING pero el worker Celery ya
-        # no tiene la task activa (típicamente porque el proceso murió entre
-        # "marcar RUNNING" y "escribir resultado final" — OOM kill, reinicio
-        # del contenedor, etc.). Sin esta transición forzada la fila queda en
-        # RUNNING indefinidamente y el contador de la UI no se detiene.
-        elif current_status == "RUNNING" and not SimulationService._is_celery_task_alive(task_id):
+        # Persistimos estado terminal antes del revoke. Así un SIGTERM durante
+        # una llamada C++ no deja el diagnóstico pegado en RUNNING.
+        if current_status in {"QUEUED", "RUNNING"}:
             now_utc = datetime.now(timezone.utc)
-            diag["diagnostic_status"] = "FAILED"
+            diag["diagnostic_status"] = "CANCELLED"
             diag["diagnostic_finished_at"] = now_utc.isoformat()
-            diag["diagnostic_error"] = (
-                "El worker del diagnóstico no responde (probablemente fue "
-                "terminado por el sistema). Estado forzado a FAILED."
-            )
-            diag.pop("diagnostic_cancel_requested", None)
+            diag["diagnostic_error"] = "Cancelado por el usuario."
             started = diag.get("diagnostic_started_at")
             if started:
                 try:
                     t0 = datetime.fromisoformat(str(started))
                     if t0.tzinfo is None:
                         t0 = t0.replace(tzinfo=timezone.utc)
-                    diag["diagnostic_seconds"] = max(0.0, (now_utc - t0).total_seconds())
+                    diag["diagnostic_seconds"] = max(
+                        0.0, (now_utc - t0).total_seconds()
+                    )
                 except ValueError:
                     pass
+            else:
+                diag["diagnostic_seconds"] = 0.0
 
         job.infeasibility_diagnostics_json = diag
         SimulationRepository.add_event(
