@@ -1,0 +1,102 @@
+{
+  "highs_version": "1.15.1",
+  "uniform_infeasible": {
+    "read_status": "HighsStatus.kOk",
+    "relax_status": "HighsStatus.kOk",
+    "model_status_after_relaxation": "HighsModelStatus.kNotset",
+    "solution_value_valid": true,
+    "relaxation_objective": 1.0,
+    "column_values": [
+      1.0
+    ],
+    "violations": [
+      {
+        "row": "capacity_ceiling",
+        "activity": 1.0,
+        "lower": -Infinity,
+        "upper": 0.0,
+        "lower_slack": 0.0,
+        "upper_slack": 1.0
+      }
+    ],
+    "rhs_penalties": null
+  },
+  "uniform_two_conflicts": {
+    "read_status": "HighsStatus.kOk",
+    "relax_status": "HighsStatus.kOk",
+    "model_status_after_relaxation": "HighsModelStatus.kNotset",
+    "solution_value_valid": true,
+    "relaxation_objective": 2.0,
+    "column_values": [
+      1.0,
+      2.0
+    ],
+    "violations": [
+      {
+        "row": "x_ceiling",
+        "activity": 1.0,
+        "lower": -Infinity,
+        "upper": 0.0,
+        "lower_slack": 0.0,
+        "upper_slack": 1.0
+      },
+      {
+        "row": "y_ceiling",
+        "activity": 2.0,
+        "lower": -Infinity,
+        "upper": 1.0,
+        "lower_slack": 0.0,
+        "upper_slack": 1.0
+      }
+    ],
+    "rhs_penalties": null
+  },
+  "protect_demand_relax_capacity": {
+    "read_status": "HighsStatus.kOk",
+    "relax_status": "HighsStatus.kOk",
+    "model_status_after_relaxation": "HighsModelStatus.kNotset",
+    "solution_value_valid": true,
+    "relaxation_objective": 1.0,
+    "column_values": [
+      1.0
+    ],
+    "violations": [
+      {
+        "row": "capacity_ceiling",
+        "activity": 1.0,
+        "lower": -Infinity,
+        "upper": 0.0,
+        "lower_slack": 0.0,
+        "upper_slack": 1.0
+      }
+    ],
+    "rhs_penalties": [
+      100.0,
+      1.0
+    ]
+  },
+  "relax_demand_protect_capacity": {
+    "read_status": "HighsStatus.kOk",
+    "relax_status": "HighsStatus.kOk",
+    "model_status_after_relaxation": "HighsModelStatus.kNotset",
+    "solution_value_valid": true,
+    "relaxation_objective": 1.0,
+    "column_values": [
+      -0.0
+    ],
+    "violations": [
+      {
+        "row": "demand_floor",
+        "activity": 0.0,
+        "lower": 1.0,
+        "upper": Infinity,
+        "lower_slack": 1.0,
+        "upper_slack": 0.0
+      }
+    ],
+    "rhs_penalties": [
+      1.0,
+      100.0
+    ]
+  }
+}

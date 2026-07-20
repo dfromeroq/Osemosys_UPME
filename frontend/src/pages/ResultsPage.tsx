@@ -41,6 +41,7 @@ export function ResultsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<SimulationRun["status"] | "ALL">("ALL");
+  const [activeTab, setActiveTab] = useState<"results" | "infeasibility">("results");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [scenarioMap, setScenarioMap] = useState<Record<number, Scenario>>({});
@@ -122,6 +123,19 @@ export function ResultsPage() {
     () => runs.filter((r) => r.is_infeasible_result).length,
     [runs],
   );
+  const infeasibleRuns = useMemo(() => {
+    return runs
+      .filter((run) => {
+        if (!run.is_infeasible_result) return false;
+        if (statusFilter !== "ALL" && run.status !== statusFilter) return false;
+        const created = new Date(run.queued_at).getTime();
+        if (fromDate && created < new Date(`${fromDate}T00:00:00`).getTime()) return false;
+        if (toDate && created > new Date(`${toDate}T23:59:59`).getTime()) return false;
+        return true;
+      })
+      .sort((a, b) => new Date(b.queued_at).getTime() - new Date(a.queued_at).getTime());
+  }, [fromDate, runs, statusFilter, toDate]);
+
   const filteredRuns = useMemo(() => {
     return runs.filter((run) => {
       if (run.is_infeasible_result) return false;
@@ -201,6 +215,15 @@ export function ResultsPage() {
         </Button>
       </div>
 
+      <div role="tablist" aria-label="Tipo de resultados" style={{ display: "flex", gap: 8 }}>
+        <Button variant={activeTab === "results" ? "primary" : "ghost"} onClick={() => setActiveTab("results")}>
+          Resultados factibles
+        </Button>
+        <Button variant={activeTab === "infeasibility" ? "primary" : "ghost"} onClick={() => setActiveTab("infeasibility")}>
+          Reportes de infactibilidad {infeasibleCount ? `(${infeasibleCount})` : ""}
+        </Button>
+      </div>
+
       <div
         style={{
           display: "grid",
@@ -270,6 +293,8 @@ export function ResultsPage() {
         </div>
       ) : null}
 
+      {activeTab === "results" ? (
+        <>
       <DataTable
         rows={orderedRuns}
         rowKey={(r) => String(r.id)}
@@ -564,6 +589,10 @@ export function ResultsPage() {
         donde cada corrida infactible tiene un botón para correr el diagnóstico
         (IIS + mapeo a parámetros).
       </p>
+        </>
+      ) : (
+        <InfeasibilityReportsTab runs={infeasibleRuns} scenarioMap={scenarioMap} />
+      )}
 
       {viewReportRun ? (
         <ChooseReportForRunModal
@@ -579,6 +608,60 @@ export function ResultsPage() {
 
       <JobLogsModal jobId={logsOpenForJob} onClose={() => setLogsOpenForJob(null)} />
     </section>
+  );
+}
+
+function InfeasibilityReportsTab({
+  runs,
+  scenarioMap,
+}: {
+  runs: SimulationRun[];
+  scenarioMap: Record<number, Scenario>;
+}) {
+  if (runs.length === 0) {
+    return (
+      <div style={{ padding: 24, textAlign: "center", opacity: 0.72 }}>
+        No hay simulaciones infactibles con los filtros actuales.
+      </div>
+    );
+  }
+  const diagnosticLabel: Record<NonNullable<SimulationRun["diagnostic_status"]>, string> = {
+    NONE: "Pendiente",
+    QUEUED: "En cola",
+    RUNNING: "Analizando",
+    SUCCEEDED: "Disponible",
+    FAILED: "Falló",
+    CANCELLED: "Cancelado",
+  };
+  const diagnosticVariant: Record<NonNullable<SimulationRun["diagnostic_status"]>, "neutral" | "warning" | "success" | "danger" | "info"> = {
+    NONE: "neutral", QUEUED: "info", RUNNING: "warning", SUCCEEDED: "success", FAILED: "danger", CANCELLED: "warning",
+  };
+  return (
+    <div style={{ display: "grid", gap: 10 }}>
+      <p style={{ margin: 0, fontSize: 13, opacity: 0.78 }}>
+        Los reportes se mantienen separados de los resultados factibles. Abre uno para ejecutar el análisis progresivo CSV/pandas → certificado → IIS → relajación.
+      </p>
+      {runs.map((run) => {
+        const diagnosticStatus = run.diagnostic_status ?? "NONE";
+        const scenarioName = run.scenario_name ?? (run.scenario_id ? scenarioMap[run.scenario_id]?.name : null) ?? "Escenario no disponible";
+        return (
+          <article key={run.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, padding: 14, border: "1px solid rgba(239,68,68,0.32)", borderRadius: 8, background: "rgba(127,29,29,0.1)" }}>
+            <div>
+              <strong>{run.display_name || scenarioName}</strong>
+              <div style={{ marginTop: 5, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                <Badge variant="danger">INFACTIBLE</Badge>
+                <Badge variant={diagnosticVariant[diagnosticStatus]}>{diagnosticLabel[diagnosticStatus]}</Badge>
+                <small>Job #{run.id} · {run.solver_name.toUpperCase()} · {new Date(run.queued_at).toLocaleString()}</small>
+              </div>
+              {run.description ? <p style={{ margin: "7px 0 0", fontSize: 12, opacity: 0.78 }}>{run.description}</p> : null}
+            </div>
+            <Link className="btn btn--primary" to={paths.infeasibilityReport(run.id)}>
+              {diagnosticStatus === "NONE" ? "Abrir y analizar" : "Ver reporte"}
+            </Link>
+          </article>
+        );
+      })}
+    </div>
   );
 }
 

@@ -227,7 +227,7 @@ export type SimulationRun = {
    * `GET /simulations/{id}/lp-file`. */
   has_lp_file?: boolean;
   /** Estado del análisis enriquecido de infactibilidad (opcional, on-demand). */
-  diagnostic_status?: "NONE" | "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED";
+  diagnostic_status?: "NONE" | "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
   diagnostic_error?: string | null;
   diagnostic_started_at?: string | null;
   diagnostic_finished_at?: string | null;
@@ -397,9 +397,12 @@ export type IISReport = {
   method: string | null;
   constraint_names: string[];
   variable_names: string[];
-  /** Conflictos por cota que reporta Gurobi (`IISLB` / `IISUB`). HiGHS no
-   * expone esta distinción, así que la lista queda vacía con ese solver. */
+  /** Conflictos por cota reportados por Gurobi o HiGHS. */
   bound_conflicts?: IISBoundConflict[];
+  irreducible?: boolean;
+  timed_out?: boolean;
+  elapsed_seconds?: number | null;
+  time_limit_seconds?: number | null;
   /** Path absoluto en el servidor del archivo `.ilp` generado por Gurobi.
    * Se descarga vía `GET /simulations/{id}/iis-ilp`. */
   ilp_path?: string | null;
@@ -440,22 +443,95 @@ export type InfeasibilityOverview = {
   total_variables: number;
 };
 
+export type DiagnosisClassification = {
+  code: string;
+  evidence_level: string;
+  solver_status: string;
+  explanation: string;
+};
+
+export type DualRayRow = {
+  name: string;
+  weight: number;
+  selected_side: string;
+  constraint_type: string;
+  indices: Record<string, string>;
+};
+
+export type DualRayReport = {
+  available: boolean;
+  certificate_type: "dual_ray" | "primal_ray" | string;
+  method: string | null;
+  validated: boolean;
+  certificate_margin: number | null;
+  rows: DualRayRow[];
+  variables: Array<{ name: string; direction: number }>;
+  unavailable_reason: string | null;
+};
+
+export type RelaxationEntry = {
+  name: string;
+  constraint_type: string;
+  indices: Record<string, string>;
+  side: string;
+  activity: number;
+  bound: number;
+  slack: number;
+  normalized_slack: number;
+  penalty: number;
+  weighted_cost: number;
+  suggested_change: string;
+};
+
+export type FeasibilityRelaxationReport = {
+  available: boolean;
+  method: string | null;
+  objective: number | null;
+  solution_value_valid: boolean;
+  normalization: string;
+  relaxations: RelaxationEntry[];
+  elapsed_seconds: number | null;
+  time_limit_seconds: number | null;
+  unavailable_reason: string | null;
+};
+
+export type StructuralFinding = {
+  code: string;
+  severity: string;
+  evidence_level: string;
+  message: string;
+  dimensions: Record<string, string>;
+  values: Record<string, unknown>;
+  related_parameters: string[];
+};
+
 export type InfeasibilityDiagnostics = {
+  classification?: DiagnosisClassification | null;
+  certificate?: DualRayReport | null;
+  feasibility_relaxation?: FeasibilityRelaxationReport | null;
+  structural_findings?: StructuralFinding[];
   constraint_violations: ConstraintViolation[];
   var_bound_conflicts: VarBoundConflict[];
-  // Estado del análisis on-demand (QUEUED/RUNNING/SUCCEEDED/FAILED; ausente = NONE):
-  diagnostic_status?: "NONE" | "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED";
+  // Estado del análisis on-demand (incluye CANCELLED; ausente = NONE):
+  diagnostic_status?: "NONE" | "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
   diagnostic_error?: string | null;
   diagnostic_started_at?: string | null;
   diagnostic_finished_at?: string | null;
   diagnostic_seconds?: number | null;
+  /** Nivel solicitado/completado: structural → dual_ray → iis → relaxation. */
+  diagnostic_requested_level?: "structural" | "advanced" | "presolve" | "families" | "dual_ray" | "iis" | "relaxation";
+  diagnostic_baseline_scenario_id?: number | null;
+  analysis_level?: "structural" | "advanced" | "presolve" | "families" | "dual_ray" | "iis" | "relaxation";
+  presolve_report?: Record<string, unknown> | null;
+  family_diagnosis?: Record<string, unknown> | null;
+  advanced_diagnostics?: Record<string, Record<string, unknown>> | null;
+  diagnostic_history?: Array<Record<string, unknown>>;
   // Campos enriquecidos (presentes solo si diagnostic_status === 'SUCCEEDED'):
   iis?: IISReport | null;
   overview?: InfeasibilityOverview | null;
   top_suspects?: ParamHit[];
   constraint_analyses?: ConstraintAnalysis[];
   unmapped_constraint_prefixes?: string[];
-  csv_dir?: string | null;
 };
 
 export type RunResult = {
