@@ -177,6 +177,8 @@ export function InfeasibilityRecoveryPlanner({
   const [scenarioUpdated, setScenarioUpdated] = useState(false);
   const [relaunching, setRelaunching] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [visibleSuggestions, setVisibleSuggestions] = useState(10);
 
   if (suggestions.length === 0) return null;
 
@@ -263,20 +265,26 @@ export function InfeasibilityRecoveryPlanner({
         <Badge variant="success">{suggestions.length} sugerencias</Badge>
       </div>
 
-      <div style={{ display: "grid", gap: 12, marginTop: 14 }}>
-        {suggestions.slice(0, 30).map((item) => (
-          <label key={item.id} style={{ display: "flex", gap: 10, padding: 10, borderRadius: 7, cursor: "pointer", background: selected.has(item.id) ? "rgba(34,197,94,0.12)" : "rgba(0,0,0,0.12)", border: `1px solid ${selected.has(item.id) ? "rgba(34,197,94,0.42)" : "rgba(255,255,255,0.08)"}` }}>
+      <div style={{ marginTop: 12 }}>
+        <Button variant="ghost" onClick={() => setShowSuggestions((value) => !value)}>
+          {showSuggestions ? "▲ Ocultar sugerencias" : `▼ Revisar y seleccionar sugerencias (${suggestions.length})`}
+        </Button>
+        {chosen.length > 0 && !showSuggestions ? <small style={{ marginLeft: 9 }}>{chosen.length} seleccionadas</small> : null}
+      </div>
+      {showSuggestions ? <div style={{ display: "grid", gap: 8, marginTop: 10, maxHeight: 520, overflowY: "auto", paddingRight: 4 }}>
+        {suggestions.slice(0, visibleSuggestions).map((item) => (
+          <label key={item.id} style={{ display: "flex", gap: 10, padding: 9, borderRadius: 7, cursor: "pointer", background: selected.has(item.id) ? "rgba(34,197,94,0.12)" : "rgba(0,0,0,0.12)", border: `1px solid ${selected.has(item.id) ? "rgba(34,197,94,0.42)" : "rgba(255,255,255,0.08)"}` }}>
             <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggle(item.id)} style={{ marginTop: 3 }} />
             <span style={{ minWidth: 0 }}>
               <Badge variant={item.priority === "high" ? "danger" : "warning"}>{item.source === "structural" ? "ESTRUCTURAL" : "CUANTIFICADO"}</Badge>
-              <strong style={{ display: "block", marginTop: 5, fontSize: 13 }}>{item.title}</strong>
-              <span style={{ display: "block", marginTop: 3, fontSize: 12, opacity: 0.85 }}>{item.explanation}</span>
-              {item.parameter ? <code style={{ display: "block", marginTop: 5, fontSize: 11 }}>{item.parameter} · {Object.entries(item.dimensions).map(([key, value]) => `${key}=${value}`).join(", ")}</code> : null}
-              {item.suggestedValue !== undefined ? <small style={{ display: "block", marginTop: 3 }}>Valor sugerido: <strong>{formatNumber(item.suggestedValue)}</strong>{item.currentValue !== undefined ? ` (actual: ${formatNumber(item.currentValue)})` : ""}</small> : null}
+              <strong style={{ display: "block", marginTop: 4, fontSize: 12 }}>{item.title}</strong>
+              {item.parameter ? <code style={{ display: "block", marginTop: 4, fontSize: 11 }}>{item.parameter} · {Object.entries(item.dimensions).map(([key, value]) => `${key}=${value}`).join(", ")}</code> : null}
+              {item.suggestedValue !== undefined ? <small style={{ display: "block", marginTop: 3 }}>Sugerido: <strong>{formatNumber(item.suggestedValue)}</strong>{item.currentValue !== undefined ? ` · actual: ${formatNumber(item.currentValue)}` : ""}</small> : <small style={{ display: "block", marginTop: 3, opacity: 0.8 }}>{item.explanation}</small>}
             </span>
           </label>
         ))}
-      </div>
+        {visibleSuggestions < suggestions.length ? <Button variant="ghost" onClick={() => setVisibleSuggestions((value) => Math.min(value + 25, suggestions.length))}>Mostrar 25 más ({suggestions.length - visibleSuggestions} pendientes)</Button> : null}
+      </div> : null}
 
       <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
         <div style={STEP}>

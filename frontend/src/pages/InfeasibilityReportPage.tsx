@@ -74,8 +74,18 @@ const TD_STYLE: React.CSSProperties = {
   verticalAlign: "top",
 };
 
-type TabId = "iis" | "scenarioParams";
-type InfeasibilityAnalysisLevel = "structural" | "dual_ray" | "iis" | "relaxation";
+type TabId = "fix" | "diagnostics" | "iis" | "scenarioParams";
+type InfeasibilityAnalysisLevel = "structural" | "advanced" | "presolve" | "families" | "dual_ray" | "iis" | "relaxation";
+
+const DIAGNOSTIC_LEVEL_LABELS: Record<string, string> = {
+  structural: "Revisión de datos CSV",
+  advanced: "Entender y priorizar",
+  presolve: "Confirmación por presolve",
+  families: "Aislamiento por familias",
+  dual_ray: "Certificado Farkas / dual ray",
+  iis: "IIS global",
+  relaxation: "Relajación global",
+};
 
 const BOUND_TYPE_LABEL: Record<string, string> = {
   lower: "Límite inferior (≥)",
@@ -685,6 +695,42 @@ function OverviewChips({
   );
 }
 
+function DiagnosticHistorySection({
+  history,
+  currentStatus,
+  requestedLevel,
+  startedAt,
+  finishedAt,
+  seconds,
+  error,
+}: {
+  history: Array<Record<string, unknown>> | undefined;
+  currentStatus: string | undefined;
+  requestedLevel: string | undefined;
+  startedAt: string | null | undefined;
+  finishedAt: string | null | undefined;
+  seconds: number | null | undefined;
+  error: string | null | undefined;
+}) {
+  const attempts = [...(history ?? [])];
+  if (["CANCELLED", "FAILED"].includes(String(currentStatus))) {
+    attempts.push({ level: requestedLevel, status: currentStatus, started_at: startedAt, finished_at: finishedAt, elapsed_seconds: seconds, error });
+  }
+  if (!attempts.length) return null;
+  return <section style={CARD_STYLE}>
+    <h2 style={{ margin: "0 0 5px", fontSize: 16 }}>Validaciones realizadas</h2>
+    <p style={{ margin: "0 0 10px", fontSize: 12, opacity: 0.8 }}>Cada resultado se conserva. Un intento cancelado o fallido posterior no borra las validaciones anteriores.</p>
+    <div style={{ display: "grid", gap: 6 }}>{attempts.slice(-12).reverse().map((entry, index) => {
+      const level = String(entry.level ?? "unknown");
+      const status = String(entry.status ?? "UNKNOWN");
+      const finished = entry.finished_at ? new Date(String(entry.finished_at)).toLocaleString() : "en curso";
+      const seconds = typeof entry.elapsed_seconds === "number" ? `${entry.elapsed_seconds.toFixed(1)} s` : "—";
+      const variant = status === "SUCCEEDED" ? "success" : status === "CANCELLED" ? "warning" : status === "FAILED" ? "danger" : "neutral";
+      return <div key={`${level}-${index}-${String(entry.finished_at ?? "")}`} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8, padding: 8, borderRadius: 6, background: "rgba(0,0,0,0.1)", fontSize: 12 }}><span><strong>{DIAGNOSTIC_LEVEL_LABELS[level] ?? level}</strong>{" "}<Badge variant={variant}>{status}</Badge>{entry.error ? <small style={{ display: "block", color: "#fbbf24", marginTop: 3 }}>{String(entry.error)}</small> : null}</span><small style={{ opacity: 0.72 }}>{finished} · {seconds}</small></div>;
+    })}</div>
+  </section>;
+}
+
 function EvidenceSection({
   classification,
   certificate,
@@ -751,38 +797,73 @@ function ProgressiveDiagnosticActions({
   onRun,
   disabled,
   solverName,
+  diagnostics,
 }: {
-  onRun: (level: InfeasibilityAnalysisLevel) => void;
+  onRun: (level: InfeasibilityAnalysisLevel, baselineScenarioId?: number) => void;
   disabled: boolean;
   solverName: string;
+  diagnostics: InfeasibilityDiagnostics;
 }) {
+  const [selected, setSelected] = useState<InfeasibilityAnalysisLevel>("structural");
+  const [baselineScenarioId, setBaselineScenarioId] = useState("");
   const isHighs = solverName.toLowerCase() === "highs";
-  const levels: Array<{ level: InfeasibilityAnalysisLevel; title: string; description: string; costly?: boolean }> = [
-    { level: "structural", title: "1. CSV / pandas", description: "Rutas de fuel, cotas, capacidad y storage. No construye Pyomo ni resuelve LP." },
-    { level: "dual_ray", title: "2. Certificado Farkas", description: "Relee el modelo/LP para intentar un dual ray validado." },
-    { level: "iis", title: "3. IIS", description: "Busca un subsistema de conflicto; puede agotar su límite de tiempo." },
-    { level: "relaxation", title: "4. Relajación", description: "Cuantifica cambios mínimos. Es la fase de mayor consumo de memoria.", costly: true },
+  const levels: Array<{ level: InfeasibilityAnalysisLevel; title: string; cost: string; description: string; costly?: boolean }> = [
+    { level: "structural", title: "1. Revisar los datos", cost: "AUTOMÁTICO · BAJO", description: "Busca mínimos mayores que máximos, capacidad insuficiente y rutas de suministro inexistentes." },
+    { level: "advanced", title: "2. Entender y priorizar", cost: "BAJO · SIN LP", description: "Resume qué corregir, dónde ocurre y la brecha mínima sin cargar el LP global." },
+    { level: "presolve", title: "3. Confirmar en el modelo", cost: "BAJO–MEDIO", description: "Comprueba si HiGHS detecta la contradicción al simplificar el LP." },
+    { level: "families", title: "4. Ubicar el bloque de reglas", cost: "MEDIO", description: "Prueba bloques de restricciones para orientar la investigación; no es un IIS." },
+    { level: "dual_ray", title: "5. Certificado Farkas", cost: "MEDIO–ALTO", description: "Obtiene una prueba algebraica cuando HiGHS puede validarla." },
+    { level: "iis", title: "6. IIS global", cost: "ALTO", description: "Busca un conflicto mínimo en el LP completo; puede tardar varios minutos." },
+    { level: "relaxation", title: "7. Relajación global", cost: "MUY ALTO", description: "Cuantifica slacks globales; úsala sólo como último recurso.", costly: true },
   ];
+  const item = levels.find((entry) => entry.level === selected)!;
+  const unavailable = !isHighs && !["structural", "advanced"].includes(item.level);
   return (
     <section style={WARN_CARD_STYLE}>
-      <h2 style={{ margin: "0 0 5px", fontSize: 16 }}>Análisis progresivo</h2>
-      <p style={{ margin: "0 0 10px", fontSize: 12, opacity: 0.85 }}>
-        Ejecuta primero la alternativa más barata. Las fases costosas no se lanzan automáticamente ni convierten un timeout en certificado.
-      </p>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 8 }}>
-        {levels.map((item) => {
-          const unavailable = !isHighs && item.level !== "structural";
-          return <div key={item.level} style={{ padding: 10, border: "1px solid rgba(245,158,11,0.3)", borderRadius: 7 }}>
-            <strong style={{ display: "block", fontSize: 13 }}>{item.title}</strong>
-            <p style={{ minHeight: 34, margin: "5px 0 8px", fontSize: 12, opacity: 0.82 }}>{item.description}</p>
-            <Button variant={item.level === "structural" ? "primary" : "ghost"} disabled={disabled || unavailable} title={unavailable ? "Esta fase focalizada está habilitada actualmente para HiGHS." : undefined} onClick={() => onRun(item.level)}>
-              {unavailable ? "No disponible" : item.costly ? "Solicitar relajación" : "Ejecutar"}
-            </Button>
-          </div>;
-        })}
+      <h2 style={{ margin: "0 0 5px", fontSize: 16 }}>Guía para encontrar y corregir el problema</h2>
+      <p style={{ margin: "0 0 10px", fontSize: 12, opacity: 0.85 }}>Empieza por datos y contradicciones directas. Las pruebas costosas no se ejecutan automáticamente y un timeout nunca se presenta como causa.</p>
+      <div style={{ display: "flex", overflowX: "auto", gap: 6, paddingBottom: 8 }}>
+        {levels.map((entry) => <button key={entry.level} type="button" onClick={() => setSelected(entry.level)} style={{ flex: "0 0 auto", cursor: "pointer", padding: "7px 10px", borderRadius: 6, border: `1px solid ${selected === entry.level ? "rgba(245,158,11,0.65)" : "rgba(148,163,184,0.25)"}`, background: selected === entry.level ? "rgba(245,158,11,0.12)" : "transparent", color: "inherit", fontSize: 12 }}>{entry.title}</button>)}
+      </div>
+      <div style={{ padding: 12, border: "1px solid rgba(245,158,11,0.3)", borderRadius: 7, background: "rgba(0,0,0,0.1)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}><strong style={{ fontSize: 14 }}>{item.title}</strong><Badge variant={item.costly ? "danger" : item.level === "structural" ? "success" : "warning"}>{item.cost}</Badge></div>
+        <p style={{ margin: "7px 0", fontSize: 12 }}>{item.description}</p>
+        {selected === "advanced" ? <label style={{ display: "block", fontSize: 12, maxWidth: 390 }}>Escenario de referencia opcional<input className="field__input" inputMode="numeric" value={baselineScenarioId} onChange={(event) => setBaselineScenarioId(event.target.value.replace(/\D/g, ""))} placeholder="ID de escenario comparable" style={{ display: "block", width: "100%", marginTop: 4 }} /><small style={{ opacity: 0.72 }}>Si se omite, la comparación queda como no disponible. Una referencia infactible sólo sirve para comparar cambios.</small></label> : null}
+        <ProgressiveMethodResult level={selected} diagnostics={diagnostics} />
+        <Button style={{ marginTop: 10 }} variant={selected === "structural" ? "ghost" : "primary"} disabled={disabled || unavailable} title={unavailable ? "Las fases LP focalizadas usan exclusivamente HiGHS." : undefined} onClick={() => onRun(selected, selected === "advanced" && Number(baselineScenarioId) > 0 ? Number(baselineScenarioId) : undefined)}>{unavailable ? "No disponible" : selected === "structural" ? "Actualizar auditoría" : item.costly ? "Solicitar relajación" : "Ejecutar / actualizar"}</Button>
       </div>
     </section>
   );
+}
+
+function AdvancedDiagnosticsResult({ reports }: { reports: Record<string, Record<string, unknown>> | null | undefined }) {
+  if (!reports) return <p style={{ margin: "10px 0 0", fontSize: 12, opacity: 0.72 }}>Aún no se ha ejecutado esta revisión.</p>;
+  const reduced = reports.reduced_core;
+  const repairs = reports.selective_relaxation;
+  const witnesses = typeof reduced?.witness_count === "number" ? reduced.witness_count : 0;
+  const first = Array.isArray(repairs?.alternatives) ? repairs.alternatives[0] as Record<string, unknown> | undefined : undefined;
+  const dimensions = first?.dimensions && typeof first.dimensions === "object" ? Object.entries(first.dimensions as Record<string, string>).map(([key, value]) => `${key}=${value}`).join(" · ") : null;
+  const gap = typeof first?.gap === "number" ? formatNumber(first.gap, 6) : null;
+  const groups = [
+    ["Resolver primero", "reduced_core", "selective_relaxation", "iis_enumeration"],
+    ["Entender dónde ocurre", "hierarchical_isolation", "decomposition", "bound_propagation", "graph_bottleneck"],
+    ["Comprobar después", "baseline_comparison", "numerical", "maxfs_mcs", "quickxplain"],
+  ] as const;
+  const labels: Record<string, string> = { reduced_core: "Contradicciones directas", selective_relaxation: "Opciones de corrección", iis_enumeration: "Prueba mínima local", hierarchical_isolation: "Dónde revisar", decomposition: "Mapa región–año", bound_propagation: "Cadena de parámetros", graph_bottleneck: "Rutas de suministro", baseline_comparison: "Cambios frente a referencia", numerical: "Calidad numérica", maxfs_mcs: "Alternativas mínimas locales", quickxplain: "Verificación de minimalidad" };
+  return <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+    <div style={{ padding: 10, borderRadius: 6, background: witnesses ? "rgba(34,197,94,0.1)" : "rgba(148,163,184,0.1)" }}><strong>{witnesses ? `${witnesses.toLocaleString()} contradicciones directas encontradas.` : "No se encontraron contradicciones directas en CSV."}</strong>{dimensions && gap ? <p style={{ margin: "5px 0 0", fontSize: 12 }}>Primera revisión: <code>{dimensions}</code>. La brecha es <strong>{gap}</strong>; justifica bajar el mínimo o subir el máximo en una copia del escenario.</p> : null}</div>
+    {groups.map(([title, ...keys]) => <div key={title}><strong style={{ fontSize: 12 }}>{title}</strong><div style={{ display: "grid", gap: 6, marginTop: 5 }}>{keys.map((key) => { const report = reports[key]; const evidence = String(report?.evidence_level ?? "NO EJECUTADO"); return <details key={key} style={{ padding: 8, border: "1px solid rgba(148,163,184,0.25)", borderRadius: 6 }}><summary style={{ cursor: "pointer", fontSize: 12 }}><strong>{labels[key]}</strong>{" "}<Badge variant={evidence === "CERTIFIED" ? "success" : report?.available ? "warning" : "neutral"}>{report?.available ? evidence : "NO DISPONIBLE"}</Badge></summary><p style={{ margin: "6px 0", fontSize: 11 }}>{String(report?.explanation ?? report?.unavailable_reason ?? "Sin resultado.")}</p><p style={{ margin: 0, fontSize: 11, opacity: 0.8 }}><strong>Qué hacer:</strong> {String(report?.how_to_use ?? "—")}</p><details style={{ marginTop: 6 }}><summary style={{ cursor: "pointer", fontSize: 11 }}>Ver evidencia técnica</summary><pre style={{ maxHeight: 220, overflow: "auto", fontSize: 10, whiteSpace: "pre-wrap" }}>{JSON.stringify(report, null, 2)}</pre></details></details>; })}</div></div>)}
+  </div>;
+}
+
+function ProgressiveMethodResult({ level, diagnostics }: { level: InfeasibilityAnalysisLevel; diagnostics: InfeasibilityDiagnostics }) {
+  if (level === "structural") return <StructuralFindingsSection findings={diagnostics.structural_findings ?? []} />;
+  if (level === "advanced") return <AdvancedDiagnosticsResult reports={diagnostics.advanced_diagnostics} />;
+  if (level === "presolve") { const report = diagnostics.presolve_report; return report ? <p style={{ margin: "10px 0 0", fontSize: 12 }}>{String(report.explanation ?? report.unavailable_reason ?? "Presolve ejecutado.")}</p> : <p style={{ margin: "10px 0 0", fontSize: 12, opacity: 0.72 }}>Aún no se ha ejecutado.</p>; }
+  if (level === "families") { const report = diagnostics.family_diagnosis; return report ? <p style={{ margin: "10px 0 0", fontSize: 12 }}>{String(report.explanation ?? report.unavailable_reason ?? "Aislamiento ejecutado.")}</p> : <p style={{ margin: "10px 0 0", fontSize: 12, opacity: 0.72 }}>Aún no se ha ejecutado.</p>; }
+  if (level === "dual_ray") return diagnostics.certificate?.available ? <p style={{ margin: "10px 0 0", fontSize: 12 }}>Certificado {diagnostics.certificate.validated ? "validado" : "no concluyente"}. Prioriza las restricciones de mayor peso, sin cambiar parámetros automáticamente.</p> : <p style={{ margin: "10px 0 0", fontSize: 12, opacity: 0.72 }}>{diagnostics.certificate?.unavailable_reason ?? "Aún no se ha ejecutado."}</p>;
+  if (level === "iis") return diagnostics.iis?.available ? <p style={{ margin: "10px 0 0", fontSize: 12 }}>{diagnostics.iis.constraint_names.length} restricciones encontradas. Un IIS es una causa mínima, no necesariamente la única.</p> : <p style={{ margin: "10px 0 0", fontSize: 12, opacity: 0.72 }}>{diagnostics.iis?.unavailable_reason ?? "Aún no se ha ejecutado."}</p>;
+  return <RelaxationSection report={diagnostics.feasibility_relaxation} />;
 }
 
 function DiagnosticMethodsSection({ diagnostics }: { diagnostics: InfeasibilityDiagnostics }) {
@@ -854,29 +935,31 @@ function DiagnosticMethodsSection({ diagnostics }: { diagnostics: InfeasibilityD
   );
 }
 
+function findingCorrectionHint(finding: StructuralFinding): string {
+  if (finding.code === "ANNUAL_EMISSION_LIMIT_BELOW_MANDATED_MINIMUM") {
+    return "Corrija el límite AnnualEmissionLimit o revise las actividades mínimas y factores de emisión de las tecnologías listadas.";
+  }
+  if (finding.code.includes("ACTIVITY") || finding.code.includes("CAPACITY")) {
+    return "Revise los mínimos de actividad y los máximos de capacidad/inversión para estas mismas dimensiones.";
+  }
+  if (finding.code.includes("DEMAND") || finding.code.includes("FUEL")) {
+    return "Revise la demanda o agregue/corrija una ruta de suministro para estas mismas dimensiones.";
+  }
+  return `Revise primero: ${(finding.related_parameters ?? []).slice(0, 4).join(", ") || "los parámetros relacionados"}.`;
+}
+
 function StructuralFindingsSection({ findings }: { findings: StructuralFinding[] }) {
-  if (findings.length === 0) return null;
-  return (
-    <section style={WARN_CARD_STYLE}>
-      <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Problemas estructurales ({findings.length})</h2>
-      <p style={{ margin: "0 0 10px", fontSize: 12, opacity: 0.85 }}>
-        Detectados directamente en los datos, sin depender del punto inicial del solver.
-      </p>
-      <div style={{ display: "grid", gap: 8 }}>
-        {findings.map((finding, index) => (
-          <div key={`${finding.code}-${index}`} style={{ padding: 10, borderRadius: 6, background: "rgba(0,0,0,0.15)" }}>
-            <Badge variant={finding.severity === "ERROR" ? "danger" : "warning"}>{finding.code}</Badge>{" "}
-            <Badge variant="neutral">{finding.evidence_level}</Badge>
-            <p style={{ margin: "6px 0", fontSize: 13 }}>{finding.message}</p>
-            <small style={{ opacity: 0.8 }}>
-              {renderIndices(finding.dimensions)}
-              {Object.keys(finding.values).length > 0 ? ` · ${JSON.stringify(finding.values)}` : ""}
-            </small>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  const filtered = useMemo(() => { const term = query.trim().toLowerCase(); return term ? findings.filter((item) => `${item.code} ${item.message} ${JSON.stringify(item.dimensions)}`.toLowerCase().includes(term)) : findings; }, [findings, query]);
+  const groups = useMemo(() => { const map = new Map<string, StructuralFinding[]>(); filtered.forEach((item) => map.set(item.code, [...(map.get(item.code) ?? []), item])); return [...map.entries()].sort((a, b) => b[1].length - a[1].length); }, [filtered]);
+  if (!findings.length) return null;
+  return <section style={WARN_CARD_STYLE}>
+    <h2 style={{ margin: "0 0 5px", fontSize: 16 }}>Problemas detectados en los datos ({findings.length})</h2>
+    <p style={{ margin: "0 0 10px", fontSize: 12, opacity: 0.85 }}>Se agrupan por tipo para evitar cientos de tarjetas repetidas. Son revisiones de CSV: no modifican el escenario.</p>
+    <input className="field__input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar región, año, tecnología o tipo…" style={{ width: "100%", marginBottom: 8 }} />
+    <div style={{ display: "grid", gap: 7 }}>{groups.map(([code, rows]) => { const expanded = open.has(code); const sample = rows[0]!; const summary = ["REGION", "TECHNOLOGY", "FUEL", "YEAR"].map((dimension) => [...new Set(rows.map((item) => item.dimensions[dimension]).filter(Boolean))].slice(0, 4).join(", ")).filter(Boolean).join(" · "); return <article key={code} style={{ border: "1px solid rgba(245,158,11,0.28)", borderRadius: 7, overflow: "hidden" }}><button type="button" onClick={() => setOpen((current) => { const next = new Set(current); if (next.has(code)) next.delete(code); else next.add(code); return next; })} style={{ width: "100%", textAlign: "left", border: 0, background: "rgba(0,0,0,0.12)", color: "inherit", padding: 10, cursor: "pointer" }}><Badge variant={sample.severity === "ERROR" ? "danger" : "warning"}>{rows.length}</Badge>{" "}<strong style={{ fontSize: 12 }}>{code}</strong><p style={{ margin: "5px 0", fontSize: 12 }}>{sample.message}</p><p style={{ margin: "5px 0", fontSize: 12, color: "#fcd34d" }}><strong>Qué revisar:</strong> {findingCorrectionHint(sample)}</p><small style={{ opacity: 0.7 }}>{summary}</small></button>{expanded ? <div style={{ maxHeight: 300, overflow: "auto", padding: 8 }}>{rows.slice(0, 50).map((item, index) => <div key={`${code}-${index}`} style={{ padding: "6px 0", borderBottom: "1px solid rgba(148,163,184,0.14)", fontSize: 11 }}><code>{renderIndices(item.dimensions)}</code><br />{Object.entries(item.values).filter(([, value]) => typeof value === "number" || typeof value === "string").slice(0, 5).map(([key, value]) => `${key}: ${String(value)}`).join(" · ")}</div>)}{rows.length > 50 ? <small>Se muestran 50 de {rows.length}; use la búsqueda para acotar.</small> : null}</div> : null}</article>; })}</div>
+  </section>;
 }
 
 function RelaxationSection({ report }: { report: FeasibilityRelaxationReport | null | undefined }) {
@@ -980,11 +1063,14 @@ export function InfeasibilityReportPage() {
   const [result, setResult] = useState<RunResult | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
-  const [activeTab, setActiveTab] = useState<TabId>("iis");
+  // La vista inicial es deliberadamente accionable: primero qué corregir;
+  // evidencia técnica, IIS e historial quedan a una pestaña de distancia.
+  const [activeTab, setActiveTab] = useState<TabId>("fix");
   const [scenarioParams, setScenarioParams] = useState<ScenarioParamsForDiagnostics>({
     state: "none",
   });
   const [triggering, setTriggering] = useState(false);
+  const automaticStructuralJobRef = useRef<number | null>(null);
 
   const refreshResult = useCallback(async () => {
     if (!Number.isFinite(jobId)) return;
@@ -1037,14 +1123,13 @@ export function InfeasibilityReportPage() {
     return () => window.clearInterval(id);
   }, [diagStatus, refreshResult]);
 
-  const triggerDiagnostic = useCallback(async (level: InfeasibilityAnalysisLevel = "structural") => {
+  const triggerDiagnostic = useCallback(async (level: InfeasibilityAnalysisLevel = "structural", baselineScenarioId?: number) => {
     if (!Number.isFinite(jobId)) return;
-    if (level === "relaxation" && !window.confirm(
-      "La relajación de factibilidad puede consumir varios GB de memoria. ¿Deseas continuar?",
-    )) return;
+    const confirmations: Partial<Record<InfeasibilityAnalysisLevel, string>> = { families: "El aislamiento por familias ejecuta varios probes sobre una copia del modelo. ¿Deseas continuar?", iis: "El IIS puede tardar varios minutos en modelos regionales. ¿Deseas continuar?", relaxation: "La relajación global puede consumir varios GB de memoria. ¿Deseas continuar?" };
+    if (confirmations[level] && !window.confirm(confirmations[level])) return;
     setTriggering(true);
     try {
-      await simulationApi.runInfeasibilityDiagnostic(jobId, level);
+      await simulationApi.runInfeasibilityDiagnostic(jobId, level, baselineScenarioId);
       await refreshResult();
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo encolar el diagnóstico.");
@@ -1052,6 +1137,12 @@ export function InfeasibilityReportPage() {
       setTriggering(false);
     }
   }, [jobId, refreshResult]);
+
+  useEffect(() => {
+    if (!result || diagStatus !== "NONE" || triggering || !Number.isFinite(jobId) || automaticStructuralJobRef.current === jobId) return;
+    automaticStructuralJobRef.current = jobId;
+    void triggerDiagnostic("structural");
+  }, [diagStatus, jobId, result, triggerDiagnostic, triggering]);
 
   const [cancelling, setCancelling] = useState(false);
   const cancelDiagnostic = useCallback(async () => {
@@ -1122,6 +1213,16 @@ export function InfeasibilityReportPage() {
   }, [result?.scenario_id]);
 
   const diagnostics: InfeasibilityDiagnostics | null = result?.infeasibility_diagnostics ?? null;
+  const hasAccumulatedDiagnostic = Boolean(
+    diagnostics?.classification ||
+    (diagnostics?.structural_findings?.length ?? 0) > 0 ||
+    diagnostics?.advanced_diagnostics ||
+    diagnostics?.presolve_report ||
+    diagnostics?.family_diagnosis ||
+    diagnostics?.certificate?.available ||
+    diagnostics?.iis?.available ||
+    diagnostics?.feasibility_relaxation?.available,
+  );
   const solverName = (result?.solver_name ?? "").toString().toLowerCase();
   const isHighs = solverName === "highs";
   const isGurobi = solverName === "gurobi";
@@ -1533,27 +1634,33 @@ export function InfeasibilityReportPage() {
         ) : null}
       </section>
 
-      {diagStatus === "SUCCEEDED" ? (
+      {(hasAccumulatedDiagnostic || diagnostics.overview) ? (
+        <nav aria-label="Secciones del reporte" role="tablist" style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2 }}>
+          {([
+            ["fix", "Qué corregir"],
+            ["diagnostics", "Validaciones y evidencia"],
+            ["iis", isGlpk || !iis?.available ? `Restricciones (${analyses.length})` : `IIS (${analyses.length})`],
+            ...(!isGlpk ? [["scenarioParams", "Parámetros"]] : []),
+          ] as Array<[TabId, string]>).map(([id, label]) => (
+            <button key={id} type="button" role="tab" aria-selected={activeTab === id} onClick={() => setActiveTab(id)} style={tabBtnStyle(activeTab === id)}>{label}</button>
+          ))}
+        </nav>
+      ) : null}
+
+      {hasAccumulatedDiagnostic && activeTab === "diagnostics" ? (
         <>
-          <EvidenceSection
-            classification={diagnostics.classification}
-            certificate={diagnostics.certificate}
-          />
+          <ProgressiveDiagnosticActions onRun={(level, baselineScenarioId) => void triggerDiagnostic(level, baselineScenarioId)} disabled={triggering} solverName={solverName} diagnostics={diagnostics} />
+          <DiagnosticHistorySection history={diagnostics.diagnostic_history} currentStatus={diagStatus} requestedLevel={diagnostics.diagnostic_requested_level} startedAt={diagnostics.diagnostic_started_at} finishedAt={diagnostics.diagnostic_finished_at} seconds={diagnostics.diagnostic_seconds} error={diagnostics.diagnostic_error} />
+          <EvidenceSection classification={diagnostics.classification} certificate={diagnostics.certificate} />
           <DiagnosticMethodsSection diagnostics={diagnostics} />
-          <ProgressiveDiagnosticActions
-            onRun={(level) => void triggerDiagnostic(level)}
-            disabled={triggering}
-            solverName={solverName}
-          />
+        </>
+      ) : null}
+
+      {hasAccumulatedDiagnostic && activeTab === "fix" ? (
+        <>
           <StructuralFindingsSection findings={diagnostics.structural_findings ?? []} />
           <RelaxationSection report={diagnostics.feasibility_relaxation} />
-          <InfeasibilityRecoveryPlanner
-            diagnostics={diagnostics}
-            scenarioId={result?.scenario_id ?? null}
-            solverName={result?.solver_name ?? ""}
-            sourceJobId={jobId}
-            navigate={navigate}
-          />
+          <InfeasibilityRecoveryPlanner diagnostics={diagnostics} scenarioId={result?.scenario_id ?? null} solverName={result?.solver_name ?? ""} sourceJobId={jobId} navigate={navigate} />
         </>
       ) : null}
 
@@ -1581,9 +1688,10 @@ export function InfeasibilityReportPage() {
               : "El análisis enriquecido (IIS + mapeo a parámetros OSeMOSYS + ranking de sospechosos) se ejecuta como una tarea aparte porque puede tardar varios segundos sobre modelos grandes."}
           </p>
           <ProgressiveDiagnosticActions
-            onRun={(level) => void triggerDiagnostic(level)}
+            onRun={(level, baselineScenarioId) => void triggerDiagnostic(level, baselineScenarioId)}
             disabled={triggering}
             solverName={solverName}
+            diagnostics={diagnostics}
           />
         </section>
       ) : diagStatus === "QUEUED" ? (
@@ -1592,10 +1700,7 @@ export function InfeasibilityReportPage() {
             ⏳ Diagnóstico en cola (aún no iniciado)
           </strong>
           <p style={{ margin: "6px 0 0", fontSize: 13, opacity: 0.9 }}>
-            La tarea está encolada en Celery pero todavía no empezó a ejecutarse.
-            Esto pasa cuando otra simulación está ocupando el worker o cuando el
-            worker aún no recoge la tarea. Esta página se actualizará
-            automáticamente cuando arranque la ejecución (poll cada 3 s).
+            Está en cola: {DIAGNOSTIC_LEVEL_LABELS[String(diagnostics.diagnostic_requested_level ?? "")] ?? "diagnóstico"}. Esta página se actualizará automáticamente cuando arranque; las validaciones previas no se eliminan.
           </p>
           <p style={{ margin: "10px 0 0" }}>
             <Button onClick={() => void cancelDiagnostic()} disabled={cancelling}>
@@ -1624,8 +1729,8 @@ export function InfeasibilityReportPage() {
           </strong>
           <p style={{ margin: "6px 0 0", fontSize: 13, opacity: 0.9 }}>
             {isGlpk
-              ? "Se está ejecutando glpsol --nopresol sobre el LP del modelo. Puede tardar hasta 25 minutos en escenarios grandes. Esta página se actualizará automáticamente cuando termine."
-              : "Se está corriendo el IIS sobre el modelo y mapeando las restricciones a los parámetros OSeMOSYS de entrada. Esta página se actualizará automáticamente cuando termine."}
+              ? "Se está ejecutando glpsol --nopresol sobre el LP del modelo. Esta página se actualizará automáticamente cuando termine."
+              : `Se está ejecutando: ${DIAGNOSTIC_LEVEL_LABELS[String(diagnostics.diagnostic_requested_level ?? "")] ?? "diagnóstico"}. Las validaciones anteriores continúan disponibles debajo.`}
             {result?.infeasibility_diagnostics?.diagnostic_started_at ? (
               <>
                 {" "}Inició a las{" "}
@@ -1644,9 +1749,9 @@ export function InfeasibilityReportPage() {
         </section>
       ) : diagStatus === "CANCELLED" ? (
         <section style={WARN_CARD_STYLE}>
-          <strong style={{ fontSize: 14 }}>Diagnóstico cancelado.</strong>
+          <strong style={{ fontSize: 14 }}>Último intento cancelado.</strong>
           <p style={{ margin: "6px 0 10px", fontSize: 13, opacity: 0.9 }}>
-            La cancelación fue solicitada por el usuario. No se presentan resultados parciales como concluyentes.
+            No se presentan resultados parciales del intento cancelado como concluyentes. Las validaciones terminadas antes de la cancelación se conservan y aparecen debajo.
           </p>
           <Button onClick={() => void triggerDiagnostic()} disabled={triggering}>
             {triggering ? "Encolando…" : "Ejecutar nuevamente"}
@@ -1670,57 +1775,27 @@ export function InfeasibilityReportPage() {
 
       {/* Bloques principales del reporte: solo se muestran cuando el diagnóstico
           ya corrió (SUCCEEDED) o el análisis heurístico previo dejó datos útiles. */}
-      {diagStatus === "SUCCEEDED" || diagnostics.overview ? (
+      {activeTab === "fix" && (hasAccumulatedDiagnostic || diagnostics.overview) ? (
         <>
           {diagnostics.overview ? <OverviewSection overview={diagnostics.overview} /> : null}
-
           <TopSuspectsSection suspects={topSuspects} onPickConstraint={pickConstraintByParam} />
-
-          {!isGlpk && (
-            <IISScenarioChangesSection
-              changes={iisChanges}
-              loading={iisChangesLoading}
-              hasIISParams={iisParamNames.size > 0}
-              hasScenarioModifications={
-                scenarioParams.state === "loaded" &&
-                scenarioParams.names.length > 0
-              }
-              onOpenAuditTab={() => setActiveTab("scenarioParams")}
-            />
-          )}
         </>
       ) : null}
 
-      {/* Pestañas + detalle: solo cuando hay diagnóstico disponible */}
-      {diagStatus === "SUCCEEDED" || (!supportsIIS && analyses.length > 0) ? (
-      <>
-      <div role="tablist" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "iis"}
-          style={tabBtnStyle(activeTab === "iis")}
-          onClick={() => setActiveTab("iis")}
-        >
-          {isGlpk || !iis?.available ? "Restricciones violadas" : "Restricciones del IIS"} ({analyses.length})
-        </button>
-        {!isGlpk && (
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "scenarioParams"}
-            style={tabBtnStyle(activeTab === "scenarioParams")}
-            onClick={() => setActiveTab("scenarioParams")}
-          >
-            Parámetros del escenario
-            {scenarioParams.state === "loaded"
-              ? ` (${scenarioParams.names.length})`
-              : ""}
-          </button>
-        )}
-      </div>
+      {activeTab === "iis" && !isGlpk ? (
+        <IISScenarioChangesSection
+          changes={iisChanges}
+          loading={iisChangesLoading}
+          hasIISParams={iisParamNames.size > 0}
+          hasScenarioModifications={scenarioParams.state === "loaded" && scenarioParams.names.length > 0}
+          onOpenAuditTab={() => setActiveTab("scenarioParams")}
+        />
+      ) : null}
 
-      {activeTab === "iis" || isGlpk ? (
+      {/* Detalle técnico, separado de la ruta de corrección para reducir scroll. */}
+      {(hasAccumulatedDiagnostic || (!supportsIIS && analyses.length > 0)) && (activeTab === "iis" || activeTab === "scenarioParams") ? (
+      <>
+      {activeTab === "iis" ? (
         <section style={CARD_STYLE}>
           {supportsIIS && !iisAvailable ? (
             <div style={WARN_CARD_STYLE}>
@@ -1814,7 +1889,7 @@ export function InfeasibilityReportPage() {
       </>
       ) : null}
 
-      {varConflicts.length > 0 && (
+      {activeTab === "iis" && varConflicts.length > 0 && (
         <section style={CARD_STYLE}>
           <h2 style={{ margin: "0 0 12px 0", fontSize: 16 }}>
             Conflictos de bounds de variables ({varConflicts.length})
@@ -1846,7 +1921,7 @@ export function InfeasibilityReportPage() {
         </section>
       )}
 
-      {!isGlpk && unmapped.length > 0 && (
+      {activeTab === "iis" && !isGlpk && unmapped.length > 0 && (
         <section style={CARD_STYLE}>
           <h2 style={{ margin: "0 0 8px 0", fontSize: 16 }}>Prefijos sin mapeo estático</h2>
           <p style={{ margin: "0 0 8px 0", fontSize: 13, opacity: 0.85 }}>

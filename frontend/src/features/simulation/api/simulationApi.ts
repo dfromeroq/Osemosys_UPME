@@ -182,11 +182,12 @@ export const simulationApi = {
    * con `diagnostic_status='QUEUED'`. */
   async runInfeasibilityDiagnostic(
     jobId: number,
-    level: "structural" | "dual_ray" | "iis" | "relaxation" = "structural",
+    level: "structural" | "advanced" | "presolve" | "families" | "dual_ray" | "iis" | "relaxation" = "structural",
+    baselineScenarioId?: number,
   ) {
     const { data } = await httpClient.post<SimulationRun>(
       `/simulations/${jobId}/diagnose-infeasibility`,
-      { level },
+      { level, baseline_scenario_id: baselineScenarioId },
     );
     return data;
   },

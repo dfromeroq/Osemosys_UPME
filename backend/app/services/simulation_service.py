@@ -776,6 +776,7 @@ class SimulationService:
         current_user: User,
         job_id: int,
         level: str = "structural",
+        baseline_scenario_id: int | None = None,
     ) -> dict:
         """Encola un nivel del análisis progresivo de infactibilidad para
         un job ya completado que resultó infactible.
@@ -795,9 +796,25 @@ class SimulationService:
         # Import local para evitar import circular (tasks importa este service).
         from app.simulation.tasks import run_infeasibility_diagnostic_job
 
-        valid_levels = {"structural", "dual_ray", "iis", "relaxation"}
+        valid_levels = {
+            "structural", "advanced", "presolve", "families", "dual_ray", "iis", "relaxation"
+        }
         if level not in valid_levels:
             raise ConflictError(f"Nivel de diagnóstico inválido: {level!r}.")
+        if baseline_scenario_id is not None and level != "advanced":
+            raise ConflictError("El escenario de referencia sólo aplica a la suite avanzada.")
+        if baseline_scenario_id is not None:
+            baseline = db.get(Scenario, int(baseline_scenario_id))
+            can_view_baseline = bool(
+                baseline
+                and (
+                    baseline.owner == current_user.username
+                    or getattr(current_user, "can_manage_scenarios", False)
+                    or baseline.edit_policy in {"OPEN", "RESTRICTED"}
+                )
+            )
+            if not can_view_baseline:
+                raise NotFoundError("Escenario de referencia no encontrado o sin acceso.")
 
         job = SimulationRepository.get_job_for_user(
             db, job_id=job_id, user_id=current_user.id
@@ -813,10 +830,11 @@ class SimulationService:
 
         solver = str(getattr(job, "solver_name", "") or "").lower()
         if solver not in {"highs", "gurobi", "glpk"}:
+            raise ConflictError(f"Solver no soportado: {solver or '(desconocido)'}.")
+        if level not in {"structural", "advanced"} and solver != "highs":
             raise ConflictError(
-                "El diagnóstico de infactibilidad está disponible para HiGHS (IIS), "
-                "Gurobi (computeIIS) y GLPK (análisis heurístico --nopresol). "
-                f"Solver actual: {solver or '(desconocido)'}."
+                "Las fases que operan sobre LP usan exclusivamente HiGHS. "
+                "Gurobi permanece registrado, pero sus métodos no se invocan sin licencia."
             )
 
         current_status, _ = SimulationService._diagnostic_status_for(job)
@@ -831,23 +849,13 @@ class SimulationService:
 
         # Marcar como QUEUED antes de encolar Celery.
         diag = dict(job.infeasibility_diagnostics_json or {})
-        # Un reintento no debe mostrar resultados enriquecidos de una ejecución
-        # anterior mientras la nueva está en cola o corriendo.
+        # Los resultados de fases anteriores son acumulativos. Sólo se limpian
+        # metadatos temporales del intento nuevo.
         for stale_key in (
-            "classification",
-            "certificate",
-            "feasibility_relaxation",
-            "iis",
-            "overview",
-            "top_suspects",
-            "constraint_analyses",
-            "structural_findings",
-            "unmapped_constraint_prefixes",
             "diagnostic_started_at",
             "diagnostic_finished_at",
             "diagnostic_seconds",
             "diagnostic_celery_task_id",
-            "analysis_level",
         ):
             diag.pop(stale_key, None)
         # Debe limpiarse antes de publicar la task: una tarea rápida puede
@@ -855,6 +863,7 @@ class SimulationService:
         diag.pop("diagnostic_cancel_requested", None)
         diag["diagnostic_status"] = "QUEUED"
         diag["diagnostic_requested_level"] = level
+        diag["diagnostic_baseline_scenario_id"] = baseline_scenario_id
         diag.pop("diagnostic_error", None)
         job.infeasibility_diagnostics_json = diag
         SimulationRepository.add_event(
@@ -871,7 +880,9 @@ class SimulationService:
         # Encolar la task y persistir su task_id (necesario para poder revocar
         # / cancelar desde la UI incluso si aún no inició la ejecución).
         try:
-            celery_task = run_infeasibility_diagnostic_job.delay(job.id, level)
+            celery_task = run_infeasibility_diagnostic_job.delay(
+                job.id, level, baseline_scenario_id
+            )
         except Exception as exc:
             # Revertir el estado a NONE para que el usuario pueda reintentar.
             diag["diagnostic_status"] = "FAILED"

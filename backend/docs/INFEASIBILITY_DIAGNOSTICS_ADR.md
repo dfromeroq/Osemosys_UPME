@@ -32,6 +32,14 @@ clasificación operacional
 
 Las fases costosas sólo se ejecutan cuando la anterior no es concluyente o cuando el usuario solicita mayor detalle.
 
+El solve productivo no cambia. La pestaña del resultado infactible ejecuta como
+máximo la fase barata `structural` automáticamente y ofrece, en orden de costo:
+`structural → presolve → families → dual_ray → iis → relaxation`. Los resultados
+son acumulativos. `families` usa ablación y reducción incremental con budgets y
+se etiqueta como evidencia cuantificada, nunca como IIS. Las fases sobre LP
+invocan exclusivamente HiGHS; Gurobi permanece compatible en los contratos,
+pero no se usan sus métodos mientras no exista licencia.
+
 ## 3. Clasificación obligatoria
 
 Antes de cualquier IIS, persistir una de estas clases:

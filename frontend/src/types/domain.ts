@@ -519,8 +519,13 @@ export type InfeasibilityDiagnostics = {
   diagnostic_finished_at?: string | null;
   diagnostic_seconds?: number | null;
   /** Nivel solicitado/completado: structural → dual_ray → iis → relaxation. */
-  diagnostic_requested_level?: "structural" | "dual_ray" | "iis" | "relaxation";
-  analysis_level?: "structural" | "dual_ray" | "iis" | "relaxation";
+  diagnostic_requested_level?: "structural" | "advanced" | "presolve" | "families" | "dual_ray" | "iis" | "relaxation";
+  diagnostic_baseline_scenario_id?: number | null;
+  analysis_level?: "structural" | "advanced" | "presolve" | "families" | "dual_ray" | "iis" | "relaxation";
+  presolve_report?: Record<string, unknown> | null;
+  family_diagnosis?: Record<string, unknown> | null;
+  advanced_diagnostics?: Record<string, Record<string, unknown>> | null;
+  diagnostic_history?: Array<Record<string, unknown>>;
   // Campos enriquecidos (presentes solo si diagnostic_status === 'SUCCEEDED'):
   iis?: IISReport | null;
   overview?: InfeasibilityOverview | null;

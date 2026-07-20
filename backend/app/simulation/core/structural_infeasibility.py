@@ -410,6 +410,205 @@ def _detect_activity_minimum_capacity_conflicts(root: Path) -> list[StructuralFi
     return findings
 
 
+def _detect_mandated_emission_limit_conflicts(root: Path) -> list[StructuralFinding]:
+    """Detecta emisiones mínimas inevitables contra límites anuales.
+
+    Sólo usa actividad mínima de tecnologías cuyos modos activos (observados en
+    Input/OutputActivityRatio) tienen una tasa positiva para la emisión. Así no
+    se afirma un conflicto cuando existe un modo activo conocido de emisión cero.
+    """
+    tol, inf = 1e-9, 9_999_999.0
+    limits = _read(root, "AnnualEmissionLimit")
+    activity_min = _read(root, "TotalTechnologyAnnualActivityLowerLimit")
+    emission_ratio = _read(root, "EmissionActivityRatio")
+    if any(frame.empty for frame in (limits, activity_min, emission_ratio)):
+        return []
+    required_limit = {"REGION", "EMISSION", "YEAR", "VALUE"}
+    required_activity = {"REGION", "TECHNOLOGY", "YEAR", "VALUE"}
+    required_ratio = {"REGION", "TECHNOLOGY", "EMISSION", "YEAR", "MODE_OF_OPERATION", "VALUE"}
+    if not required_limit.issubset(limits.columns) or not required_activity.issubset(activity_min.columns) or not required_ratio.issubset(emission_ratio.columns):
+        return []
+
+    active_modes: dict[tuple[str, str, str], set[str]] = {}
+    for name in ("InputActivityRatio", "OutputActivityRatio"):
+        ratios = _read(root, name)
+        required = {"REGION", "TECHNOLOGY", "YEAR", "MODE_OF_OPERATION", "VALUE"}
+        if not required.issubset(ratios.columns):
+            continue
+        for row in ratios[ratios["VALUE"] > tol].itertuples(index=False):
+            key = (str(row.REGION), str(row.TECHNOLOGY), str(row.YEAR))
+            active_modes.setdefault(key, set()).add(str(row.MODE_OF_OPERATION))
+
+    ratio_by_key: dict[tuple[str, str, str, str], dict[str, float]] = {}
+    for row in emission_ratio.itertuples(index=False):
+        key = (str(row.REGION), str(row.TECHNOLOGY), str(row.EMISSION), str(row.YEAR))
+        ratio_by_key.setdefault(key, {})[str(row.MODE_OF_OPERATION)] = float(row.VALUE)
+
+    mandatory = activity_min[activity_min["VALUE"] > tol]
+    findings: list[StructuralFinding] = []
+    for limit in limits.itertuples(index=False):
+        cap = float(limit.VALUE)
+        if cap >= inf:
+            continue
+        region, emission, year = str(limit.REGION), str(limit.EMISSION), str(limit.YEAR)
+        implied = 0.0
+        contributors: list[dict[str, Any]] = []
+        for activity in mandatory[(mandatory["REGION"] == region) & (mandatory["YEAR"] == year)].itertuples(index=False):
+            technology = str(activity.TECHNOLOGY)
+            modes = active_modes.get((region, technology, year), set())
+            rates = ratio_by_key.get((region, technology, emission, year), {})
+            # Un modo activo sin tasa explícita usa el default cero: no se
+            # puede demostrar que la emisión sea inevitable para esa tecnología.
+            if not modes or any(rates.get(mode, 0.0) <= tol for mode in modes):
+                continue
+            minimum_rate = min(rates[mode] for mode in modes)
+            contribution = float(activity.VALUE) * minimum_rate
+            implied += contribution
+            contributors.append({
+                "TECHNOLOGY": technology,
+                "activity_minimum": float(activity.VALUE),
+                "minimum_emission_rate": minimum_rate,
+                "minimum_emission": contribution,
+            })
+        if contributors and implied > cap + tol:
+            contributors.sort(key=lambda item: float(item["minimum_emission"]), reverse=True)
+            findings.append(StructuralFinding(
+                code="ANNUAL_EMISSION_LIMIT_BELOW_MANDATED_MINIMUM",
+                severity="ERROR",
+                evidence_level="STRUCTURAL",
+                message="El límite anual de emisión es menor que las emisiones mínimas inevitables de actividad obligatoria.",
+                dimensions={"REGION": region, "EMISSION": emission, "YEAR": year},
+                values={
+                    "annual_emission_limit": cap,
+                    "mandated_emission_lower_bound": implied,
+                    "gap": implied - cap,
+                    "mandatory_emitting_technologies": len(contributors),
+                    "top_contributors": contributors[:10],
+                },
+                related_parameters=[
+                    "AnnualEmissionLimit",
+                    "TotalTechnologyAnnualActivityLowerLimit",
+                    "EmissionActivityRatio",
+                    "InputActivityRatio",
+                    "OutputActivityRatio",
+                ],
+            ))
+    return findings
+
+
+def _detect_propagated_bound_conflicts(root: Path) -> list[StructuralFinding]:
+    """Propaga cotas capacidad→actividad anual/horizonte sin resolver el LP."""
+    inf, tol = 9_999_999.0, 1e-6
+    years_frame = _read(root, "YEAR")
+    if years_frame.empty:
+        return []
+    years = sorted(int(float(value)) for value in years_frame["VALUE"])
+    residual = _lookup_values(_read(root, "ResidualCapacity"))
+    max_invest = _lookup_values(_read(root, "TotalAnnualMaxCapacityInvestment"))
+    max_capacity = _lookup_values(_read(root, "TotalAnnualMaxCapacity"))
+    min_capacity = _lookup_values(_read(root, "TotalAnnualMinCapacity"))
+    annual_min = _lookup_values(_read(root, "TotalTechnologyAnnualActivityLowerLimit"))
+    annual_max = _lookup_values(_read(root, "TotalTechnologyAnnualActivityUpperLimit"))
+
+    def two_dim(name: str) -> dict[tuple[str, str], float]:
+        frame = _read(root, name)
+        if frame.empty or not {"REGION", "TECHNOLOGY", "VALUE"}.issubset(frame.columns):
+            return {}
+        return {
+            (str(row.REGION), str(row.TECHNOLOGY)): float(row.VALUE)
+            for row in frame.itertuples(index=False)
+        }
+
+    life = two_dim("OperationalLife")
+    c2a = two_dim("CapacityToActivityUnit")
+    availability = _lookup_values(_read(root, "AvailabilityFactor"))
+    capacity_factor = _read(root, "CapacityFactor")
+    year_split = _read(root, "YearSplit")
+    split = {
+        (str(row.TIMESLICE), str(row.YEAR)): float(row.VALUE)
+        for row in year_split.itertuples(index=False)
+    } if {"TIMESLICE", "YEAR", "VALUE"}.issubset(year_split.columns) else {}
+    cf = {
+        (str(row.REGION), str(row.TECHNOLOGY), str(row.TIMESLICE), str(row.YEAR)): float(row.VALUE)
+        for row in capacity_factor.itertuples(index=False)
+    } if {"REGION", "TECHNOLOGY", "TIMESLICE", "YEAR", "VALUE"}.issubset(capacity_factor.columns) else {}
+    timeslices: dict[str, list[str]] = {}
+    for timeslice, year in split:
+        timeslices.setdefault(year, []).append(timeslice)
+
+    tech_years = set(residual) | set(max_invest) | set(max_capacity) | set(min_capacity) | set(annual_min) | set(annual_max)
+    technologies = {(region, tech) for region, tech, _ in tech_years}
+    cap_upper: dict[tuple[str, str, str], float] = {}
+    activity_upper: dict[tuple[str, str, str], float] = {}
+    findings: list[StructuralFinding] = []
+    for region, tech in technologies:
+        operational_life = life.get((region, tech), 1.0)
+        for year in years:
+            raw_year = str(year)
+            investments = 0.0
+            finite = True
+            for investment_year in years:
+                if investment_year > year or year - investment_year >= operational_life:
+                    continue
+                maximum = max_invest.get((region, tech, str(investment_year)), inf)
+                if maximum >= inf:
+                    finite = False
+                    break
+                investments += max(0.0, maximum)
+            upper = max_capacity.get((region, tech, raw_year), inf)
+            if finite:
+                upper = min(upper, residual.get((region, tech, raw_year), 0.0) + investments)
+            cap_upper[(region, tech, raw_year)] = upper
+            minimum = min_capacity.get((region, tech, raw_year), 0.0)
+            if upper < inf and minimum > upper + tol:
+                findings.append(StructuralFinding(
+                    code="MIN_TOTAL_CAPACITY_EXCEEDS_REALIZABLE_CAPACITY",
+                    severity="ERROR", evidence_level="STRUCTURAL",
+                    message="La capacidad total mínima supera residual más todas las inversiones máximas aún vivas.",
+                    dimensions={"REGION": region, "TECHNOLOGY": tech, "YEAR": raw_year},
+                    values={"required_capacity": minimum, "realizable_capacity_upper": upper, "gap": minimum - upper},
+                    related_parameters=["TotalAnnualMinCapacity", "TotalAnnualMaxCapacity", "ResidualCapacity", "TotalAnnualMaxCapacityInvestment", "OperationalLife"],
+                ))
+            annual_factor = sum(
+                split[(ts, raw_year)] * cf.get((region, tech, ts, raw_year), 1.0)
+                for ts in timeslices.get(raw_year, [])
+            )
+            physical = upper * c2a.get((region, tech), 1.0)
+            physical *= availability.get((region, tech, raw_year), 1.0) * annual_factor
+            activity_upper[(region, tech, raw_year)] = min(
+                physical, annual_max.get((region, tech, raw_year), inf)
+            )
+
+    horizon_lower = two_dim("TotalTechnologyModelPeriodActivityLowerLimit")
+    horizon_upper = two_dim("TotalTechnologyModelPeriodActivityUpperLimit")
+    for region, tech in technologies | set(horizon_lower) | set(horizon_upper):
+        annual_required = sum(annual_min.get((region, tech, str(year)), 0.0) for year in years)
+        maximum_horizon = horizon_upper.get((region, tech), inf)
+        if maximum_horizon < inf and annual_required > maximum_horizon + tol:
+            findings.append(StructuralFinding(
+                code="SUM_ANNUAL_ACTIVITY_MIN_EXCEEDS_HORIZON_ACTIVITY_MAX",
+                severity="ERROR", evidence_level="STRUCTURAL",
+                message="La suma de mínimos anuales supera el máximo de actividad del horizonte.",
+                dimensions={"REGION": region, "TECHNOLOGY": tech},
+                values={"annual_minimum_sum": annual_required, "horizon_maximum": maximum_horizon, "gap": annual_required - maximum_horizon},
+                related_parameters=["TotalTechnologyAnnualActivityLowerLimit", "TotalTechnologyModelPeriodActivityUpperLimit"],
+            ))
+        annual_uppers = [activity_upper.get((region, tech, str(year)), inf) for year in years]
+        required_horizon = horizon_lower.get((region, tech), 0.0)
+        if required_horizon > tol and all(value < inf for value in annual_uppers):
+            cumulative_upper = sum(annual_uppers)
+            if required_horizon > cumulative_upper + tol:
+                findings.append(StructuralFinding(
+                    code="HORIZON_ACTIVITY_MIN_EXCEEDS_CUMULATIVE_CAPACITY_ACTIVITY",
+                    severity="ERROR", evidence_level="STRUCTURAL",
+                    message="El mínimo del horizonte supera la actividad acumulada físicamente alcanzable.",
+                    dimensions={"REGION": region, "TECHNOLOGY": tech},
+                    values={"required_horizon_activity": required_horizon, "cumulative_activity_upper": cumulative_upper, "gap": required_horizon - cumulative_upper},
+                    related_parameters=["TotalTechnologyModelPeriodActivityLowerLimit", "TotalTechnologyAnnualActivityUpperLimit", "ResidualCapacity", "TotalAnnualMaxCapacityInvestment", "OperationalLife", "CapacityFactor", "AvailabilityFactor", "CapacityToActivityUnit", "YearSplit"],
+                ))
+    return findings
+
+
 def analyze_structural_infeasibility(csv_dir: str | Path) -> list[StructuralFinding]:
     """Devuelve hallazgos estructurales sin modificar ningún CSV."""
     root = Path(csv_dir)
@@ -441,6 +640,8 @@ def analyze_structural_infeasibility(csv_dir: str | Path) -> list[StructuralFind
         )
 
     findings.extend(_detect_activity_minimum_capacity_conflicts(root))
+    findings.extend(_detect_mandated_emission_limit_conflicts(root))
+    findings.extend(_detect_propagated_bound_conflicts(root))
 
     demands = _positive_demand_keys(root)
     findings.extend(_detect_fuel_reachability(root, demands))

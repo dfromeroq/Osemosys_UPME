@@ -719,7 +719,8 @@ def diagnose_infeasibility(
     """
     try:
         return SimulationService.request_infeasibility_diagnostic(
-            db, current_user=current_user, job_id=job_id, level=payload.level
+            db, current_user=current_user, job_id=job_id, level=payload.level,
+            baseline_scenario_id=payload.baseline_scenario_id,
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
@@ -796,6 +797,10 @@ def download_infeasibility_report(
         "certificate": diag.get("certificate"),
         "feasibility_relaxation": diag.get("feasibility_relaxation"),
         "structural_findings": diag.get("structural_findings", []),
+        "presolve_report": diag.get("presolve_report"),
+        "family_diagnosis": diag.get("family_diagnosis"),
+        "advanced_diagnostics": diag.get("advanced_diagnostics"),
+        "diagnostic_history": diag.get("diagnostic_history", []),
         "iis": public_iis,
         "top_suspects": diag.get("top_suspects", []),
         "constraint_analyses": diag.get("constraint_analyses", []),

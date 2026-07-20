@@ -280,7 +280,10 @@ def run_simulation_job(self, job_id: int) -> None:
     bind=True,
 )
 def run_infeasibility_diagnostic_job(
-    self, job_id: int, level: str = "structural"
+    self,
+    job_id: int,
+    level: str = "structural",
+    baseline_scenario_id: int | None = None,
 ) -> None:
     """Ejecuta el análisis enriquecido de infactibilidad (IIS + mapeo a
     parámetros) sobre un job SUCCEEDED ya infactible.
@@ -326,7 +329,9 @@ def run_infeasibility_diagnostic_job(
     def _utc_now_iso() -> str:
         return datetime.now(timezone.utc).isoformat()
 
-    valid_levels = {"structural", "dual_ray", "iis", "relaxation"}
+    valid_levels = {
+        "structural", "advanced", "presolve", "families", "dual_ray", "iis", "relaxation"
+    }
     if level not in valid_levels:
         raise ValueError(f"Nivel de diagnóstico inválido: {level!r}")
 
@@ -348,10 +353,13 @@ def run_infeasibility_diagnostic_job(
         _raise_if_cancel_requested(job_id)
         labels = {
             "classify": "Clasificando el estado matemático del solver.",
+            "presolve": "Ejecutando presolve diagnóstico sobre una copia del LP.",
+            "families": "Aislando familias mediante probes incrementales HiGHS.",
             "dual_ray": "Calculando certificado de Farkas (dual ray).",
             "feasibility_relaxation": "Cuantificando cambios mínimos de factibilidad.",
             "iis": "Calculando subsistema inconsistente irreducible (IIS).",
             "structural": "Validando rutas de suministro y conflictos estructurales CSV/pandas.",
+            "advanced": "Ejecutando la suite avanzada CSV y núcleos algebraicos reducidos.",
         }
         with SessionLocal() as phase_db:
             phase_job = SimulationRepository.get_job_by_id(phase_db, job_id=job_id)
@@ -383,6 +391,73 @@ def run_infeasibility_diagnostic_job(
         ]
         diag_seed["analysis_level"] = "structural"
         return diag_seed
+
+    def _advanced_only(solution_seed: dict, csv_dir: str, db_session) -> dict:
+        """Once análisis focalizados sin reconstruir Pyomo ni cargar el LP global."""
+        diag_seed = _structural_only(solution_seed, csv_dir)
+        _on_diagnostic_phase("advanced")
+        from app.simulation.core.advanced_infeasibility import (  # noqa: WPS433
+            run_advanced_diagnostic_suite,
+        )
+
+        baseline_dir: str | None = None
+        baseline_tmp = None
+        try:
+            if baseline_scenario_id is not None:
+                baseline_tmp = tempfile.TemporaryDirectory(
+                    prefix="osemosys_diag_baseline_"
+                )
+                run_data_processing(
+                    db_session,
+                    scenario_id=baseline_scenario_id,
+                    csv_dir=baseline_tmp.name,
+                )
+                baseline_dir = baseline_tmp.name
+            diag_seed["advanced_diagnostics"] = run_advanced_diagnostic_suite(
+                csv_dir,
+                diag_seed.get("structural_findings", []),
+                baseline_csv_dir=baseline_dir,
+            )
+        finally:
+            if baseline_tmp is not None:
+                baseline_tmp.cleanup()
+        diag_seed["analysis_level"] = "advanced"
+        return diag_seed
+
+    def _lp_progressive_method(instance: object, requested_level: str) -> dict:
+        """Ejecuta presolve/familias sobre un LP temporal independiente."""
+        from app.simulation.core.progressive_diagnostics import (  # noqa: WPS433
+            run_family_diagnosis,
+            run_highs_presolve_diagnostic,
+        )
+        from app.simulation.core.solver import write_lp_file  # noqa: WPS433
+
+        lp_path = Path("tmp/infeasibility-reports") / f"job_{job_id}_{requested_level}.lp"
+        write_lp_file(instance, lp_path)
+        if requested_level == "presolve":
+            _on_diagnostic_phase("presolve")
+            result = run_highs_presolve_diagnostic(lp_path)
+            return {"presolve_report": result, "analysis_level": requested_level}
+        _on_diagnostic_phase("families")
+        result = run_family_diagnosis(
+            lp_path, cancel_check=lambda: _raise_if_cancel_requested(job_id)
+        )
+        return {"family_diagnosis": result, "analysis_level": requested_level}
+
+    def _selected_enrichment(solution_seed: dict, requested_level: str) -> dict:
+        diag_result = solution_seed["infeasibility_diagnostics"]
+        keys = {
+            "dual_ray": ("classification", "certificate"),
+            "iis": (
+                "classification", "iis", "overview", "top_suspects",
+                "constraint_analyses", "unmapped_constraint_prefixes",
+            ),
+            "relaxation": ("classification", "feasibility_relaxation"),
+        }[requested_level]
+        return {
+            **{key: diag_result[key] for key in keys if key in diag_result},
+            "analysis_level": requested_level,
+        }
 
     # 1) Mark RUNNING atomically y persistir el task_id de Celery.
     with SessionLocal() as db:
@@ -484,6 +559,8 @@ def run_infeasibility_diagnostic_job(
                     }
                     if level == "structural":
                         enriched = _structural_only(solution_seed, str(csv_dir))
+                    elif level == "advanced":
+                        enriched = _advanced_only(solution_seed, str(csv_dir), db)
                     else:
                         proc_result = get_processing_result_from_csv_dir(str(csv_dir))
                         model = create_abstract_model(
@@ -501,15 +578,18 @@ def run_infeasibility_diagnostic_job(
                         del model
                         gc.collect()
                         _raise_if_cancel_requested(job_id)
-                        enrich_solution_dict(
-                            solution_seed,
-                            instance=instance,
-                            csv_dir=str(csv_dir),
-                            job_id=job_id,
-                            on_phase=_on_diagnostic_phase,
-                            analysis_level=level,
-                        )
-                        enriched = solution_seed["infeasibility_diagnostics"]
+                        if level in {"presolve", "families"}:
+                            enriched = _lp_progressive_method(instance, level)
+                        else:
+                            enrich_solution_dict(
+                                solution_seed,
+                                instance=instance,
+                                csv_dir=str(csv_dir),
+                                job_id=job_id,
+                                on_phase=_on_diagnostic_phase,
+                                analysis_level=level,
+                            )
+                            enriched = _selected_enrichment(solution_seed, level)
                 else:
                     if job_snapshot["scenario_id"] is None:
                         raise RuntimeError(
@@ -532,6 +612,8 @@ def run_infeasibility_diagnostic_job(
                         }
                         if level == "structural":
                             enriched = _structural_only(solution_seed, tmp_csv)
+                        elif level == "advanced":
+                            enriched = _advanced_only(solution_seed, tmp_csv, db)
                         else:
                             model = create_abstract_model(
                                 has_storage=proc_result.has_storage,
@@ -547,15 +629,18 @@ def run_infeasibility_diagnostic_job(
                             del model
                             gc.collect()
                             _raise_if_cancel_requested(job_id)
-                            enrich_solution_dict(
-                                solution_seed,
-                                instance=instance,
-                                csv_dir=tmp_csv,
-                                job_id=job_id,
-                                on_phase=_on_diagnostic_phase,
-                                analysis_level=level,
-                            )
-                            enriched = solution_seed["infeasibility_diagnostics"]
+                            if level in {"presolve", "families"}:
+                                enriched = _lp_progressive_method(instance, level)
+                            else:
+                                enrich_solution_dict(
+                                    solution_seed,
+                                    instance=instance,
+                                    csv_dir=tmp_csv,
+                                    job_id=job_id,
+                                    on_phase=_on_diagnostic_phase,
+                                    analysis_level=level,
+                                )
+                                enriched = _selected_enrichment(solution_seed, level)
             finally:
                 reset_defaults_context(_defaults_token)
     except _DiagnosticCancelled as exc:
@@ -604,6 +689,18 @@ def run_infeasibility_diagnostic_job(
                 diag["diagnostic_seconds"] = max(0.0, (t1 - t0).total_seconds())
         except Exception:
             pass
+        history = list(diag.get("diagnostic_history") or [])
+        history.append(
+            {
+                "level": level,
+                "status": diag["diagnostic_status"],
+                "started_at": diag.get("diagnostic_started_at"),
+                "finished_at": diag.get("diagnostic_finished_at"),
+                "elapsed_seconds": diag.get("diagnostic_seconds"),
+                "error": diag.get("diagnostic_error"),
+            }
+        )
+        diag["diagnostic_history"] = history[-50:]
         job.infeasibility_diagnostics_json = diag
         SimulationRepository.add_event(
             db,

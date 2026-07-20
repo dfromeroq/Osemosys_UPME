@@ -17,7 +17,9 @@ SimulationInputMode = Literal["SCENARIO", "CSV_UPLOAD"]
 DiagnosticStatus = Literal[
     "NONE", "QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED"
 ]
-InfeasibilityAnalysisLevel = Literal["structural", "dual_ray", "iis", "relaxation"]
+InfeasibilityAnalysisLevel = Literal[
+    "structural", "advanced", "presolve", "families", "dual_ray", "iis", "relaxation"
+]
 
 
 class SimulationSubmit(BaseModel):
@@ -45,9 +47,10 @@ class SimulationSubmit(BaseModel):
 
 
 class InfeasibilityDiagnosticRequest(BaseModel):
-    """Nivel solicitado del diagnóstico, de menor a mayor costo esperado."""
+    """Nivel solicitado y referencia opcional para comparación avanzada."""
 
     level: InfeasibilityAnalysisLevel = "structural"
+    baseline_scenario_id: int | None = Field(default=None, gt=0)
 
 
 class SimulationJobDisplayNamePatch(BaseModel):
@@ -316,6 +319,7 @@ class InfeasibilityDiagnosticsPublic(BaseModel):
     diagnostic_finished_at: str | None = None
     diagnostic_seconds: float | None = None
     diagnostic_requested_level: InfeasibilityAnalysisLevel | None = None
+    diagnostic_baseline_scenario_id: int | None = None
     analysis_level: InfeasibilityAnalysisLevel | None = None
     classification: DiagnosisClassificationPublic | None = None
     certificate: DualRayReportPublic | None = None
@@ -327,6 +331,10 @@ class InfeasibilityDiagnosticsPublic(BaseModel):
     top_suspects: list[ParamHitPublic] = Field(default_factory=list)
     constraint_analyses: list[ConstraintAnalysisPublic] = Field(default_factory=list)
     structural_findings: list[StructuralFindingPublic] = Field(default_factory=list)
+    presolve_report: dict[str, Any] | None = None
+    family_diagnosis: dict[str, Any] | None = None
+    advanced_diagnostics: dict[str, dict[str, Any]] | None = None
+    diagnostic_history: list[dict[str, Any]] = Field(default_factory=list)
     unmapped_constraint_prefixes: list[str] = Field(default_factory=list)
 
 
