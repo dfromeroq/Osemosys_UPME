@@ -53,6 +53,7 @@ def test_detects_zero_emission_limit_below_mandated_emissions(tmp_path: Path) ->
         "TotalTechnologyAnnualActivityLowerLimit",
         "REGION,TECHNOLOGY,YEAR,VALUE\nR1,GAS_TECH,2030,10\n",
     )
+    _write(tmp_path, "MODE_OF_OPERATION", "VALUE\n1\n")
     _write(
         tmp_path,
         "EmissionActivityRatio",
@@ -80,6 +81,7 @@ def test_detects_zero_emission_limit_below_mandated_emissions(tmp_path: Path) ->
 def test_does_not_assume_emission_when_an_active_mode_has_zero_rate(tmp_path: Path) -> None:
     _write(tmp_path, "AnnualEmissionLimit", "REGION,EMISSION,YEAR,VALUE\nR1,CO2,2030,0\n")
     _write(tmp_path, "TotalTechnologyAnnualActivityLowerLimit", "REGION,TECHNOLOGY,YEAR,VALUE\nR1,FLEX,2030,10\n")
+    _write(tmp_path, "MODE_OF_OPERATION", "VALUE\n1\n2\n")
     _write(tmp_path, "EmissionActivityRatio", "REGION,TECHNOLOGY,EMISSION,MODE_OF_OPERATION,YEAR,VALUE\nR1,FLEX,CO2,1,2030,0.2\n")
     _write(tmp_path, "InputActivityRatio", "REGION,TECHNOLOGY,FUEL,MODE_OF_OPERATION,YEAR,VALUE\nR1,FLEX,GAS,1,2030,1\nR1,FLEX,ELC,2,2030,1\n")
 

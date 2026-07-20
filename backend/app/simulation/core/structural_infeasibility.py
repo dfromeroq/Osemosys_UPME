@@ -429,15 +429,16 @@ def _detect_mandated_emission_limit_conflicts(root: Path) -> list[StructuralFind
     if not required_limit.issubset(limits.columns) or not required_activity.issubset(activity_min.columns) or not required_ratio.issubset(emission_ratio.columns):
         return []
 
-    active_modes: dict[tuple[str, str, str], set[str]] = {}
-    for name in ("InputActivityRatio", "OutputActivityRatio"):
-        ratios = _read(root, name)
-        required = {"REGION", "TECHNOLOGY", "YEAR", "MODE_OF_OPERATION", "VALUE"}
-        if not required.issubset(ratios.columns):
-            continue
-        for row in ratios[ratios["VALUE"] > tol].itertuples(index=False):
-            key = (str(row.REGION), str(row.TECHNOLOGY), str(row.YEAR))
-            active_modes.setdefault(key, set()).add(str(row.MODE_OF_OPERATION))
+    # ``AnnualActivity`` suma RateOfActivity sobre todo MODE_OF_OPERATION.
+    # Por ello el límite sólo demuestra emisiones inevitables si *todos* los
+    # modos que la instancia Pyomo carga tienen una tasa positiva; un modo sin
+    # tasa explícita usa el default OSeMOSYS cero.
+    mode_set = _read(root, "MODE_OF_OPERATION")
+    if mode_set.empty or "VALUE" not in mode_set.columns:
+        return []
+    model_modes = {str(value) for value in mode_set["VALUE"]}
+    if not model_modes:
+        return []
 
     ratio_by_key: dict[tuple[str, str, str, str], dict[str, float]] = {}
     for row in emission_ratio.itertuples(index=False):
@@ -455,13 +456,10 @@ def _detect_mandated_emission_limit_conflicts(root: Path) -> list[StructuralFind
         contributors: list[dict[str, Any]] = []
         for activity in mandatory[(mandatory["REGION"] == region) & (mandatory["YEAR"] == year)].itertuples(index=False):
             technology = str(activity.TECHNOLOGY)
-            modes = active_modes.get((region, technology, year), set())
             rates = ratio_by_key.get((region, technology, emission, year), {})
-            # Un modo activo sin tasa explícita usa el default cero: no se
-            # puede demostrar que la emisión sea inevitable para esa tecnología.
-            if not modes or any(rates.get(mode, 0.0) <= tol for mode in modes):
+            if any(rates.get(mode, 0.0) <= tol for mode in model_modes):
                 continue
-            minimum_rate = min(rates[mode] for mode in modes)
+            minimum_rate = min(rates[mode] for mode in model_modes)
             contribution = float(activity.VALUE) * minimum_rate
             implied += contribution
             contributors.append({
