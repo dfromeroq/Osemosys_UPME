@@ -15,7 +15,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -53,6 +53,7 @@ from app.models import (
 )
 from app.schemas.pagination import PaginatedResponse
 from app.schemas.simulation import (
+    InfeasibilityDiagnosticRequest,
     SimulationJobDisplayNamePatch,
     SimulationJobFavoritePatch,
     SimulationJobPublic,
@@ -702,6 +703,7 @@ def export_output_values(
 @router.post("/{job_id}/diagnose-infeasibility", response_model=SimulationJobPublic)
 def diagnose_infeasibility(
     job_id: int,
+    payload: InfeasibilityDiagnosticRequest = Body(default_factory=InfeasibilityDiagnosticRequest),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -717,7 +719,8 @@ def diagnose_infeasibility(
     """
     try:
         return SimulationService.request_infeasibility_diagnostic(
-            db, current_user=current_user, job_id=job_id
+            db, current_user=current_user, job_id=job_id, level=payload.level,
+            baseline_scenario_id=payload.baseline_scenario_id,
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
@@ -786,14 +789,23 @@ def download_infeasibility_report(
     # post-solve ruidosa); sigue en BD por compatibilidad interna pero no viaja
     # en el archivo al usuario.
     diag = diagnostics if isinstance(diagnostics, dict) else {}
+    raw_iis = diag.get("iis") if isinstance(diag.get("iis"), dict) else {}
+    public_iis = {key: value for key, value in raw_iis.items() if key != "ilp_path"}
     cleaned_diagnostics = {
+        "classification": diag.get("classification"),
         "overview": diag.get("overview"),
-        "iis": diag.get("iis"),
+        "certificate": diag.get("certificate"),
+        "feasibility_relaxation": diag.get("feasibility_relaxation"),
+        "structural_findings": diag.get("structural_findings", []),
+        "presolve_report": diag.get("presolve_report"),
+        "family_diagnosis": diag.get("family_diagnosis"),
+        "advanced_diagnostics": diag.get("advanced_diagnostics"),
+        "diagnostic_history": diag.get("diagnostic_history", []),
+        "iis": public_iis,
         "top_suspects": diag.get("top_suspects", []),
         "constraint_analyses": diag.get("constraint_analyses", []),
         "var_bound_conflicts": diag.get("var_bound_conflicts", []),
         "unmapped_constraint_prefixes": diag.get("unmapped_constraint_prefixes", []),
-        "csv_dir": diag.get("csv_dir"),
     }
     payload = {
         "job_id": result.get("job_id"),

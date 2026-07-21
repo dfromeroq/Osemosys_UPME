@@ -1,0 +1,4738 @@
+{
+  "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+  "platform": "Windows-10-10.0.26200-SP0",
+  "highs_version": "1.15.1",
+  "models": {
+    "infeasible": {
+      "0": {
+        "iis_strategy_requested": 0,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "0",
+          "status": "0",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "0",
+            "0"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "0"
+          ]
+        }
+      },
+      "1": {
+        "iis_strategy_requested": 1,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kError",
+        "iis": {
+          "valid": false,
+          "strategy": "0",
+          "status": "0",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": []
+        }
+      },
+      "2": {
+        "iis_strategy_requested": 2,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "2",
+          "status": "2",
+          "info": {
+            "num_lp_solved": 3,
+            "min_simplex_time": 5.050000027040369e-05,
+            "max_simplex_time": 0.00023270000019692816,
+            "sum_simplex_times": 0.00035370000023249304,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 2,
+            "sum_simplex_iteration_counts": 4
+          },
+          "row_indices": [
+            0,
+            1
+          ],
+          "row_names": [
+            "demand_floor",
+            "capacity_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3
+          ],
+          "row_status": [
+            "0",
+            "0"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            1
+          ],
+          "col_status": [
+            "0"
+          ]
+        }
+      },
+      "3": {
+        "iis_strategy_requested": 3,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "3",
+          "status": "2",
+          "info": {
+            "num_lp_solved": 3,
+            "min_simplex_time": 4.9900000249181176e-05,
+            "max_simplex_time": 0.00018790000012813834,
+            "sum_simplex_times": 0.0003065000005335605,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 2,
+            "sum_simplex_iteration_counts": 4
+          },
+          "row_indices": [
+            0,
+            1
+          ],
+          "row_names": [
+            "demand_floor",
+            "capacity_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3
+          ],
+          "row_status": [
+            "0",
+            "0"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            1
+          ],
+          "col_status": [
+            "0"
+          ]
+        }
+      },
+      "4": {
+        "iis_strategy_requested": 4,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "4",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 3,
+            "min_simplex_time": 2.429999995001708e-05,
+            "max_simplex_time": 0.00011520000043674372,
+            "sum_simplex_times": 0.00016690000029484509,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 2,
+            "sum_simplex_iteration_counts": 4
+          },
+          "row_indices": [
+            0,
+            1
+          ],
+          "row_names": [
+            "demand_floor",
+            "capacity_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3
+          ],
+          "row_status": [
+            "1",
+            "1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            1
+          ],
+          "col_status": [
+            "1"
+          ]
+        }
+      },
+      "6": {
+        "iis_strategy_requested": 6,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "6",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 6,
+            "min_simplex_time": 1.740000016070553e-05,
+            "max_simplex_time": 0.00014370000008057104,
+            "sum_simplex_times": 0.0003486999999040563,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 2,
+            "sum_simplex_iteration_counts": 8
+          },
+          "row_indices": [
+            0,
+            1
+          ],
+          "row_names": [
+            "demand_floor",
+            "capacity_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3
+          ],
+          "row_status": [
+            "1",
+            "1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            1
+          ],
+          "col_status": [
+            "1"
+          ]
+        }
+      },
+      "8": {
+        "iis_strategy_requested": 8,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kError",
+        "iis": {
+          "valid": false,
+          "strategy": "0",
+          "status": "0",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": []
+        }
+      },
+      "10": {
+        "iis_strategy_requested": 10,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "10",
+          "status": "2",
+          "info": {
+            "num_lp_solved": 3,
+            "min_simplex_time": 4.0500000068277586e-05,
+            "max_simplex_time": 0.00014089999967836775,
+            "sum_simplex_times": 0.00023190000001704902,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 2,
+            "sum_simplex_iteration_counts": 4
+          },
+          "row_indices": [
+            0,
+            1
+          ],
+          "row_names": [
+            "demand_floor",
+            "capacity_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3
+          ],
+          "row_status": [
+            "0",
+            "0"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            1
+          ],
+          "col_status": [
+            "0"
+          ]
+        }
+      },
+      "12": {
+        "iis_strategy_requested": 12,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "12",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 3,
+            "min_simplex_time": 1.849999989644857e-05,
+            "max_simplex_time": 5.740000005971524e-05,
+            "sum_simplex_times": 9.550000004310277e-05,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 2,
+            "sum_simplex_iteration_counts": 4
+          },
+          "row_indices": [
+            0,
+            1
+          ],
+          "row_names": [
+            "demand_floor",
+            "capacity_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3
+          ],
+          "row_status": [
+            "1",
+            "1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            1
+          ],
+          "col_status": [
+            "1"
+          ]
+        }
+      },
+      "16": {
+        "iis_strategy_requested": 16,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kError",
+        "iis": {
+          "valid": false,
+          "strategy": "0",
+          "status": "0",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": []
+        }
+      },
+      "18": {
+        "iis_strategy_requested": 18,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "18",
+          "status": "2",
+          "info": {
+            "num_lp_solved": 3,
+            "min_simplex_time": 4.130000024815672e-05,
+            "max_simplex_time": 0.0001428999999006919,
+            "sum_simplex_times": 0.0002355000001443841,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 2,
+            "sum_simplex_iteration_counts": 4
+          },
+          "row_indices": [
+            0,
+            1
+          ],
+          "row_names": [
+            "demand_floor",
+            "capacity_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3
+          ],
+          "row_status": [
+            "0",
+            "0"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            1
+          ],
+          "col_status": [
+            "0"
+          ]
+        }
+      }
+    },
+    "infeasible_with_redundant_row": {
+      "0": {
+        "iis_strategy_requested": 0,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling",
+          "irrelevant_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "0",
+          "status": "0",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "0",
+            "0",
+            "0"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "0"
+          ]
+        }
+      },
+      "1": {
+        "iis_strategy_requested": 1,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling",
+          "irrelevant_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kError",
+        "iis": {
+          "valid": false,
+          "strategy": "0",
+          "status": "0",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": []
+        }
+      },
+      "2": {
+        "iis_strategy_requested": 2,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling",
+          "irrelevant_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "2",
+          "status": "2",
+          "info": {
+            "num_lp_solved": 3,
+            "min_simplex_time": 4.059999992023222e-05,
+            "max_simplex_time": 0.00014629999986937037,
+            "sum_simplex_times": 0.00024819999998726416,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 2,
+            "sum_simplex_iteration_counts": 4
+          },
+          "row_indices": [
+            0,
+            1
+          ],
+          "row_names": [
+            "demand_floor",
+            "capacity_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3
+          ],
+          "row_status": [
+            "0",
+            "0",
+            "-1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            1
+          ],
+          "col_status": [
+            "0"
+          ]
+        }
+      },
+      "3": {
+        "iis_strategy_requested": 3,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling",
+          "irrelevant_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "3",
+          "status": "2",
+          "info": {
+            "num_lp_solved": 3,
+            "min_simplex_time": 4.2300000131945126e-05,
+            "max_simplex_time": 0.00014160000000629225,
+            "sum_simplex_times": 0.00023680000003878376,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 2,
+            "sum_simplex_iteration_counts": 4
+          },
+          "row_indices": [
+            0,
+            1
+          ],
+          "row_names": [
+            "demand_floor",
+            "capacity_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3
+          ],
+          "row_status": [
+            "0",
+            "0",
+            "-1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            1
+          ],
+          "col_status": [
+            "0"
+          ]
+        }
+      },
+      "4": {
+        "iis_strategy_requested": 4,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling",
+          "irrelevant_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "4",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 4,
+            "min_simplex_time": 1.7700000171316788e-05,
+            "max_simplex_time": 6.089999988034833e-05,
+            "sum_simplex_times": 0.00013660000013260287,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 2,
+            "sum_simplex_iteration_counts": 5
+          },
+          "row_indices": [
+            0,
+            1
+          ],
+          "row_names": [
+            "demand_floor",
+            "capacity_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3
+          ],
+          "row_status": [
+            "1",
+            "1",
+            "-1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            1
+          ],
+          "col_status": [
+            "1"
+          ]
+        }
+      },
+      "6": {
+        "iis_strategy_requested": 6,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling",
+          "irrelevant_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "6",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 6,
+            "min_simplex_time": 1.7099999695346924e-05,
+            "max_simplex_time": 0.0001461000001654611,
+            "sum_simplex_times": 0.00033899999971254147,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 2,
+            "sum_simplex_iteration_counts": 8
+          },
+          "row_indices": [
+            0,
+            1
+          ],
+          "row_names": [
+            "demand_floor",
+            "capacity_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3
+          ],
+          "row_status": [
+            "1",
+            "1",
+            "-1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            1
+          ],
+          "col_status": [
+            "1"
+          ]
+        }
+      },
+      "8": {
+        "iis_strategy_requested": 8,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling",
+          "irrelevant_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kError",
+        "iis": {
+          "valid": false,
+          "strategy": "0",
+          "status": "0",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": []
+        }
+      },
+      "10": {
+        "iis_strategy_requested": 10,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling",
+          "irrelevant_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "10",
+          "status": "2",
+          "info": {
+            "num_lp_solved": 3,
+            "min_simplex_time": 5.5499999689345714e-05,
+            "max_simplex_time": 0.00014460000011240481,
+            "sum_simplex_times": 0.0002751999995780352,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 2,
+            "sum_simplex_iteration_counts": 4
+          },
+          "row_indices": [
+            0,
+            1
+          ],
+          "row_names": [
+            "demand_floor",
+            "capacity_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3
+          ],
+          "row_status": [
+            "0",
+            "0",
+            "-1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            1
+          ],
+          "col_status": [
+            "0"
+          ]
+        }
+      },
+      "12": {
+        "iis_strategy_requested": 12,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling",
+          "irrelevant_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "12",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 4,
+            "min_simplex_time": 1.7500000012660166e-05,
+            "max_simplex_time": 5.8399999943503644e-05,
+            "sum_simplex_times": 0.00013249999983599992,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 2,
+            "sum_simplex_iteration_counts": 5
+          },
+          "row_indices": [
+            0,
+            1
+          ],
+          "row_names": [
+            "demand_floor",
+            "capacity_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3
+          ],
+          "row_status": [
+            "1",
+            "1",
+            "-1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            1
+          ],
+          "col_status": [
+            "1"
+          ]
+        }
+      },
+      "16": {
+        "iis_strategy_requested": 16,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling",
+          "irrelevant_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kError",
+        "iis": {
+          "valid": false,
+          "strategy": "0",
+          "status": "0",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": []
+        }
+      },
+      "18": {
+        "iis_strategy_requested": 18,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling",
+          "irrelevant_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0,
+            -1.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "18",
+          "status": "2",
+          "info": {
+            "num_lp_solved": 3,
+            "min_simplex_time": 4.55999997939216e-05,
+            "max_simplex_time": 0.00014740000005986076,
+            "sum_simplex_times": 0.0002459999996062834,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 2,
+            "sum_simplex_iteration_counts": 4
+          },
+          "row_indices": [
+            0,
+            1
+          ],
+          "row_names": [
+            "demand_floor",
+            "capacity_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3
+          ],
+          "row_status": [
+            "0",
+            "0",
+            "-1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            1
+          ],
+          "col_status": [
+            "0"
+          ]
+        }
+      }
+    },
+    "two_independent_conflicts": {
+      "0": {
+        "iis_strategy_requested": 0,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "x_floor",
+          "x_ceiling",
+          "y_floor",
+          "y_ceiling"
+        ],
+        "col_names": [
+          "x",
+          "y"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            0.0,
+            0.0,
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "0",
+          "status": "0",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "0",
+            "0"
+          ]
+        }
+      },
+      "1": {
+        "iis_strategy_requested": 1,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "x_floor",
+          "x_ceiling",
+          "y_floor",
+          "y_ceiling"
+        ],
+        "col_names": [
+          "x",
+          "y"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            0.0,
+            0.0,
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kError",
+        "iis": {
+          "valid": false,
+          "strategy": "0",
+          "status": "0",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": []
+        }
+      },
+      "2": {
+        "iis_strategy_requested": 2,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "x_floor",
+          "x_ceiling",
+          "y_floor",
+          "y_ceiling"
+        ],
+        "col_names": [
+          "x",
+          "y"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            0.0,
+            0.0,
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "2",
+          "status": "2",
+          "info": {
+            "num_lp_solved": 3,
+            "min_simplex_time": 4.489999992074445e-05,
+            "max_simplex_time": 0.00015669999993406236,
+            "sum_simplex_times": 0.00026059999981953297,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 3,
+            "sum_simplex_iteration_counts": 5
+          },
+          "row_indices": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "row_names": [
+            "x_floor",
+            "x_ceiling",
+            "y_floor",
+            "y_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3,
+            2,
+            3
+          ],
+          "row_status": [
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "col_indices": [
+            0,
+            1
+          ],
+          "col_names": [
+            "x",
+            "y"
+          ],
+          "col_bound": [
+            1,
+            1
+          ],
+          "col_status": [
+            "0",
+            "0"
+          ]
+        }
+      },
+      "3": {
+        "iis_strategy_requested": 3,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "x_floor",
+          "x_ceiling",
+          "y_floor",
+          "y_ceiling"
+        ],
+        "col_names": [
+          "x",
+          "y"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            0.0,
+            0.0,
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "3",
+          "status": "2",
+          "info": {
+            "num_lp_solved": 3,
+            "min_simplex_time": 3.9399999877787195e-05,
+            "max_simplex_time": 0.00014939999982743757,
+            "sum_simplex_times": 0.00024789999952190556,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 3,
+            "sum_simplex_iteration_counts": 5
+          },
+          "row_indices": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "row_names": [
+            "x_floor",
+            "x_ceiling",
+            "y_floor",
+            "y_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3,
+            2,
+            3
+          ],
+          "row_status": [
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "col_indices": [
+            0,
+            1
+          ],
+          "col_names": [
+            "x",
+            "y"
+          ],
+          "col_bound": [
+            1,
+            1
+          ],
+          "col_status": [
+            "0",
+            "0"
+          ]
+        }
+      },
+      "4": {
+        "iis_strategy_requested": 4,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "x_floor",
+          "x_ceiling",
+          "y_floor",
+          "y_ceiling"
+        ],
+        "col_names": [
+          "x",
+          "y"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            0.0,
+            0.0,
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "4",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 5,
+            "min_simplex_time": 1.83000001925393e-05,
+            "max_simplex_time": 6.300000040937448e-05,
+            "sum_simplex_times": 0.00018490000047677313,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 3,
+            "sum_simplex_iteration_counts": 7
+          },
+          "row_indices": [
+            2,
+            3
+          ],
+          "row_names": [
+            "y_floor",
+            "y_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3
+          ],
+          "row_status": [
+            "-1",
+            "-1",
+            "1",
+            "1"
+          ],
+          "col_indices": [
+            1
+          ],
+          "col_names": [
+            "y"
+          ],
+          "col_bound": [
+            1
+          ],
+          "col_status": [
+            "-1",
+            "1"
+          ]
+        }
+      },
+      "6": {
+        "iis_strategy_requested": 6,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "x_floor",
+          "x_ceiling",
+          "y_floor",
+          "y_ceiling"
+        ],
+        "col_names": [
+          "x",
+          "y"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            0.0,
+            0.0,
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "6",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 8,
+            "min_simplex_time": 1.8799999907059828e-05,
+            "max_simplex_time": 0.00015109999958440312,
+            "sum_simplex_times": 0.00042960000018865685,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 3,
+            "sum_simplex_iteration_counts": 12
+          },
+          "row_indices": [
+            2,
+            3
+          ],
+          "row_names": [
+            "y_floor",
+            "y_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3
+          ],
+          "row_status": [
+            "-1",
+            "-1",
+            "1",
+            "1"
+          ],
+          "col_indices": [
+            1
+          ],
+          "col_names": [
+            "y"
+          ],
+          "col_bound": [
+            1
+          ],
+          "col_status": [
+            "-1",
+            "1"
+          ]
+        }
+      },
+      "8": {
+        "iis_strategy_requested": 8,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "x_floor",
+          "x_ceiling",
+          "y_floor",
+          "y_ceiling"
+        ],
+        "col_names": [
+          "x",
+          "y"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            0.0,
+            0.0,
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kError",
+        "iis": {
+          "valid": false,
+          "strategy": "0",
+          "status": "0",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": []
+        }
+      },
+      "10": {
+        "iis_strategy_requested": 10,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "x_floor",
+          "x_ceiling",
+          "y_floor",
+          "y_ceiling"
+        ],
+        "col_names": [
+          "x",
+          "y"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            0.0,
+            0.0,
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "10",
+          "status": "2",
+          "info": {
+            "num_lp_solved": 3,
+            "min_simplex_time": 4.3399999867688166e-05,
+            "max_simplex_time": 0.00015110000003915047,
+            "sum_simplex_times": 0.0002505000002201996,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 3,
+            "sum_simplex_iteration_counts": 5
+          },
+          "row_indices": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "row_names": [
+            "x_floor",
+            "x_ceiling",
+            "y_floor",
+            "y_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3,
+            2,
+            3
+          ],
+          "row_status": [
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "col_indices": [
+            0,
+            1
+          ],
+          "col_names": [
+            "x",
+            "y"
+          ],
+          "col_bound": [
+            1,
+            1
+          ],
+          "col_status": [
+            "0",
+            "0"
+          ]
+        }
+      },
+      "12": {
+        "iis_strategy_requested": 12,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "x_floor",
+          "x_ceiling",
+          "y_floor",
+          "y_ceiling"
+        ],
+        "col_names": [
+          "x",
+          "y"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            0.0,
+            0.0,
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "12",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 5,
+            "min_simplex_time": 1.8200000340584666e-05,
+            "max_simplex_time": 6.2199999774748e-05,
+            "sum_simplex_times": 0.00017400000024281326,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 3,
+            "sum_simplex_iteration_counts": 7
+          },
+          "row_indices": [
+            2,
+            3
+          ],
+          "row_names": [
+            "y_floor",
+            "y_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3
+          ],
+          "row_status": [
+            "-1",
+            "-1",
+            "1",
+            "1"
+          ],
+          "col_indices": [
+            0,
+            1
+          ],
+          "col_names": [
+            "x",
+            "y"
+          ],
+          "col_bound": [
+            1,
+            1
+          ],
+          "col_status": [
+            "1",
+            "1"
+          ]
+        }
+      },
+      "16": {
+        "iis_strategy_requested": 16,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "x_floor",
+          "x_ceiling",
+          "y_floor",
+          "y_ceiling"
+        ],
+        "col_names": [
+          "x",
+          "y"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            0.0,
+            0.0,
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kError",
+        "iis": {
+          "valid": false,
+          "strategy": "0",
+          "status": "0",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": []
+        }
+      },
+      "18": {
+        "iis_strategy_requested": 18,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "x_floor",
+          "x_ceiling",
+          "y_floor",
+          "y_ceiling"
+        ],
+        "col_names": [
+          "x",
+          "y"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            0.0,
+            0.0,
+            1.0,
+            -1.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "18",
+          "status": "2",
+          "info": {
+            "num_lp_solved": 3,
+            "min_simplex_time": 4.8100000185513636e-05,
+            "max_simplex_time": 0.00015609999991283985,
+            "sum_simplex_times": 0.00026240000033794786,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 3,
+            "sum_simplex_iteration_counts": 5
+          },
+          "row_indices": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "row_names": [
+            "x_floor",
+            "x_ceiling",
+            "y_floor",
+            "y_ceiling"
+          ],
+          "row_bound": [
+            2,
+            3,
+            2,
+            3
+          ],
+          "row_status": [
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "col_indices": [
+            0,
+            1
+          ],
+          "col_names": [
+            "x",
+            "y"
+          ],
+          "col_bound": [
+            1,
+            1
+          ],
+          "col_status": [
+            "0",
+            "0"
+          ]
+        }
+      }
+    },
+    "variable_bound_infeasible": {
+      "0": {
+        "iis_strategy_requested": 0,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kWarning",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "anchor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "0",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            4
+          ],
+          "col_status": [
+            "1"
+          ]
+        }
+      },
+      "1": {
+        "iis_strategy_requested": 1,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kWarning",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "anchor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "1",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            4
+          ],
+          "col_status": [
+            "1"
+          ]
+        }
+      },
+      "2": {
+        "iis_strategy_requested": 2,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kWarning",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "anchor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "2",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            4
+          ],
+          "col_status": [
+            "1"
+          ]
+        }
+      },
+      "3": {
+        "iis_strategy_requested": 3,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kWarning",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "anchor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "3",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            4
+          ],
+          "col_status": [
+            "1"
+          ]
+        }
+      },
+      "4": {
+        "iis_strategy_requested": 4,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kWarning",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "anchor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "4",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            4
+          ],
+          "col_status": [
+            "1"
+          ]
+        }
+      },
+      "6": {
+        "iis_strategy_requested": 6,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kWarning",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "anchor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "6",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            4
+          ],
+          "col_status": [
+            "1"
+          ]
+        }
+      },
+      "8": {
+        "iis_strategy_requested": 8,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kWarning",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "anchor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "8",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            4
+          ],
+          "col_status": [
+            "1"
+          ]
+        }
+      },
+      "10": {
+        "iis_strategy_requested": 10,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kWarning",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "anchor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "10",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            4
+          ],
+          "col_status": [
+            "1"
+          ]
+        }
+      },
+      "12": {
+        "iis_strategy_requested": 12,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kWarning",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "anchor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "12",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            4
+          ],
+          "col_status": [
+            "1"
+          ]
+        }
+      },
+      "16": {
+        "iis_strategy_requested": 16,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kWarning",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "anchor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "16",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            4
+          ],
+          "col_status": [
+            "1"
+          ]
+        }
+      },
+      "18": {
+        "iis_strategy_requested": 18,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kWarning",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kInfeasible",
+        "row_names": [
+          "anchor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "18",
+          "status": "3",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [
+            0
+          ],
+          "col_names": [
+            "x"
+          ],
+          "col_bound": [
+            4
+          ],
+          "col_status": [
+            "1"
+          ]
+        }
+      }
+    },
+    "feasible": {
+      "0": {
+        "iis_strategy_requested": 0,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kOptimal",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "0",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1",
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      },
+      "1": {
+        "iis_strategy_requested": 1,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kOptimal",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "0",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1",
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      },
+      "2": {
+        "iis_strategy_requested": 2,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kOptimal",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "0",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1",
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      },
+      "3": {
+        "iis_strategy_requested": 3,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kOptimal",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "0",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1",
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      },
+      "4": {
+        "iis_strategy_requested": 4,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kOptimal",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "0",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1",
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      },
+      "6": {
+        "iis_strategy_requested": 6,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kOptimal",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "0",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1",
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      },
+      "8": {
+        "iis_strategy_requested": 8,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kOptimal",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "0",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1",
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      },
+      "10": {
+        "iis_strategy_requested": 10,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kOptimal",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "0",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1",
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      },
+      "12": {
+        "iis_strategy_requested": 12,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kOptimal",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "0",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1",
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      },
+      "16": {
+        "iis_strategy_requested": 16,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kOptimal",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "0",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1",
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      },
+      "18": {
+        "iis_strategy_requested": 18,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kOptimal",
+        "row_names": [
+          "demand_floor",
+          "capacity_ceiling"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0,
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "0",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1",
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      }
+    },
+    "unbounded": {
+      "0": {
+        "iis_strategy_requested": 0,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kUnbounded",
+        "row_names": [
+          "nonnegative_floor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": true
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "0",
+          "status": "0",
+          "info": {
+            "num_lp_solved": 0,
+            "min_simplex_time": 0.0,
+            "max_simplex_time": 0.0,
+            "sum_simplex_times": 0.0,
+            "min_simplex_iteration_count": 0,
+            "max_simplex_iteration_count": 0,
+            "sum_simplex_iteration_counts": 0
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "0"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "0"
+          ]
+        }
+      },
+      "1": {
+        "iis_strategy_requested": 1,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kUnbounded",
+        "row_names": [
+          "nonnegative_floor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": true
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "1",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 1,
+            "min_simplex_time": 7.970000024215551e-05,
+            "max_simplex_time": 7.970000024215551e-05,
+            "sum_simplex_times": 7.970000024215551e-05,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 1,
+            "sum_simplex_iteration_counts": 1
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      },
+      "2": {
+        "iis_strategy_requested": 2,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kUnbounded",
+        "row_names": [
+          "nonnegative_floor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": true
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "2",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 1,
+            "min_simplex_time": 6.690000009257346e-05,
+            "max_simplex_time": 6.690000009257346e-05,
+            "sum_simplex_times": 6.690000009257346e-05,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 1,
+            "sum_simplex_iteration_counts": 1
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      },
+      "3": {
+        "iis_strategy_requested": 3,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kUnbounded",
+        "row_names": [
+          "nonnegative_floor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": true
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "3",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 1,
+            "min_simplex_time": 6.639999992330559e-05,
+            "max_simplex_time": 6.639999992330559e-05,
+            "sum_simplex_times": 6.639999992330559e-05,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 1,
+            "sum_simplex_iteration_counts": 1
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      },
+      "4": {
+        "iis_strategy_requested": 4,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kUnbounded",
+        "row_names": [
+          "nonnegative_floor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": true
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "4",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 1,
+            "min_simplex_time": 6.569999959538109e-05,
+            "max_simplex_time": 6.569999959538109e-05,
+            "sum_simplex_times": 6.569999959538109e-05,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 1,
+            "sum_simplex_iteration_counts": 1
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      },
+      "6": {
+        "iis_strategy_requested": 6,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kUnbounded",
+        "row_names": [
+          "nonnegative_floor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": true
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "6",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 1,
+            "min_simplex_time": 7.370000002993038e-05,
+            "max_simplex_time": 7.370000002993038e-05,
+            "sum_simplex_times": 7.370000002993038e-05,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 1,
+            "sum_simplex_iteration_counts": 1
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      },
+      "8": {
+        "iis_strategy_requested": 8,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kUnbounded",
+        "row_names": [
+          "nonnegative_floor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": true
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "8",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 1,
+            "min_simplex_time": 6.510000002890592e-05,
+            "max_simplex_time": 6.510000002890592e-05,
+            "sum_simplex_times": 6.510000002890592e-05,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 1,
+            "sum_simplex_iteration_counts": 1
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      },
+      "10": {
+        "iis_strategy_requested": 10,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kUnbounded",
+        "row_names": [
+          "nonnegative_floor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": true
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "10",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 1,
+            "min_simplex_time": 6.459999985963805e-05,
+            "max_simplex_time": 6.459999985963805e-05,
+            "sum_simplex_times": 6.459999985963805e-05,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 1,
+            "sum_simplex_iteration_counts": 1
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      },
+      "12": {
+        "iis_strategy_requested": 12,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kUnbounded",
+        "row_names": [
+          "nonnegative_floor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": true
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "12",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 1,
+            "min_simplex_time": 9.729999965202296e-05,
+            "max_simplex_time": 9.729999965202296e-05,
+            "sum_simplex_times": 9.729999965202296e-05,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 1,
+            "sum_simplex_iteration_counts": 1
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      },
+      "16": {
+        "iis_strategy_requested": 16,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kUnbounded",
+        "row_names": [
+          "nonnegative_floor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": true
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "16",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 1,
+            "min_simplex_time": 7.129999994504033e-05,
+            "max_simplex_time": 7.129999994504033e-05,
+            "sum_simplex_times": 7.129999994504033e-05,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 1,
+            "sum_simplex_iteration_counts": 1
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      },
+      "18": {
+        "iis_strategy_requested": 18,
+        "iis_strategy_option_status": "HighsStatus.kOk",
+        "read_status": "HighsStatus.kOk",
+        "run_status": "HighsStatus.kOk",
+        "model_status": "HighsModelStatus.kUnbounded",
+        "row_names": [
+          "nonnegative_floor"
+        ],
+        "col_names": [
+          "x"
+        ],
+        "dual_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": false
+        },
+        "dual_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": false,
+          "values": [
+            0.0
+          ]
+        },
+        "primal_ray_exist": {
+          "status": "HighsStatus.kOk",
+          "exists": true
+        },
+        "primal_ray": {
+          "status": "HighsStatus.kOk",
+          "exists": true,
+          "values": [
+            1.0
+          ]
+        },
+        "iis_call_status": "HighsStatus.kOk",
+        "iis": {
+          "valid": true,
+          "strategy": "18",
+          "status": "-1",
+          "info": {
+            "num_lp_solved": 1,
+            "min_simplex_time": 6.649999977526022e-05,
+            "max_simplex_time": 6.649999977526022e-05,
+            "sum_simplex_times": 6.649999977526022e-05,
+            "min_simplex_iteration_count": 1,
+            "max_simplex_iteration_count": 1,
+            "sum_simplex_iteration_counts": 1
+          },
+          "row_indices": [],
+          "row_names": [],
+          "row_bound": [],
+          "row_status": [
+            "-1"
+          ],
+          "col_indices": [],
+          "col_names": [],
+          "col_bound": [],
+          "col_status": [
+            "-1"
+          ]
+        }
+      }
+    }
+  }
+}

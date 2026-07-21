@@ -23,12 +23,14 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import subprocess
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 import pandas as pd
@@ -77,6 +79,49 @@ _REG_TECH_EMIS_MODE_YEAR = (
     "EMISSION",
     "MODE_OF_OPERATION",
     "YEAR",
+)
+_STORAGE_YEAR = ("REGION", "STORAGE", "YEAR")
+_STORAGE_FLOW = (
+    "REGION",
+    "STORAGE",
+    "SEASON",
+    "DAYTYPE",
+    "DAILYTIMEBRACKET",
+    "YEAR",
+)
+_STORAGE_RATE = (*_STORAGE_FLOW, "TECHNOLOGY", "MODE_OF_OPERATION")
+_STORAGE_YEAR_SPEC = ConstraintSpec(
+    index_names=_STORAGE_YEAR,
+    parameters=(
+        _ps("MinStorageCharge", _STORAGE_YEAR, _STORAGE_YEAR),
+        _ps("ResidualStorageCapacity", _STORAGE_YEAR, _STORAGE_YEAR),
+        _ps("CapitalCostStorage", _STORAGE_YEAR, _STORAGE_YEAR),
+        _ps("OperationalLifeStorage", ("REGION", "STORAGE"), ("REGION", "STORAGE")),
+        _ps("StorageLevelStart", ("REGION", "STORAGE"), ("REGION", "STORAGE")),
+    ),
+    description="Capacidad, nivel o inversión anual de almacenamiento.",
+)
+_STORAGE_FLOW_SPEC = ConstraintSpec(
+    index_names=_STORAGE_FLOW,
+    parameters=(
+        _ps("MinStorageCharge", _STORAGE_YEAR, ("REGION", "STORAGE", "YEAR")),
+        _ps("StorageMaxChargeRate", ("REGION", "STORAGE"), ("REGION", "STORAGE")),
+        _ps("StorageMaxDischargeRate", ("REGION", "STORAGE"), ("REGION", "STORAGE")),
+        _ps("DaySplit", ("DAILYTIMEBRACKET", "YEAR"), ("DAILYTIMEBRACKET", "YEAR")),
+        _ps("DaysInDayType", ("SEASON", "DAYTYPE", "YEAR"), ("SEASON", "DAYTYPE", "YEAR")),
+    ),
+    description="Flujo o límites operativos del almacenamiento.",
+)
+_STORAGE_RATE_SPEC = ConstraintSpec(
+    index_names=_STORAGE_RATE,
+    parameters=(
+        _ps("TechnologyToStorage", ("REGION", "TECHNOLOGY", "STORAGE", "MODE_OF_OPERATION"), ("REGION", "TECHNOLOGY", "STORAGE", "MODE_OF_OPERATION")),
+        _ps("TechnologyFromStorage", ("REGION", "TECHNOLOGY", "STORAGE", "MODE_OF_OPERATION"), ("REGION", "TECHNOLOGY", "STORAGE", "MODE_OF_OPERATION")),
+        _ps("Conversionls", ("TIMESLICE", "SEASON"), (None, "SEASON")),
+        _ps("Conversionld", ("TIMESLICE", "DAYTYPE"), (None, "DAYTYPE")),
+        _ps("Conversionlh", ("TIMESLICE", "DAILYTIMEBRACKET"), (None, "DAILYTIMEBRACKET")),
+    ),
+    description="Conversión entre actividad tecnológica y carga/descarga de storage.",
 )
 
 
@@ -169,6 +214,25 @@ CONSTRAINT_PARAM_MAP: dict[str, ConstraintSpec] = {
         ),
         description="Capacidad instalada alcanza la actividad requerida en el timeslice.",
     ),
+    "TotalNewCapacity_2": ConstraintSpec(
+        index_names=_REG_TECH_YEAR,
+        parameters=(
+            _ps("CapacityOfOneTechnologyUnit", _REG_TECH_YEAR, _REG_TECH_YEAR),
+        ),
+        description="Vincula unidades enteras de tecnología con nueva capacidad.",
+    ),
+    "PlannedMaintenance": ConstraintSpec(
+        index_names=_REG_TECH_YEAR,
+        parameters=(
+            _ps("CapacityFactor", ("REGION", "TECHNOLOGY", "TIMESLICE", "YEAR"), ("REGION", "TECHNOLOGY", None, "YEAR")),
+            _ps("AvailabilityFactor", _REG_TECH_YEAR, _REG_TECH_YEAR),
+            _ps("ResidualCapacity", _REG_TECH_YEAR, _REG_TECH_YEAR),
+            _ps("CapacityToActivityUnit", ("REGION", "TECHNOLOGY"), ("REGION", "TECHNOLOGY")),
+            _ps("OperationalLife", ("REGION", "TECHNOLOGY"), ("REGION", "TECHNOLOGY")),
+            _ps("YearSplit", ("TIMESLICE", "YEAR"), (None, "YEAR")),
+        ),
+        description="Actividad anual permitida después de mantenimiento/disponibilidad.",
+    ),
     "TotalAnnualMaxCapacityConstraint": ConstraintSpec(
         index_names=_REG_TECH_YEAR,
         parameters=(
@@ -253,6 +317,37 @@ CONSTRAINT_PARAM_MAP: dict[str, ConstraintSpec] = {
         ),
         description="Límite inferior de actividad acumulada en el período del modelo.",
     ),
+    "AnnualEmissionProductionByMode": ConstraintSpec(
+        index_names=_REG_TECH_EMIS_MODE_YEAR,
+        parameters=(
+            _ps("EmissionActivityRatio", _REG_TECH_EMIS_MODE_YEAR, _REG_TECH_EMIS_MODE_YEAR),
+            _ps("YearSplit", ("TIMESLICE", "YEAR"), (None, "YEAR")),
+        ),
+        description="Contabilidad de emisiones por tecnología y modo.",
+    ),
+    "AnnualEmissionProduction": ConstraintSpec(
+        index_names=("REGION", "TECHNOLOGY", "EMISSION", "YEAR"),
+        parameters=(
+            _ps("EmissionActivityRatio", _REG_TECH_EMIS_MODE_YEAR, ("REGION", "TECHNOLOGY", "EMISSION", None, "YEAR")),
+        ),
+        description="Agregación de emisiones de todos los modos.",
+    ),
+    "EmissionsAccounting1": ConstraintSpec(
+        index_names=("REGION", "EMISSION", "YEAR"),
+        parameters=(
+            _ps("EmissionActivityRatio", _REG_TECH_EMIS_MODE_YEAR, ("REGION", None, "EMISSION", None, "YEAR")),
+            _ps("AnnualExogenousEmission", ("REGION", "EMISSION", "YEAR"), ("REGION", "EMISSION", "YEAR")),
+        ),
+        description="Agregación anual de emisiones por región.",
+    ),
+    "EmissionsAccounting2": ConstraintSpec(
+        index_names=("REGION", "EMISSION"),
+        parameters=(
+            _ps("ModelPeriodExogenousEmission", ("REGION", "EMISSION"), ("REGION", "EMISSION")),
+            _ps("EmissionActivityRatio", _REG_TECH_EMIS_MODE_YEAR, ("REGION", None, "EMISSION", None, None)),
+        ),
+        description="Contabilidad de emisiones del horizonte completo.",
+    ),
     "AnnualEmissionsLimit": ConstraintSpec(
         index_names=("REGION", "EMISSION", "YEAR"),
         parameters=(
@@ -289,6 +384,24 @@ CONSTRAINT_PARAM_MAP: dict[str, ConstraintSpec] = {
             ),
         ),
         description="Límite de emisiones del período completo del modelo.",
+    ),
+    "ReserveMargin_TechnologiesIncluded": ConstraintSpec(
+        index_names=("REGION", "YEAR"),
+        parameters=(
+            _ps("ReserveMarginTagTechnology", _REG_TECH_YEAR, ("REGION", None, "YEAR")),
+            _ps("ResidualCapacity", _REG_TECH_YEAR, ("REGION", None, "YEAR")),
+            _ps("CapacityToActivityUnit", ("REGION", "TECHNOLOGY"), ("REGION", None)),
+            _ps("OperationalLife", ("REGION", "TECHNOLOGY"), ("REGION", None)),
+        ),
+        description="Capacidad total elegible para margen de reserva.",
+    ),
+    "ReserveMargin_FuelsIncluded": ConstraintSpec(
+        index_names=("REGION", "TIMESLICE", "YEAR"),
+        parameters=(
+            _ps("ReserveMarginTagFuel", ("REGION", "FUEL", "YEAR"), ("REGION", None, "YEAR")),
+            _ps("OutputActivityRatio", _REG_TECH_FUEL_MODE_YEAR, ("REGION", None, None, None, "YEAR")),
+        ),
+        description="Demanda de fuels incluida en el margen de reserva.",
     ),
     "ReserveMarginConstraint": ConstraintSpec(
         index_names=("REGION", "TIMESLICE", "YEAR"),
@@ -330,23 +443,45 @@ CONSTRAINT_PARAM_MAP: dict[str, ConstraintSpec] = {
         description="Límite inferior de actividad por modo.",
     ),
     "LU3_TechnologyActivityIncreaseByMode": ConstraintSpec(
-        index_names=_REG_TECH_MODE_YEAR,
+        index_names=(
+            "REGION",
+            "TECHNOLOGY",
+            "MODE_OF_OPERATION",
+            "YEAR",
+            "PREVIOUS_YEAR",
+        ),
         parameters=(
             _ps(
                 "TechnologyActivityIncreaseByModeLimit",
                 _REG_TECH_MODE_YEAR,
-                _REG_TECH_MODE_YEAR,
+                (
+                    "REGION",
+                    "TECHNOLOGY",
+                    "MODE_OF_OPERATION",
+                    "PREVIOUS_YEAR",
+                ),
             ),
         ),
         description="Límite al aumento anual de actividad por modo.",
     ),
     "LU4_TechnologyActivityDecreaseByMode": ConstraintSpec(
-        index_names=_REG_TECH_MODE_YEAR,
+        index_names=(
+            "REGION",
+            "TECHNOLOGY",
+            "MODE_OF_OPERATION",
+            "YEAR",
+            "PREVIOUS_YEAR",
+        ),
         parameters=(
             _ps(
                 "TechnologyActivityDecreaseByModeLimit",
                 _REG_TECH_MODE_YEAR,
-                _REG_TECH_MODE_YEAR,
+                (
+                    "REGION",
+                    "TECHNOLOGY",
+                    "MODE_OF_OPERATION",
+                    "PREVIOUS_YEAR",
+                ),
             ),
         ),
         description="Límite al decremento anual de actividad por modo.",
@@ -405,6 +540,40 @@ CONSTRAINT_PARAM_MAP: dict[str, ConstraintSpec] = {
         ),
         description="User-Defined Constraint (igualdad).",
     ),
+    "RateOfStorageCharge_constraint": _STORAGE_RATE_SPEC,
+    "RateOfStorageDischarge_constraint": _STORAGE_RATE_SPEC,
+    "NetChargeWithinYear_constraint": _STORAGE_FLOW_SPEC,
+    "NetChargeWithinDay_constraint": _STORAGE_FLOW_SPEC,
+    "StorageLevelYearStart_constraint": _STORAGE_YEAR_SPEC,
+    "StorageLevelYearFinish_constraint": _STORAGE_YEAR_SPEC,
+    "StorageLevelSeasonStart_constraint": ConstraintSpec(
+        index_names=("REGION", "STORAGE", "SEASON", "YEAR"),
+        parameters=_STORAGE_YEAR_SPEC.parameters,
+        description="Nivel de storage al inicio de cada estación.",
+    ),
+    "StorageLevelDayTypeStart_constraint": ConstraintSpec(
+        index_names=("REGION", "STORAGE", "SEASON", "DAYTYPE", "YEAR"),
+        parameters=_STORAGE_FLOW_SPEC.parameters,
+        description="Nivel de storage al inicio de cada tipo de día.",
+    ),
+    "StorageLevelDayTypeFinish_constraint": ConstraintSpec(
+        index_names=("REGION", "STORAGE", "SEASON", "DAYTYPE", "YEAR"),
+        parameters=_STORAGE_FLOW_SPEC.parameters,
+        description="Nivel de storage al final de cada tipo de día.",
+    ),
+    "LowerLimit_1TimeBracket1InstanceOfDayType1week_constraint": _STORAGE_FLOW_SPEC,
+    "LowerLimit_EndDaylyTimeBracketLastInstanceOfDayType1Week_constraint": _STORAGE_FLOW_SPEC,
+    "LowerLimit_EndDaylyTimeBracketLastInstanceOfDayTypeLastWeek_constraint": _STORAGE_FLOW_SPEC,
+    "LowerLimit_1TimeBracket1InstanceOfDayTypeLastweek_constraint": _STORAGE_FLOW_SPEC,
+    "UpperLimit_1TimeBracket1InstanceOfDayType1week_constraint": _STORAGE_FLOW_SPEC,
+    "UpperLimit_EndDaylyTimeBracketLastInstanceOfDayType1Week_constraint": _STORAGE_FLOW_SPEC,
+    "UpperLimit_EndDaylyTimeBracketLastInstanceOfDayTypeLastWeek_constraint": _STORAGE_FLOW_SPEC,
+    "UpperLimit_1TimeBracket1InstanceOfDayTypeLastweek_constraint": _STORAGE_FLOW_SPEC,
+    "MaxChargeConstraint_constraint": _STORAGE_FLOW_SPEC,
+    "MaxDischargeConstraint_constraint": _STORAGE_FLOW_SPEC,
+    "StorageUpperLimit_constraint": _STORAGE_YEAR_SPEC,
+    "StorageLowerLimit_constraint": _STORAGE_YEAR_SPEC,
+    "TotalNewStorage_constraint": _STORAGE_YEAR_SPEC,
 }
 
 
@@ -835,14 +1004,19 @@ class IISReport:
     method: str | None
     constraint_names: list[str] = field(default_factory=list)
     variable_names: list[str] = field(default_factory=list)
-    #: Conflictos por cota de variable que reporta Gurobi (`IISLB` / `IISUB`).
-    #: HiGHS no expone esta distinción, así que la lista queda vacía en su caso.
+    #: Conflictos por cota de variable reportados por Gurobi (`IISLB` / `IISUB`)
+    #: o HiGHS (`HighsIis.col_bound_`). Una cota ``boxed`` de HiGHS genera
+    #: dos entradas, una LB y otra UB.
     #: Cada entry: ``{"name": "<varname>", "side": "LB" | "UB"}``.
     bound_conflicts: list[dict[str, str]] = field(default_factory=list)
     #: Ruta absoluta al ``.ilp`` generado por Gurobi (``Model.write``). ``None``
     #: cuando el solver no es Gurobi o no se pudo escribir.
     ilp_path: str | None = None
     unavailable_reason: str | None = None
+    irreducible: bool = False
+    timed_out: bool = False
+    elapsed_seconds: float | None = None
+    time_limit_seconds: float | None = None
     glpk_violations: list[dict] = field(default_factory=list)
 
 
@@ -997,6 +1171,533 @@ def _try_import_highspy() -> tuple[Any | None, str | None]:
         return highspy, None
     except Exception as exc:  # pragma: no cover - depende del entorno
         return None, f"highspy no disponible: {exc!r}"
+
+
+@dataclass
+class DualRayRow:
+    name: str
+    weight: float
+    selected_side: str
+    constraint_type: str
+    indices: dict[str, str]
+
+
+@dataclass
+class PrimalRayVariable:
+    name: str
+    direction: float
+
+
+@dataclass
+class DualRayReport:
+    available: bool
+    certificate_type: str = "dual_ray"
+    method: str | None = None
+    validated: bool = False
+    certificate_margin: float | None = None
+    rows: list[DualRayRow] = field(default_factory=list)
+    variables: list[PrimalRayVariable] = field(default_factory=list)
+    unavailable_reason: str | None = None
+
+
+@dataclass
+class RelaxationEntry:
+    name: str
+    constraint_type: str
+    indices: dict[str, str]
+    side: str
+    activity: float
+    bound: float
+    slack: float
+    normalized_slack: float
+    penalty: float
+    weighted_cost: float
+    suggested_change: str
+
+
+@dataclass
+class FeasibilityRelaxationReport:
+    available: bool
+    method: str | None = None
+    objective: float | None = None
+    solution_value_valid: bool = False
+    normalization: str = "row_scale_v1"
+    relaxations: list[RelaxationEntry] = field(default_factory=list)
+    elapsed_seconds: float | None = None
+    time_limit_seconds: float | None = None
+    unavailable_reason: str | None = None
+
+
+def _highs_status_is_ok(highspy: Any, status: Any) -> bool:
+    return status == getattr(highspy.HighsStatus, "kOk", None)
+
+
+def _diagnostic_time_limit_seconds(env_name: str, default: float = 300.0) -> float:
+    """Lee un límite positivo de fase diagnóstica sin aceptar valores inválidos."""
+    try:
+        value = float(os.getenv(env_name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    return value if value > 0 else default
+
+
+def _map_lp_row_name(name: str, pyomo_by_canon: dict[str, str]) -> tuple[str, str, dict[str, str]]:
+    pyomo_name = pyomo_by_canon.get(_canon_name(name), name)
+    prefix, tokens = parse_constraint_name(pyomo_name)
+    if not tokens:
+        parsed = _parse_lp_or_pyomo_name(name)
+        if parsed:
+            prefix, tokens = parsed
+    return pyomo_name, prefix, constraint_indices(prefix, tokens)
+
+
+def _validate_dual_ray_certificate(lp: Any, ray: list[float]) -> tuple[bool, float | None]:
+    """Valida la contradicción Farkas usando filas y bounds de columnas.
+
+    Para cada multiplicador positivo usa el lower de la fila y para cada
+    multiplicador negativo usa el upper. La combinación exige ``c'x >= beta``;
+    si el máximo posible de ``c'x`` bajo bounds de columnas es menor que beta,
+    existe una contradicción certificada.
+    """
+    import math
+
+    row_lower = list(lp.row_lower_ or [])
+    row_upper = list(lp.row_upper_ or [])
+    beta = 0.0
+    for idx, weight in enumerate(ray):
+        if abs(weight) <= 1e-12:
+            continue
+        bound = row_lower[idx] if weight > 0 else row_upper[idx]
+        if not math.isfinite(float(bound)):
+            return False, None
+        beta += weight * float(bound)
+
+    matrix = lp.a_matrix_
+    num_cols = int(getattr(matrix, "num_col_", len(lp.col_names_)))
+    coefficients = [0.0] * num_cols
+    starts = list(getattr(matrix, "start_", []) or [])
+    indices = list(getattr(matrix, "index_", []) or [])
+    values = list(getattr(matrix, "value_", []) or [])
+    matrix_format = int(getattr(matrix, "format_", 1))
+    if matrix_format == 1:  # column-wise: indices are row indices
+        for col in range(num_cols):
+            start = starts[col]
+            end = starts[col + 1] if col + 1 < len(starts) else len(indices)
+            coefficients[col] = sum(
+                float(values[pos]) * ray[int(indices[pos])]
+                for pos in range(start, end)
+            )
+    else:  # row-wise
+        for row in range(len(ray)):
+            start = starts[row]
+            end = starts[row + 1] if row + 1 < len(starts) else len(indices)
+            for pos in range(start, end):
+                coefficients[int(indices[pos])] += float(values[pos]) * ray[row]
+
+    col_lower = list(lp.col_lower_ or [])
+    col_upper = list(lp.col_upper_ or [])
+    max_lhs = 0.0
+    for col, coefficient in enumerate(coefficients):
+        if abs(coefficient) <= 1e-10:
+            continue
+        bound = col_upper[col] if coefficient > 0 else col_lower[col]
+        if not math.isfinite(float(bound)):
+            return False, None
+        max_lhs += coefficient * float(bound)
+    margin = beta - max_lhs
+    tolerance = 1e-7 * max(1.0, abs(beta), abs(max_lhs))
+    return margin > tolerance, margin
+
+
+def try_compute_dual_ray(
+    instance: Any | None,
+    solver_name: str,
+    *,
+    lp_path: Path | None,
+) -> DualRayReport:
+    """Obtiene y valida un certificado Farkas para un LP HiGHS infactible."""
+    if str(solver_name or "").lower() != "highs":
+        return DualRayReport(
+            available=False,
+            unavailable_reason="Dual ray implementado únicamente para HiGHS.",
+        )
+    if lp_path is None or not Path(lp_path).exists():
+        return DualRayReport(available=False, unavailable_reason="No hay LP para calcular dual ray.")
+    highspy, err = _try_import_highspy()
+    if highspy is None:
+        return DualRayReport(available=False, unavailable_reason=err)
+
+    try:
+        highs = highspy.Highs()
+        highs.setOptionValue("output_flag", False)
+        # El solve previo a getDualRay también debe estar acotado: el presupuesto
+        # de IIS no lo protege y una ruta simplex regional puede ser muy lenta.
+        time_limit = _diagnostic_time_limit_seconds(
+            "OSEMOSYS_DUAL_RAY_TIME_LIMIT_SECONDS"
+        )
+        # HiGHS sólo expone un Farkas ray cuando la certificación se obtiene
+        # desde simplex; `choose` puede seleccionar IPM y dejar has_ray=False.
+        highs.setOptionValue("solver", "simplex")
+        highs.setOptionValue("time_limit", time_limit)
+        read_status = highs.readModel(str(lp_path))
+        if read_status == getattr(highspy.HighsStatus, "kError", None):
+            return DualRayReport(available=False, unavailable_reason=f"readModel falló: {read_status}")
+        run_status = highs.run()
+        if not _highs_status_is_ok(highspy, run_status):
+            return DualRayReport(available=False, unavailable_reason=f"run falló: {run_status}")
+        if highs.getModelStatus() != getattr(highspy.HighsModelStatus, "kInfeasible", None):
+            return DualRayReport(
+                available=False,
+                unavailable_reason=f"HiGHS no certificó infactibilidad: {highs.getModelStatus()}.",
+            )
+        ray_status, has_ray, raw_ray = highs.getDualRay()
+        if not _highs_status_is_ok(highspy, ray_status) or not has_ray:
+            return DualRayReport(
+                available=False,
+                unavailable_reason=f"HiGHS no produjo dual ray: status={ray_status}.",
+            )
+        ray = [float(value) for value in raw_ray]
+        lp = highs.getLp()
+        validated, margin = _validate_dual_ray_certificate(lp, ray)
+        row_names = list(lp.row_names_ or [])
+        pyomo_by_canon = _pyomo_names_by_canon(instance)
+        rows: list[DualRayRow] = []
+        for idx, weight in enumerate(ray):
+            if abs(weight) <= 1e-10 or idx >= len(row_names):
+                continue
+            name, prefix, indices_map = _map_lp_row_name(row_names[idx], pyomo_by_canon)
+            rows.append(
+                DualRayRow(
+                    name=name,
+                    weight=weight,
+                    selected_side="LB" if weight > 0 else "UB",
+                    constraint_type=prefix,
+                    indices=indices_map,
+                )
+            )
+        rows.sort(key=lambda row: -abs(row.weight))
+        return DualRayReport(
+            available=True,
+            method="highs.getDualRay",
+            validated=validated,
+            certificate_margin=margin,
+            rows=rows[:200],
+            unavailable_reason=(
+                None
+                if validated
+                else "HiGHS entregó un ray, pero la validación independiente con bounds no fue concluyente."
+            ),
+        )
+    except Exception as exc:
+        logger.exception("Falló el cálculo del dual ray")
+        return DualRayReport(available=False, unavailable_reason=f"Dual ray falló: {exc!r}")
+
+
+def _validate_primal_ray(lp: Any, direction: list[float]) -> tuple[bool, float | None]:
+    """Valida dirección de recesión y mejora del objetivo de un primal ray."""
+    import math
+
+    tolerance = 1e-8
+    matrix = lp.a_matrix_
+    starts = list(getattr(matrix, "start_", []) or [])
+    indices = list(getattr(matrix, "index_", []) or [])
+    values = list(getattr(matrix, "value_", []) or [])
+    row_direction = [0.0] * len(lp.row_names_)
+    matrix_format = int(getattr(matrix, "format_", 1))
+    if matrix_format == 1:
+        for col, col_direction in enumerate(direction):
+            if abs(col_direction) <= tolerance:
+                continue
+            start = starts[col]
+            end = starts[col + 1] if col + 1 < len(starts) else len(indices)
+            for pos in range(start, end):
+                row_direction[int(indices[pos])] += float(values[pos]) * col_direction
+    else:
+        for row in range(len(row_direction)):
+            start = starts[row]
+            end = starts[row + 1] if row + 1 < len(starts) else len(indices)
+            row_direction[row] = sum(
+                float(values[pos]) * direction[int(indices[pos])]
+                for pos in range(start, end)
+            )
+
+    for idx, delta in enumerate(row_direction):
+        has_lower = math.isfinite(float(lp.row_lower_[idx]))
+        has_upper = math.isfinite(float(lp.row_upper_[idx]))
+        if has_lower and has_upper and abs(delta) > tolerance:
+            return False, None
+        if has_lower and not has_upper and delta < -tolerance:
+            return False, None
+        if has_upper and not has_lower and delta > tolerance:
+            return False, None
+
+    for idx, delta in enumerate(direction):
+        has_lower = math.isfinite(float(lp.col_lower_[idx]))
+        has_upper = math.isfinite(float(lp.col_upper_[idx]))
+        if has_lower and has_upper and abs(delta) > tolerance:
+            return False, None
+        if has_lower and not has_upper and delta < -tolerance:
+            return False, None
+        if has_upper and not has_lower and delta > tolerance:
+            return False, None
+
+    objective_direction = sum(
+        float(cost) * delta for cost, delta in zip(lp.col_cost_, direction)
+    )
+    # ObjSense: 1=minimize, -1=maximize. Mejora si sense*c'd < 0.
+    signed_improvement = -float(int(lp.sense_)) * objective_direction
+    return signed_improvement > tolerance, signed_improvement
+
+
+def try_compute_primal_ray(
+    solver_name: str,
+    *,
+    lp_path: Path | None,
+) -> DualRayReport:
+    """Obtiene una dirección de no acotación para un LP HiGHS."""
+    if str(solver_name or "").lower() != "highs":
+        return DualRayReport(
+            available=False,
+            certificate_type="primal_ray",
+            unavailable_reason="Primal ray implementado únicamente para HiGHS.",
+        )
+    if lp_path is None or not Path(lp_path).exists():
+        return DualRayReport(
+            available=False,
+            certificate_type="primal_ray",
+            unavailable_reason="No hay LP para calcular primal ray.",
+        )
+    highspy, err = _try_import_highspy()
+    if highspy is None:
+        return DualRayReport(
+            available=False,
+            certificate_type="primal_ray",
+            unavailable_reason=err,
+        )
+    try:
+        highs = highspy.Highs()
+        highs.setOptionValue("output_flag", False)
+        highs.setOptionValue(
+            "time_limit",
+            _diagnostic_time_limit_seconds("OSEMOSYS_PRIMAL_RAY_TIME_LIMIT_SECONDS"),
+        )
+        read_status = highs.readModel(str(lp_path))
+        if read_status == getattr(highspy.HighsStatus, "kError", None):
+            return DualRayReport(
+                available=False,
+                certificate_type="primal_ray",
+                unavailable_reason=f"readModel falló: {read_status}",
+            )
+        run_status = highs.run()
+        if not _highs_status_is_ok(highspy, run_status):
+            return DualRayReport(
+                available=False,
+                certificate_type="primal_ray",
+                unavailable_reason=f"run falló: {run_status}",
+            )
+        if highs.getModelStatus() != getattr(highspy.HighsModelStatus, "kUnbounded", None):
+            return DualRayReport(
+                available=False,
+                certificate_type="primal_ray",
+                unavailable_reason=f"HiGHS no certificó no acotación: {highs.getModelStatus()}.",
+            )
+        ray_status, has_ray, raw_ray = highs.getPrimalRay()
+        if not _highs_status_is_ok(highspy, ray_status) or not has_ray:
+            return DualRayReport(
+                available=False,
+                certificate_type="primal_ray",
+                unavailable_reason=f"HiGHS no produjo primal ray: status={ray_status}.",
+            )
+        lp = highs.getLp()
+        direction = [float(value) for value in raw_ray]
+        validated, improvement = _validate_primal_ray(lp, direction)
+        names = list(lp.col_names_ or [])
+        variables = [
+            PrimalRayVariable(name=names[index], direction=float(value))
+            for index, value in enumerate(direction)
+            if index < len(names) and abs(float(value)) > 1e-10
+        ]
+        variables.sort(key=lambda variable: -abs(variable.direction))
+        return DualRayReport(
+            available=bool(variables),
+            certificate_type="primal_ray",
+            method="highs.getPrimalRay",
+            validated=validated,
+            certificate_margin=improvement,
+            variables=variables[:200],
+            unavailable_reason=(
+                None
+                if variables and validated
+                else "El primal ray quedó vacío o no superó la validación algebraica."
+            ),
+        )
+    except Exception as exc:
+        logger.exception("Falló el cálculo del primal ray")
+        return DualRayReport(
+            available=False,
+            certificate_type="primal_ray",
+            unavailable_reason=f"Primal ray falló: {exc!r}",
+        )
+
+
+_RELAXATION_RIGID_FAMILIES = {
+    "ConstraintCapacity",
+    "PlannedMaintenance",
+    "TotalNewCapacity_2",
+    "AnnualEmissionProductionByMode",
+    "AnnualEmissionProduction",
+    "EmissionsAccounting1",
+    "EmissionsAccounting2",
+    "ReserveMargin_TechnologiesIncluded",
+    "ReserveMargin_FuelsIncluded",
+    "TotalModelHorizonTechnologyActivity",
+    "RateOfStorageCharge_constraint",
+    "RateOfStorageDischarge_constraint",
+    "NetChargeWithinYear_constraint",
+    "NetChargeWithinDay_constraint",
+}
+_RELAXATION_PROTECTED_FAMILIES = {
+    "EnergyBalanceEachTS5",
+    "EnergyBalanceEachYear4",
+}
+
+
+def _relaxation_family_weight(prefix: str) -> float:
+    """Política v1: ecuaciones físicas/contables rígidas y demanda protegida."""
+    if prefix in _RELAXATION_RIGID_FAMILIES:
+        return 1_000_000.0
+    if prefix in _RELAXATION_PROTECTED_FAMILIES:
+        return 100.0
+    if prefix in CONSTRAINT_PARAM_MAP:
+        return 1.0
+    return 1_000_000.0
+
+
+def try_feasibility_relaxation(
+    instance: Any | None,
+    solver_name: str,
+    *,
+    lp_path: Path | None,
+) -> FeasibilityRelaxationReport:
+    """Cuantifica slacks mínimos sobre una copia HiGHS separada del LP."""
+    if str(solver_name or "").lower() != "highs":
+        return FeasibilityRelaxationReport(
+            available=False,
+            unavailable_reason="Feasibility relaxation implementada únicamente para HiGHS.",
+        )
+    if lp_path is None or not Path(lp_path).exists():
+        return FeasibilityRelaxationReport(available=False, unavailable_reason="No hay LP para relajar.")
+    highspy, err = _try_import_highspy()
+    if highspy is None:
+        return FeasibilityRelaxationReport(available=False, unavailable_reason=err)
+
+    import math
+    import numpy as np
+
+    try:
+        time_limit = float(os.getenv("OSEMOSYS_RELAXATION_TIME_LIMIT_SECONDS", "300"))
+    except (TypeError, ValueError):
+        time_limit = 300.0
+    if time_limit <= 0:
+        time_limit = 300.0
+
+    try:
+        highs = highspy.Highs()
+        highs.setOptionValue("output_flag", False)
+        highs.setOptionValue("time_limit", time_limit)
+        read_status = highs.readModel(str(lp_path))
+        if read_status == getattr(highspy.HighsStatus, "kError", None):
+            return FeasibilityRelaxationReport(available=False, unavailable_reason=f"readModel falló: {read_status}")
+        lp = highs.getLp()
+        row_names = list(lp.row_names_ or [])
+        row_lower = [float(value) for value in lp.row_lower_]
+        row_upper = [float(value) for value in lp.row_upper_]
+        pyomo_by_canon = _pyomo_names_by_canon(instance)
+
+        scales: list[float] = []
+        penalties: list[float] = []
+        for name, lower, upper in zip(row_names, row_lower, row_upper):
+            finite_bounds = [abs(value) for value in (lower, upper) if math.isfinite(value)]
+            scale = max([1.0, *finite_bounds])
+            _, prefix, _ = _map_lp_row_name(name, pyomo_by_canon)
+            family_weight = _relaxation_family_weight(prefix)
+            scales.append(scale)
+            penalties.append(family_weight / scale)
+
+        started = perf_counter()
+        relax_status = highs.feasibilityRelaxation(
+            1_000_000.0,
+            1_000_000.0,
+            1.0,
+            None,
+            None,
+            np.asarray(penalties, dtype=float),
+        )
+        elapsed = perf_counter() - started
+        solution = highs.getSolution()
+        if not _highs_status_is_ok(highspy, relax_status) or not bool(solution.value_valid):
+            return FeasibilityRelaxationReport(
+                available=False,
+                method="highs.feasibilityRelaxation",
+                solution_value_valid=bool(solution.value_valid),
+                elapsed_seconds=elapsed,
+                time_limit_seconds=time_limit,
+                unavailable_reason=f"Relajación sin solución válida: status={relax_status}.",
+            )
+
+        entries: list[RelaxationEntry] = []
+        for idx, activity_raw in enumerate(solution.row_value):
+            activity = float(activity_raw)
+            lower = row_lower[idx]
+            upper = row_upper[idx]
+            side = ""
+            bound = 0.0
+            slack = 0.0
+            suggestion = ""
+            if math.isfinite(lower) and activity < lower - 1e-8:
+                side, bound, slack = "LB", lower, lower - activity
+                suggestion = f"Reducir el límite inferior al menos en {slack:.6g}."
+            elif math.isfinite(upper) and activity > upper + 1e-8:
+                side, bound, slack = "UB", upper, activity - upper
+                suggestion = f"Aumentar el límite superior al menos en {slack:.6g}."
+            if slack <= 0:
+                continue
+            name, prefix, indices_map = _map_lp_row_name(row_names[idx], pyomo_by_canon)
+            normalized = slack / scales[idx]
+            entries.append(
+                RelaxationEntry(
+                    name=name,
+                    constraint_type=prefix,
+                    indices=indices_map,
+                    side=side,
+                    activity=activity,
+                    bound=bound,
+                    slack=slack,
+                    normalized_slack=normalized,
+                    penalty=penalties[idx],
+                    weighted_cost=slack * penalties[idx],
+                    suggested_change=suggestion,
+                )
+            )
+        entries.sort(key=lambda entry: (-entry.weighted_cost, -entry.normalized_slack))
+        return FeasibilityRelaxationReport(
+            available=bool(entries),
+            method="highs.feasibilityRelaxation",
+            objective=float(highs.getInfo().objective_function_value),
+            solution_value_valid=True,
+            relaxations=entries[:200],
+            elapsed_seconds=elapsed,
+            time_limit_seconds=time_limit,
+            unavailable_reason=(None if entries else "La relajación no produjo slacks de filas; revisa conflictos directos de bounds."),
+        )
+    except Exception as exc:
+        logger.exception("Falló feasibility relaxation")
+        return FeasibilityRelaxationReport(
+            available=False,
+            method="highs.feasibilityRelaxation",
+            time_limit_seconds=time_limit,
+            unavailable_reason=f"Relajación falló: {exc!r}",
+        )
 
 
 def _try_import_gurobipy() -> tuple[Any | None, str | None]:
@@ -1176,6 +1877,7 @@ def _try_compute_iis_gurobi(
             variable_names=variable_names,
             bound_conflicts=bound_conflicts,
             ilp_path=ilp_path_str,
+            irreducible=bool(getattr(model, "IISMinimal", 0)),
         )
     finally:
         _release_gurobi(model)
@@ -1277,11 +1979,14 @@ def try_compute_iis(
                 "Usa HiGHS, Gurobi o GLPK."
             ),
         )
-    if instance is None:
+    if instance is None and (lp_path is None or not Path(lp_path).exists()):
         return IISReport(
             available=False,
             method=None,
-            unavailable_reason="No se dispone de la instancia Pyomo para computar IIS.",
+            unavailable_reason=(
+                "No se dispone de instancia Pyomo ni de un LP existente para "
+                "computar IIS."
+            ),
         )
 
     highspy, err = _try_import_highspy()
@@ -1320,16 +2025,88 @@ def try_compute_iis(
                 h.setOptionValue("output_flag", False)
             except Exception:
                 pass
-        # iis_strategy=2 ("from_ray_lp") es lo que hace que HiGHS realmente
-        # compute el IIS; sin esto `getIis()` devuelve índices vacíos.
-        # Valores observados: 0=none, 1=from_ray (puede fallar), 2=from_lp_ray (OK), 3=from_lp_ray_mip.
-        if hasattr(h, "setOptionValue"):
-            try:
-                h.setOptionValue("iis_strategy", 2)
-            except Exception:
-                pass
-        h.readModel(str(lp_path))
-        h.run()
+        # En highspy 1.15.1, strategy=2 obtiene un subsystem de conflicto pero
+        # puede conservar varios conflictos independientes. Strategy=4 es la
+        # estrategia irreducible real (IisStrategy.kIisStrategyIrreducible).
+        iis_strategy = getattr(
+            getattr(highspy, "IisStrategy", None),
+            "kIisStrategyIrreducible",
+            4,
+        )
+        option_status = h.setOptionValue("iis_strategy", iis_strategy)
+        if option_status == getattr(highspy.HighsStatus, "kError", None):
+            return IISReport(
+                available=False,
+                method=None,
+                unavailable_reason=(
+                    "HiGHS rechazó iis_strategy=irreducible; no se puede "
+                    "garantizar que el subsystem sea un IIS."
+                ),
+            )
+
+        try:
+            iis_time_limit = float(
+                os.getenv("OSEMOSYS_IIS_TIME_LIMIT_SECONDS", "300")
+            )
+        except (TypeError, ValueError):
+            iis_time_limit = 300.0
+        if iis_time_limit <= 0:
+            iis_time_limit = 300.0
+        time_option_status = h.setOptionValue("iis_time_limit", iis_time_limit)
+        if time_option_status == getattr(highspy.HighsStatus, "kError", None):
+            return IISReport(
+                available=False,
+                method=None,
+                unavailable_reason=(
+                    "HiGHS rechazó el límite de tiempo del IIS "
+                    f"({iis_time_limit}s)."
+                ),
+                time_limit_seconds=iis_time_limit,
+            )
+        # `iis_time_limit` sólo acota la búsqueda del IIS. El solve requerido
+        # para certificar infactibilidad necesita su propio límite.
+        solve_time_status = h.setOptionValue("time_limit", iis_time_limit)
+        if solve_time_status == getattr(highspy.HighsStatus, "kError", None):
+            return IISReport(
+                available=False,
+                method=None,
+                unavailable_reason=(
+                    "HiGHS rechazó el límite de solve previo al IIS "
+                    f"({iis_time_limit}s)."
+                ),
+                time_limit_seconds=iis_time_limit,
+            )
+
+        read_status = h.readModel(str(lp_path))
+        if read_status == getattr(highspy.HighsStatus, "kError", None):
+            return IISReport(
+                available=False,
+                method=None,
+                unavailable_reason=f"HiGHS no pudo leer el LP: {read_status}",
+            )
+        run_status = h.run()
+        if run_status == getattr(highspy.HighsStatus, "kError", None):
+            return IISReport(
+                available=False,
+                method=None,
+                unavailable_reason=f"HiGHS falló al resolver el LP: {run_status}",
+            )
+        model_status = h.getModelStatus()
+        infeasible_status = getattr(highspy.HighsModelStatus, "kInfeasible", None)
+        if model_status != infeasible_status:
+            timed_out = model_status == getattr(
+                highspy.HighsModelStatus, "kTimeLimit", None
+            )
+            return IISReport(
+                available=False,
+                method="highs.solve_before_iis",
+                unavailable_reason=(
+                    "No se ejecutó IIS porque HiGHS no certificó infactibilidad: "
+                    f"model_status={model_status}."
+                ),
+                timed_out=timed_out,
+                time_limit_seconds=iis_time_limit,
+            )
     except Exception as exc:  # pragma: no cover
         return IISReport(
             available=False,
@@ -1354,18 +2131,58 @@ def try_compute_iis(
         if fn is None:
             continue
         attempted.append(method_name)
+        iis_started = perf_counter()
         try:
             raw = fn()
         except Exception as exc:  # pragma: no cover
             logger.info("IIS vía %s falló: %s", method_name, exc)
             continue
-        cons, vars_ = _parse_iis_payload(raw, row_names=row_names, col_names=col_names)
+        iis_elapsed = perf_counter() - iis_started
+        logger.info(
+            "HiGHS IIS vía %s terminó en %.3fs (límite %.1fs)",
+            method_name,
+            iis_elapsed,
+            iis_time_limit,
+        )
+        cons, vars_, bound_conflicts = _parse_iis_payload_details(
+            raw,
+            row_names=row_names,
+            col_names=col_names,
+        )
+        call_status = raw[0] if isinstance(raw, tuple) and raw else None
+        has_explicit_status = str(call_status).startswith("HighsStatus.")
+        if (
+            has_explicit_status
+            and call_status != getattr(highspy.HighsStatus, "kOk", None)
+        ):
+            return IISReport(
+                available=False,
+                method=f"highs.{method_name}.partial",
+                constraint_names=cons,
+                variable_names=vars_,
+                bound_conflicts=bound_conflicts,
+                unavailable_reason=(
+                    "HiGHS no certificó un IIS irreducible: "
+                    f"getIis_status={call_status}. El subsystem parcial no debe "
+                    "presentarse como IIS."
+                ),
+                timed_out=(
+                    iis_elapsed >= max(0.0, iis_time_limit * 0.95)
+                    or call_status == getattr(highspy.HighsStatus, "kWarning", None)
+                ),
+                elapsed_seconds=iis_elapsed,
+                time_limit_seconds=iis_time_limit,
+            )
         if cons or vars_:
             return IISReport(
                 available=True,
-                method=method_name,
+                method=f"highs.{method_name}.irreducible",
                 constraint_names=cons,
                 variable_names=vars_,
+                bound_conflicts=bound_conflicts,
+                irreducible=True,
+                elapsed_seconds=iis_elapsed,
+                time_limit_seconds=iis_time_limit,
             )
 
     reason = (
@@ -1376,12 +2193,12 @@ def try_compute_iis(
     return IISReport(available=False, method=None, unavailable_reason=reason)
 
 
-def _parse_iis_payload(
+def _parse_iis_payload_details(
     payload: Any,
     *,
     row_names: list[str],
     col_names: list[str],
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], list[dict[str, str]]]:
     """Normaliza lo que devuelven los distintos ``getIis`` de highspy.
 
     Formatos observados según versión:
@@ -1444,7 +2261,45 @@ def _parse_iis_payload(
                 out.append(f"<idx:{i}>")
         return out
 
-    return _to_names(rows, row_names), _to_names(cols, col_names)
+    constraint_names = _to_names(rows, row_names)
+    variable_names = _to_names(cols, col_names)
+
+    # highspy 1.15.1 expone el lado de bound de cada columna incluida en el
+    # IIS. Los códigos de IisBoundStatus son: 2=lower, 3=upper, 4=boxed.
+    bound_conflicts: list[dict[str, str]] = []
+    iis_obj = (
+        payload[1]
+        if isinstance(payload, tuple) and len(payload) >= 2
+        else payload
+    )
+    col_bounds = getattr(iis_obj, "col_bound_", None)
+    if col_bounds is not None:
+        try:
+            bound_codes = [int(code) for code in list(col_bounds)]
+        except Exception:
+            bound_codes = []
+        for name, code in zip(variable_names, bound_codes):
+            if code in (2, 4):
+                bound_conflicts.append({"name": name, "side": "LB"})
+            if code in (3, 4):
+                bound_conflicts.append({"name": name, "side": "UB"})
+
+    return constraint_names, variable_names, bound_conflicts
+
+
+def _parse_iis_payload(
+    payload: Any,
+    *,
+    row_names: list[str],
+    col_names: list[str],
+) -> tuple[list[str], list[str]]:
+    """Compatibilidad: devuelve sólo nombres; los detalles viven en el helper nuevo."""
+    constraints, variables, _ = _parse_iis_payload_details(
+        payload,
+        row_names=row_names,
+        col_names=col_names,
+    )
+    return constraints, variables
 
 
 # =====================================================================
@@ -1487,15 +2342,88 @@ class InfeasibilityOverview:
 
 
 @dataclass
+class DiagnosisClassification:
+    code: str
+    evidence_level: str
+    solver_status: str
+    explanation: str
+
+
+def classify_solver_outcome(status: str | None) -> DiagnosisClassification:
+    """Clasifica el resultado sin confundir límites/fallos con infactibilidad."""
+    raw = str(status or "").strip()
+    normalized = re.sub(r"[^a-z]", "", raw.lower())
+    if ("infeasible" in normalized or "infactible" in normalized) and "unbounded" in normalized:
+        return DiagnosisClassification(
+            code="UNCLASSIFIED",
+            evidence_level="OPERATIONAL",
+            solver_status=raw,
+            explanation="El solver no distinguió entre infactibilidad y no acotación.",
+        )
+    if "infeasible" in normalized or "infactible" in normalized:
+        return DiagnosisClassification(
+            code="INFEASIBLE_CERTIFIED",
+            evidence_level="CERTIFIED",
+            solver_status=raw,
+            explanation="El solver declaró matemáticamente infactible el modelo.",
+        )
+    if "unbounded" in normalized or "noacotado" in normalized:
+        return DiagnosisClassification(
+            code="UNBOUNDED_CERTIFIED",
+            evidence_level="CERTIFIED",
+            solver_status=raw,
+            explanation="El objetivo puede mejorar sin límite; no corresponde ejecutar IIS.",
+        )
+    if any(token in normalized for token in ("knotset", "notset", "unknown", "error")):
+        return DiagnosisClassification(
+            code="NUMERICAL_FAILURE",
+            evidence_level="OPERATIONAL",
+            solver_status=raw,
+            explanation="El solver no produjo una clasificación matemática utilizable.",
+        )
+    if any(token in normalized for token in ("timelimit", "iterationlimit", "objectivelimit", "maxtime", "maxiteration")):
+        return DiagnosisClassification(
+            code="RESOURCE_LIMIT",
+            evidence_level="OPERATIONAL",
+            solver_status=raw,
+            explanation="La ejecución terminó por un límite operativo, no por infactibilidad certificada.",
+        )
+    if "cancel" in normalized:
+        return DiagnosisClassification(
+            code="CANCELLED",
+            evidence_level="OPERATIONAL",
+            solver_status=raw,
+            explanation="La ejecución fue cancelada antes de una conclusión matemática.",
+        )
+    if "optimal" in normalized or "optimo" in normalized:
+        return DiagnosisClassification(
+            code="OPTIMAL",
+            evidence_level="CERTIFIED",
+            solver_status=raw,
+            explanation="El solver encontró una solución óptima factible.",
+        )
+    return DiagnosisClassification(
+        code="UNCLASSIFIED",
+        evidence_level="OPERATIONAL",
+        solver_status=raw,
+        explanation="No hay evidencia suficiente para clasificar el resultado.",
+    )
+
+
+@dataclass
 class InfeasibilityReport:
     solver_name: str
     solver_status: str
+    classification: DiagnosisClassification
     csv_dir: str | None
+    certificate: DualRayReport
+    feasibility_relaxation: FeasibilityRelaxationReport
     iis: IISReport
     overview: InfeasibilityOverview
     top_suspects: list[ParamHit]
     constraint_analyses: list[ConstraintAnalysis]
     var_bound_conflicts: list[dict[str, Any]]
+    structural_findings: list[dict[str, Any]]
     unmapped_constraint_prefixes: list[str]
 
 
@@ -1628,15 +2556,17 @@ def analyze(
     lp_path: Path | None = None,
     job_id: int | None = None,
     ilp_out: Path | None = None,
+    on_phase: Callable[[str], None] | None = None,
+    analysis_level: str = "full",
 ) -> InfeasibilityReport:
     """Construye el reporte enriquecido a partir del dict que retorna ``solve_model``.
 
     Estrategia de selección de ``constraint_analyses``:
 
-    * **Cuando el IIS está disponible** (HiGHS con ``iis_strategy=2``),
-      ``constraint_analyses`` se construye a partir del IIS — es el conjunto
-      irreducible real de restricciones inconsistentes. Esta es la respuesta
-      matemáticamente correcta y típicamente mucho más pequeña y precisa que
+    * **Cuando el IIS está disponible** (HiGHS con estrategia irreducible),
+      ``constraint_analyses`` se construye a partir del subsystem reportado.
+      ``iis.irreducible`` indica si el solver certificó minimalidad. Esta fuente
+      es típicamente mucho más pequeña y precisa que
       la lista de violaciones post-solve.
     * **Si no hay IIS**, se usa ``constraint_violations`` del diagnóstico básico
       (``_run_infeasibility_diagnostics``). **Atención**: esa lista evalúa
@@ -1645,6 +2575,9 @@ def analyze(
       muchos falsos positivos — cualquier restricción que compara contra una
       demanda no nula aparecerá violada. Úsala como señal cualitativa.
     """
+    valid_levels = {"full", "dual_ray", "iis", "relaxation"}
+    if analysis_level not in valid_levels:
+        raise ValueError(f"Nivel de análisis inválido: {analysis_level!r}")
     solver_name = str(solution.get("solver_name") or "").lower()
     solver_status = str(solution.get("solver_status") or "")
     diagnostics = solution.get("infeasibility_diagnostics") or {}
@@ -1656,13 +2589,92 @@ def analyze(
     )
     violations.sort(key=lambda v: -float(v.get("violation") or 0.0))
 
-    # 1) IIS (HiGHS o Gurobi). Para Gurobi, si no se pasa `ilp_out` explícito
-    #    pero sí `job_id`, se persiste como `tmp/infeasibility-reports/job_<id>.ilp`.
+    classification = classify_solver_outcome(solver_status)
+    if on_phase:
+        on_phase("classify")
+
+    # Crear una sola representación LP reproducible para certificado,
+    # relajación e IIS. Cada operación usa su propia instancia Highs para no
+    # contaminar estados internos.
+    effective_lp_path = Path(lp_path) if lp_path is not None else None
+    if (
+        solver_name == "highs"
+        and instance is not None
+        and (effective_lp_path is None or not effective_lp_path.exists())
+    ):
+        try:
+            from app.simulation.core.solver import write_lp_file  # noqa: WPS433
+
+            suffix = f"job_{int(job_id)}" if job_id is not None else "diagnostic"
+            effective_lp_path = Path("tmp/infeasibility-reports") / f"{suffix}.lp"
+            write_lp_file(instance, effective_lp_path)
+        except Exception:
+            logger.exception("No se pudo preparar LP compartido para el diagnóstico")
+            effective_lp_path = None
+
+    certificate = DualRayReport(
+        available=False,
+        unavailable_reason="El estado no habilita certificado de infactibilidad.",
+    )
+    relaxation = FeasibilityRelaxationReport(
+        available=False,
+        unavailable_reason="El estado no habilita relajación de factibilidad.",
+    )
+    if classification.code == "INFEASIBLE_CERTIFIED" and analysis_level in {"full", "dual_ray"}:
+        if on_phase:
+            on_phase("dual_ray")
+        certificate = try_compute_dual_ray(
+            instance,
+            solver_name,
+            lp_path=effective_lp_path,
+        )
+    elif classification.code == "UNBOUNDED_CERTIFIED" and analysis_level in {"full", "dual_ray"}:
+        certificate = try_compute_primal_ray(
+            solver_name,
+            lp_path=effective_lp_path,
+        )
+    elif analysis_level not in {"full", "dual_ray"}:
+        certificate.unavailable_reason = "No solicitado en este nivel de diagnóstico."
+
+    if classification.code == "INFEASIBLE_CERTIFIED" and analysis_level in {"full", "relaxation"}:
+        if on_phase:
+            on_phase("feasibility_relaxation")
+        relaxation = try_feasibility_relaxation(
+            instance,
+            solver_name,
+            lp_path=effective_lp_path,
+        )
+    elif analysis_level not in {"full", "relaxation"}:
+        relaxation.unavailable_reason = "No solicitada en este nivel de diagnóstico."
+
+    # IIS (HiGHS o Gurobi). Para Gurobi, si no se pasa `ilp_out` explícito
+    # pero sí `job_id`, se persiste como `tmp/infeasibility-reports/job_<id>.ilp`.
     if ilp_out is None and job_id is not None and solver_name == "gurobi":
         ilp_out = Path("tmp/infeasibility-reports") / f"job_{int(job_id)}.ilp"
-    iis = try_compute_iis(
-        instance, solver_name=solver_name, lp_path=lp_path, ilp_out=ilp_out
-    )
+    if classification.code == "INFEASIBLE_CERTIFIED" and analysis_level in {"full", "iis"}:
+        if on_phase:
+            on_phase("iis")
+        iis = try_compute_iis(
+            instance,
+            solver_name=solver_name,
+            lp_path=effective_lp_path,
+            ilp_out=ilp_out,
+        )
+    elif classification.code != "INFEASIBLE_CERTIFIED":
+        iis = IISReport(
+            available=False,
+            method=None,
+            unavailable_reason=(
+                "No se ejecutó IIS porque el resultado no certifica "
+                f"infactibilidad ({classification.code})."
+            ),
+        )
+    else:
+        iis = IISReport(
+            available=False,
+            method=None,
+            unavailable_reason="No solicitado en este nivel de diagnóstico.",
+        )
 
     # 2) Índices rápidos: canónico → nombre Pyomo (para IIS → Pyomo),
     # canónico → dict de violación básica (para anexar body/bounds si hay).
@@ -1735,15 +2747,35 @@ def analyze(
 
     suspects = _top_suspects(analyses, k=10)
 
+    structural_findings: list[dict[str, Any]] = []
+    if csv_dir is not None:
+        if on_phase:
+            on_phase("structural")
+        try:
+            from app.simulation.core.structural_infeasibility import (  # noqa: WPS433
+                analyze_structural_infeasibility,
+            )
+
+            structural_findings = [
+                finding.to_dict()
+                for finding in analyze_structural_infeasibility(csv_dir)
+            ]
+        except Exception:
+            logger.exception("Falló el análisis estructural de infactibilidad")
+
     return InfeasibilityReport(
         solver_name=solver_name,
         solver_status=solver_status,
+        classification=classification,
         csv_dir=str(csv_dir) if csv_dir is not None else None,
+        certificate=certificate,
+        feasibility_relaxation=relaxation,
         iis=iis,
         overview=overview,
         top_suspects=suspects,
         constraint_analyses=analyses,
         var_bound_conflicts=var_conflicts,
+        structural_findings=structural_findings,
         unmapped_constraint_prefixes=sorted(unmapped),
     )
 
@@ -1757,12 +2789,16 @@ def _report_to_dict(report: InfeasibilityReport) -> dict[str, Any]:
     return {
         "solver_name": report.solver_name,
         "solver_status": report.solver_status,
+        "classification": asdict(report.classification),
         "csv_dir": report.csv_dir,
         "overview": asdict(report.overview),
+        "certificate": asdict(report.certificate),
+        "feasibility_relaxation": asdict(report.feasibility_relaxation),
         "iis": asdict(report.iis),
         "top_suspects": [asdict(h) for h in report.top_suspects],
         "constraint_analyses": [asdict(c) for c in report.constraint_analyses],
         "var_bound_conflicts": report.var_bound_conflicts,
+        "structural_findings": report.structural_findings,
         "unmapped_constraint_prefixes": report.unmapped_constraint_prefixes,
     }
 
@@ -1775,6 +2811,8 @@ def enrich_solution_dict(
     top_n: int = 50,
     job_id: int | None = None,
     lp_path: Path | None = None,
+    on_phase: Callable[[str], None] | None = None,
+    analysis_level: str = "full",
 ) -> InfeasibilityReport | None:
     """Corre :func:`analyze` y **muta** ``solution['infeasibility_diagnostics']``.
 
@@ -1798,12 +2836,18 @@ def enrich_solution_dict(
         top_n=top_n,
         job_id=job_id,
         lp_path=lp_path,
+        on_phase=on_phase,
+        analysis_level=analysis_level,
     )
 
+    diag["classification"] = asdict(report.classification)
+    diag["certificate"] = asdict(report.certificate)
+    diag["feasibility_relaxation"] = asdict(report.feasibility_relaxation)
     diag["iis"] = asdict(report.iis)
     diag["overview"] = asdict(report.overview)
     diag["top_suspects"] = [asdict(h) for h in report.top_suspects]
     diag["constraint_analyses"] = [asdict(c) for c in report.constraint_analyses]
+    diag["structural_findings"] = list(report.structural_findings)
     diag["unmapped_constraint_prefixes"] = list(report.unmapped_constraint_prefixes)
     if csv_dir is not None:
         diag["csv_dir"] = str(csv_dir)
@@ -1833,8 +2877,13 @@ def print_report_console(report: InfeasibilityReport, *, top_n: int = 10) -> Non
             f"IIS           : disponible ({len(report.iis.constraint_names)} restricciones, "
             f"{len(report.iis.variable_names)} variables) via {report.iis.method}"
         )
+        source_label = (
+            "IIS irreducible"
+            if report.iis.irreducible
+            else "subsistema de conflicto no certificado como irreducible"
+        )
         print(
-            f"Fuente        : IIS de HiGHS (subsistema irreducible) — "
+            f"Fuente        : {source_label} — "
             f"{len(report.constraint_analyses)} restricciones"
         )
     else:

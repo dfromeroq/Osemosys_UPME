@@ -1,0 +1,384 @@
+
+# Presolve: "off", "choose" or "on"
+# [type: string, advanced: false, default: "choose"]
+presolve = choose
+
+# LP/QP solver: "choose", "simplex", "ipm", "ipx", "hipo", "pdlp", "qpasm" or "hipdlp",
+# [type: string, advanced: false, default: "choose"]
+solver = choose
+
+# Parallel: "off", "choose" or "on"
+# [type: string, advanced: false, default: "choose"]
+parallel = choose
+
+# Maximum number of threads used by HiGHS (0: automatic)
+# [type: integer, advanced: false, range: {0, 2147483647}, default: 0]
+threads = 0
+
+# Run IPM crossover: "off", "choose" or "on"
+# [type: string, advanced: false, default: "on"]
+run_crossover = on
+
+# Time limit (seconds)
+# [type: double, advanced: false, range: [0, inf], default: inf]
+time_limit = inf
+
+# Compute cost, bound, RHS and basic solution ranging: "off" or "on"
+# [type: string, advanced: false, default: "off"]
+ranging = off
+
+# Limit on |cost coefficient|: values greater than or equal to this will be treated as infinite
+# [type: double, advanced: false, range: [1e+15, inf], default: 1e+20]
+infinite_cost = 1e+20
+
+# Limit on |constraint bound|: values greater than or equal to this will be treated as infinite
+# [type: double, advanced: false, range: [1e+15, inf], default: 1e+20]
+infinite_bound = 1e+20
+
+# Lower limit on |matrix entries|: values less than or equal to this will be treated as zero
+# [type: double, advanced: false, range: [1e-12, inf], default: 1e-09]
+small_matrix_value = 1e-09
+
+# Upper limit on |matrix entries|: values greater than or equal to this will be treated as infinite
+# [type: double, advanced: false, range: [1, inf], default: 1e+15]
+large_matrix_value = 1e+15
+
+# If changed from its default value, this tolerance is used for all feasibility and optimality (KKT) measures
+# [type: double, advanced: false, range: [1e-10, inf], default: 1e-07]
+kkt_tolerance = 1e-07
+
+# Primal feasibility tolerance
+# [type: double, advanced: false, range: [1e-10, inf], default: 1e-07]
+primal_feasibility_tolerance = 1e-07
+
+# Dual feasibility tolerance
+# [type: double, advanced: false, range: [1e-10, inf], default: 1e-07]
+dual_feasibility_tolerance = 1e-07
+
+# Primal residual tolerance
+# [type: double, advanced: false, range: [1e-10, inf], default: 1e-07]
+primal_residual_tolerance = 1e-07
+
+# Dual residual tolerance
+# [type: double, advanced: false, range: [1e-10, inf], default: 1e-07]
+dual_residual_tolerance = 1e-07
+
+# Optimality tolerance
+# [type: double, advanced: false, range: [1e-10, inf], default: 1e-07]
+optimality_tolerance = 1e-07
+
+# Objective bound for termination of the dual simplex solver
+# [type: double, advanced: false, range: [-inf, inf], default: inf]
+objective_bound = inf
+
+# Objective target for termination of the MIP solver
+# [type: double, advanced: false, range: [-inf, inf], default: -inf]
+objective_target = -inf
+
+# Random seed used in HiGHS
+# [type: integer, advanced: false, range: {0, 2147483647}, default: 0]
+random_seed = 0
+
+# Exponent of power-of-two objective scaling for model
+# [type: integer, advanced: false, range: {-2147483647, 2147483647}, default: 0]
+user_objective_scale = 0
+
+# Exponent of power-of-two bound scaling for model
+# [type: integer, advanced: false, range: {-2147483647, 2147483647}, default: 0]
+user_bound_scale = 0
+
+# Strategy for simplex solver 0 => Choose; 1 => Dual (serial); 2 => Dual (SIP); 3 => Dual (PAMI); 4 => Primal
+# [type: integer, advanced: false, range: {0, 4}, default: 1]
+simplex_strategy = 1
+
+# Simplex scaling strategy: off / choose / equilibration (default) / forced equilibration / max value (0/1/2/3/4)
+# [type: integer, advanced: false, range: {0, 4}, default: 2]
+simplex_scale_strategy = 2
+
+# Strategy for simplex dual edge weights: Choose / Dantzig / Devex / Steepest Edge (-1/0/1/2)
+# [type: integer, advanced: false, range: {-1, 2}, default: -1]
+simplex_dual_edge_weight_strategy = -1
+
+# Strategy for simplex primal edge weights: Choose / Dantzig / Devex / Steepest Edge (-1/0/1/2)
+# [type: integer, advanced: false, range: {-1, 2}, default: -1]
+simplex_primal_edge_weight_strategy = -1
+
+# Iteration limit for simplex solver when solving LPs, but not subproblems in the MIP solver
+# [type: integer, advanced: false, range: {0, 2147483647}, default: 2147483647]
+simplex_iteration_limit = 2147483647
+
+# Limit on the number of simplex UPDATE operations
+# [type: integer, advanced: false, range: {0, 2147483647}, default: 5000]
+simplex_update_limit = 5000
+
+# Maximum level of concurrency in parallel simplex
+# [type: integer, advanced: false, range: {1, 8}, default: 8]
+simplex_max_concurrency = 8
+
+# Enables or disables solver output
+# [type: bool, advanced: false, range: {false, true}, default: true]
+output_flag = true
+
+# Enables or disables console logging
+# [type: bool, advanced: false, range: {false, true}, default: true]
+log_to_console = true
+
+# Log file
+# [type: string, advanced: false, default: ""]
+log_file =
+
+# Write the model to a file
+# [type: bool, advanced: false, range: {false, true}, default: false]
+write_model_to_file = false
+
+# Write the presolved model to a file
+# [type: bool, advanced: false, range: {false, true}, default: false]
+write_presolved_model_to_file = false
+
+# Write the primal and dual solution to a file
+# [type: bool, advanced: false, range: {false, true}, default: false]
+write_solution_to_file = false
+
+# Style of solution file (raw = computer-readable, pretty = human-readable): -1 => HiGHS old raw (deprecated); 0 => HiGHS raw; 1 => HiGHS pretty; 2 => Glpsol raw; 3 => Glpsol pretty; 4 => HiGHS sparse raw
+# [type: integer, advanced: false, range: {-1, 4}, default: 0]
+write_solution_style = 0
+
+# Location of cost row for Glpsol file: -2 => Last; -1 => None; 0 => None if empty, otherwise data file location; 1 <= n <= num_row => Location n; n > num_row => Last
+# [type: integer, advanced: false, range: {-2, 2147483647}, default: 0]
+glpsol_cost_row_location = 0
+
+# Read solution file
+# [type: string, advanced: false, default: ""]
+read_solution_file =
+
+# Read basis file
+# [type: string, advanced: false, default: ""]
+read_basis_file =
+
+# Write model file
+# [type: string, advanced: false, default: ""]
+write_model_file =
+
+# Write solution file
+# [type: string, advanced: false, default: ""]
+solution_file =
+
+# Write basis file
+# [type: string, advanced: false, default: ""]
+write_basis_file =
+
+# Write presolved model file
+# [type: string, advanced: false, default: ""]
+write_presolved_model_file =
+
+# Write IIS model file
+# [type: string, advanced: false, default: ""]
+write_iis_model_file =
+
+# Whether MIP symmetry should be detected
+# [type: bool, advanced: false, range: {false, true}, default: true]
+mip_detect_symmetry = true
+
+# Whether MIP restart is permitted
+# [type: bool, advanced: false, range: {false, true}, default: true]
+mip_allow_restart = true
+
+# MIP solver max number of nodes
+# [type: integer, advanced: false, range: {0, 2147483647}, default: 2147483647]
+mip_max_nodes = 2147483647
+
+# MIP solver max number of nodes where estimate is above cutoff bound
+# [type: integer, advanced: false, range: {0, 2147483647}, default: 2147483647]
+mip_max_stall_nodes = 2147483647
+
+# MIP solver max number of nodes when completing a partial MIP start
+# [type: integer, advanced: false, range: {0, 2147483647}, default: 500]
+mip_max_start_nodes = 500
+
+# Whether improving MIP solutions should be saved
+# [type: bool, advanced: false, range: {false, true}, default: false]
+mip_improving_solution_save = false
+
+# Whether improving MIP solutions should be reported in sparse format
+# [type: bool, advanced: false, range: {false, true}, default: false]
+mip_improving_solution_report_sparse = false
+
+# File for reporting improving MIP solutions: not reported for an empty string \"\"
+# [type: string, advanced: false, default: ""]
+mip_improving_solution_file =
+
+# Whether MIP presolve is only applied at the root node
+# [type: bool, advanced: false, range: {false, true}, default: false]
+mip_root_presolve_only = false
+
+# Level of lifting for probing that is used
+# [type: integer, advanced: false, range: {-1, 2147483647}, default: -1]
+mip_lifting_for_probing = -1
+
+# MIP solver max number of leaf nodes
+# [type: integer, advanced: false, range: {0, 2147483647}, default: 2147483647]
+mip_max_leaves = 2147483647
+
+# Limit on the number of improving solutions found to stop the MIP solver prematurely
+# [type: integer, advanced: false, range: {1, 2147483647}, default: 2147483647]
+mip_max_improving_sols = 2147483647
+
+# Maximal age of dynamic LP rows before they are removed from the LP relaxation in the MIP solver
+# [type: integer, advanced: false, range: {0, 32767}, default: 10]
+mip_lp_age_limit = 10
+
+# Maximal age of rows in the MIP solver cutpool before they are deleted
+# [type: integer, advanced: false, range: {0, 1000}, default: 30]
+mip_pool_age_limit = 30
+
+# Soft limit on the number of rows in the MIP solver cutpool for dynamic age adjustment
+# [type: integer, advanced: false, range: {1, 2147483647}, default: 10000]
+mip_pool_soft_limit = 10000
+
+# Minimal number of observations before MIP solver pseudo costs are considered reliable
+# [type: integer, advanced: false, range: {0, 2147483647}, default: 8]
+mip_pscost_minreliable = 8
+
+# Minimal number of entries in the MIP solver cliquetable before neighbourhood queries of the conflict graph use parallel processing
+# [type: integer, advanced: false, range: {0, 2147483647}, default: 100000]
+mip_min_cliquetable_entries_for_parallelism = 100000
+
+# MIP integrality tolerance
+# [type: double, advanced: false, range: [1e-10, inf], default: 1e-06]
+mip_feasibility_tolerance = 1e-06
+
+# Effort spent for MIP heuristics
+# [type: double, advanced: false, range: [0, 1], default: 0.05]
+mip_heuristic_effort = 0.05
+
+# Use the feasibility jump heuristic
+# [type: bool, advanced: false, range: {false, true}, default: true]
+mip_heuristic_run_feasibility_jump = true
+
+# Use the RINS heuristic
+# [type: bool, advanced: false, range: {false, true}, default: true]
+mip_heuristic_run_rins = true
+
+# Use the RENS heuristic
+# [type: bool, advanced: false, range: {false, true}, default: true]
+mip_heuristic_run_rens = true
+
+# Use the rootReducedCost heuristic
+# [type: bool, advanced: false, range: {false, true}, default: true]
+mip_heuristic_run_root_reduced_cost = true
+
+# Use the ZI Round heuristic
+# [type: bool, advanced: false, range: {false, true}, default: false]
+mip_heuristic_run_zi_round = false
+
+# Use the Shifting heuristic
+# [type: bool, advanced: false, range: {false, true}, default: false]
+mip_heuristic_run_shifting = false
+
+# Whether cut separation at nodes other than the root node is permitted
+# [type: bool, advanced: false, range: {false, true}, default: true]
+mip_allow_cut_separation_at_nodes = true
+
+# Tolerance on relative gap, |ub-lb|/|ub|, to determine whether optimality has been reached for a MIP instance
+# [type: double, advanced: false, range: [0, inf], default: 0.0001]
+mip_rel_gap = 0.0001
+
+# Tolerance on absolute gap of MIP, |ub-lb|, to determine whether optimality has been reached for a MIP instance
+# [type: double, advanced: false, range: [0, inf], default: 1e-06]
+mip_abs_gap = 1e-06
+
+# MIP minimum logging interval
+# [type: double, advanced: false, range: [0, inf], default: 5]
+mip_min_logging_interval = 5
+
+# MIP LP solver: "choose", "simplex", "ipm", "ipx" or "hipo"
+# [type: string, advanced: false, default: "choose"]
+mip_lp_solver = choose
+
+# MIP IPM solver: "choose", "ipx" or "hipo"
+# [type: string, advanced: false, default: "choose"]
+mip_ipm_solver = choose
+
+# IPM optimality tolerance
+# [type: double, advanced: false, range: [1e-12, inf], default: 1e-08]
+ipm_optimality_tolerance = 1e-08
+
+# Simulate MIP search concurrency on a single thread
+# [type: bool, advanced: false, range: {false, true}, default: false]
+mip_search_simulate_concurrency = false
+
+# Iteration limit for IPM solver
+# [type: integer, advanced: false, range: {0, 2147483647}, default: 2147483647]
+ipm_iteration_limit = 2147483647
+
+# HiPO Newton system: "choose", "augmented" or "normaleq"
+# [type: string, advanced: false, default: "choose"]
+hipo_system = choose
+
+# HiPO parallelism: "tree", "node" or "both"
+# [type: string, advanced: false, default: "both"]
+hipo_parallel_type = both
+
+# HiPO matrix reordering: "choose", "metis", "amd" or "rcm"
+# [type: string, advanced: false, default: "choose"]
+hipo_ordering = choose
+
+# Block size for dense linear algebra within HiPO
+# [type: integer, advanced: false, range: {0, 2147483647}, default: 128]
+hipo_block_size = 128
+
+# Iteration limit for PDLP solver
+# [type: integer, advanced: false, range: {0, 2147483647}, default: 2147483647]
+pdlp_iteration_limit = 2147483647
+
+# Scaling mode for PDLP solver (default = 5): 1 => Ruiz; 2 => L2; 4 => PC
+# [type: integer, advanced: false, range: {0, 7}, default: 5]
+pdlp_scaling_mode = 5
+
+# Number of Ruiz scaling iteraitons for PDLP solver
+# [type: integer, advanced: false, range: {0, 2147483647}, default: 10]
+pdlp_ruiz_iterations = 10
+
+# Restart strategy for PDLP solver: 0 => off; 1 => fixed; 2 => adaptive; 3 => Halpern
+# [type: integer, advanced: false, range: {0, 3}, default: 2]
+pdlp_restart_strategy = 2
+
+# Restart mode for cuPDLP-C solver: 0 => none; 1 => GPU (default); 2 => CPU
+# [type: integer, advanced: false, range: {0, 2}, default: 1]
+pdlp_cupdlpc_restart_method = 1
+
+# Step size strategy for PDLP solver: 0 => fixed; 1 => adaptive; 2 => Malitsky-Pock; 3 => PID
+# [type: integer, advanced: false, range: {0, 3}, default: 1]
+pdlp_step_size_strategy = 1
+
+# PDLP optimality tolerance
+# [type: double, advanced: false, range: [1e-10, inf], default: 1e-07]
+pdlp_optimality_tolerance = 1e-07
+
+# Allow the active set QP solver to hot start
+# [type: bool, advanced: false, range: {false, true}, default: false]
+qp_allow_hot_start = false
+
+# Iteration limit for the active set QP solver
+# [type: integer, advanced: false, range: {0, 2147483647}, default: 2147483647]
+qp_iteration_limit = 2147483647
+
+# Nullspace limit for the active set QP solver
+# [type: integer, advanced: false, range: {0, 2147483647}, default: 4000]
+qp_nullspace_limit = 4000
+
+# Regularization value added to the Hessian in the active set QP solver
+# [type: double, advanced: false, range: [0, inf], default: 1e-07]
+qp_regularization_value = 1e-07
+
+# Strategy for IIS calculation: 0 => Light test; 1 => Try dual ray; 2 => Try elastic LP; 4 => Prioritise columns; 8 => Find true IIS; 16 => Find relaxation IIS for MIP
+# [type: integer, advanced: false, range: {0, 31}, default: 0]
+iis_strategy = 0
+
+# Time limit for computing IIS (seconds)
+# [type: double, advanced: false, range: [0, inf], default: inf]
+iis_time_limit = inf
+
+# Blend multiple objectives or apply lexicographically
+# [type: bool, advanced: false, range: {false, true}, default: true]
+blend_multi_objectives = true

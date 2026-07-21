@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 import app.simulation.core.solver as solver_module
 from app.simulation.core.solver_config import (
     SolverGlpkConfig,
@@ -65,6 +67,90 @@ def _fake_settings(**overrides: object) -> SimpleNamespace:
 def test_normalize_solver_status_display_maps_infeasible_to_spanish() -> None:
     assert solver_module.normalize_solver_status_display("infeasible") == "infactible"
     assert solver_module.normalize_solver_status_display("optimal") == "optimal"
+
+
+def test_run_highspy_retries_once_after_knotset(monkeypatch) -> None:
+    class _Highs:
+        def __init__(self) -> None:
+            self.run_calls = 0
+
+        def run(self):
+            self.run_calls += 1
+            return "HighsStatus.kOk"
+
+        def getModelStatus(self):  # noqa: N802
+            if self.run_calls == 1:
+                return "HighsModelStatus.kNotset"
+            return "HighsModelStatus.kOptimal"
+
+    highs = _Highs()
+    resets: list[bool] = []
+    monkeypatch.setattr(
+        solver_module,
+        "_reset_highspy_scheduler",
+        lambda: resets.append(True),
+    )
+    timings: dict[str, object] = {}
+
+    status = solver_module._run_highspy_with_retry(highs, timings=timings)
+
+    assert status == "HighsModelStatus.kOptimal"
+    assert highs.run_calls == 2
+    assert resets == [True]
+    assert timings["solver_model_status_initial"] == "HighsModelStatus.kNotset"
+    assert timings["solver_model_status_retry"] == "HighsModelStatus.kOptimal"
+    assert "solver_retry_run_seconds" in timings
+
+
+def test_run_highspy_raises_when_retry_remains_knotset(monkeypatch) -> None:
+    class _Highs:
+        def __init__(self) -> None:
+            self.run_calls = 0
+
+        def run(self):
+            self.run_calls += 1
+            return "HighsStatus.kError"
+
+        def getModelStatus(self):  # noqa: N802
+            return "HighsModelStatus.kNotset"
+
+    highs = _Highs()
+    monkeypatch.setattr(solver_module, "_reset_highspy_scheduler", lambda: None)
+
+    with pytest.raises(RuntimeError, match="no estableció un estado"):
+        solver_module._run_highspy_with_retry(highs, timings={})
+
+    assert highs.run_calls == 2
+
+
+def test_regional_defaults_use_ipm_with_crossover() -> None:
+    cfg = solver_module._apply_simulation_highs_defaults(
+        SolverHighsConfig(),
+        simulation_type="REGIONAL",
+    )
+    assert cfg.method == "ipm"
+    assert cfg.run_crossover == "on"
+    assert cfg.parallel == "off"
+
+
+def test_regional_defaults_preserve_explicit_method() -> None:
+    cfg = solver_module._apply_simulation_highs_defaults(
+        SolverHighsConfig(method="simplex", run_crossover="off"),
+        simulation_type="REGIONAL",
+    )
+    assert cfg.method == "simplex"
+    assert cfg.run_crossover == "off"
+
+
+def test_national_defaults_do_not_override_highs() -> None:
+    original = SolverHighsConfig()
+    assert (
+        solver_module._apply_simulation_highs_defaults(
+            original,
+            simulation_type="NATIONAL",
+        )
+        is original
+    )
 
 
 def test_resolve_highs_config_defaults_match_notebook() -> None:
@@ -309,6 +395,119 @@ def test_solve_model_routes_to_direct_highspy(monkeypatch, tmp_path) -> None:
     assert calls.get("direct") is True
     assert result["objective_value"] == 123.0
     assert result["solver_timings"]["solver_backend"] == "direct_highspy"
+
+
+def test_solve_model_retries_appsi_when_direct_highspy_returns_knotset(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    def _fake_direct(instance, *, highs_config, lp_path, timings, on_stage=None):
+        calls["direct"] = True
+        timings["solver_backend"] = "direct_highspy"
+        return "HighsModelStatus.kNotset", 0.0, None
+
+    def _fake_appsi(instance, *, highs_config, settings, timings, on_stage=None):
+        calls["appsi"] = True
+        timings["solver_backend"] = "appsi_highs"
+        return object(), object(), "optimal", 123.0, 1
+
+    monkeypatch.setattr(solver_module, "_solve_with_direct_highspy", _fake_direct)
+    monkeypatch.setattr(solver_module, "_solve_with_appsi_highs", _fake_appsi)
+    monkeypatch.setattr(
+        solver_module,
+        "get_settings",
+        lambda: _fake_settings(sim_solver_highs_direct=True),
+    )
+    monkeypatch.setattr(
+        solver_module,
+        "resolve_highs_config",
+        lambda _settings: SolverHighsConfig(use_direct=True),
+    )
+    monkeypatch.setattr(
+        solver_module,
+        "get_solver_availability",
+        lambda: {"glpk": False, "highs": True},
+    )
+
+    result = solver_module.solve_model(_FakeInstance(), solver_name="highs")
+
+    assert calls == {"direct": True, "appsi": True}
+    assert result["solver_status"] == "optimal"
+    assert result["objective_value"] == 123.0
+    assert result["solver_timings"]["solver_backend"] == "appsi_highs"
+
+
+def test_solve_model_fails_if_appsi_also_returns_knotset(monkeypatch) -> None:
+    def _fake_direct(instance, *, highs_config, lp_path, timings, on_stage=None):
+        return "HighsModelStatus.kNotset", 0.0, None
+
+    def _fake_appsi(instance, *, highs_config, settings, timings, on_stage=None):
+        return object(), object(), "HighsModelStatus.kNotset", 0.0, None
+
+    monkeypatch.setattr(solver_module, "_solve_with_direct_highspy", _fake_direct)
+    monkeypatch.setattr(solver_module, "_solve_with_appsi_highs", _fake_appsi)
+    monkeypatch.setattr(solver_module, "_release_solver", lambda _solver: None)
+    monkeypatch.setattr(
+        solver_module,
+        "get_settings",
+        lambda: _fake_settings(sim_solver_highs_direct=True),
+    )
+    monkeypatch.setattr(
+        solver_module,
+        "resolve_highs_config",
+        lambda _settings: SolverHighsConfig(use_direct=True),
+    )
+    monkeypatch.setattr(
+        solver_module,
+        "get_solver_availability",
+        lambda: {"glpk": False, "highs": True},
+    )
+
+    with pytest.raises(RuntimeError, match="agotar los backends") as caught:
+        solver_module.solve_model(_FakeInstance(), solver_name="highs")
+
+    assert (
+        caught.value.solver_failure_metadata["solver_status_raw"]
+        == "HighsModelStatus.kNotset"
+    )
+
+
+def test_solve_model_rejects_time_limit_without_appsi_retry(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def _fake_direct(instance, *, highs_config, lp_path, timings, on_stage=None):
+        return "maxTimeLimit", 123.0, None
+
+    def _fake_appsi(instance, *, highs_config, settings, timings, on_stage=None):
+        calls.append("appsi")
+        raise AssertionError("No debe repetir appsi después del límite")
+
+    monkeypatch.setattr(solver_module, "_solve_with_direct_highspy", _fake_direct)
+    monkeypatch.setattr(solver_module, "_solve_with_appsi_highs", _fake_appsi)
+    monkeypatch.setattr(
+        solver_module,
+        "get_settings",
+        lambda: _fake_settings(sim_solver_highs_direct=True),
+    )
+    monkeypatch.setattr(
+        solver_module,
+        "resolve_highs_config",
+        lambda _settings: SolverHighsConfig(use_direct=True),
+    )
+    monkeypatch.setattr(
+        solver_module,
+        "get_solver_availability",
+        lambda: {"glpk": False, "highs": True},
+    )
+
+    with pytest.raises(
+        solver_module.HighsIncompleteSolveError,
+        match="certificada",
+    ) as caught:
+        solver_module.solve_model(_FakeInstance(), solver_name="highs")
+
+    assert calls == []
+    assert caught.value.solver_failure_metadata["solver_status_raw"] == "maxTimeLimit"
+    assert caught.value.solver_failure_metadata["solver_highs_method"] == ""
 
 
 def test_solve_model_does_not_set_glpk_threads(monkeypatch) -> None:

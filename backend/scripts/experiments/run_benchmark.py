@@ -168,7 +168,11 @@ def _result_summary(result: dict[str, Any], timings: dict[str, Any] | None = Non
 def _run_csv_dir(args: argparse.Namespace) -> dict[str, Any]:
     if not args.csv_dir:
         raise ValueError("--csv-dir es requerido para mode=csv-dir")
-    return run_osemosys_from_csv_dir(args.csv_dir, solver_name=args.solver)
+    return run_osemosys_from_csv_dir(
+        args.csv_dir,
+        solver_name=args.solver,
+        simulation_type=args.simulation_type,
+    )
 
 
 def _get_seed_user(db, username: str) -> User:
