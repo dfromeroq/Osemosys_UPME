@@ -14,7 +14,12 @@ SimulationSolver = Literal["highs", "glpk", "gurobi"]
 SimulationInputMode = Literal["SCENARIO", "CSV_UPLOAD"]
 #: Estado del análisis de infactibilidad on-demand para un job infactible.
 #: ``NONE`` = aún no se ha corrido; se dispara vía POST /simulations/{id}/diagnose-infeasibility.
-DiagnosticStatus = Literal["NONE", "QUEUED", "RUNNING", "SUCCEEDED", "FAILED"]
+DiagnosticStatus = Literal[
+    "NONE", "QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED"
+]
+InfeasibilityAnalysisLevel = Literal[
+    "structural", "advanced", "presolve", "families", "dual_ray", "iis", "relaxation"
+]
 
 
 class SimulationSubmit(BaseModel):
@@ -39,6 +44,13 @@ class SimulationSubmit(BaseModel):
         default=None,
         description="Comentario libre del usuario sobre esta corrida.",
     )
+
+
+class InfeasibilityDiagnosticRequest(BaseModel):
+    """Nivel solicitado y referencia opcional para comparación avanzada."""
+
+    level: InfeasibilityAnalysisLevel = "structural"
+    baseline_scenario_id: int | None = Field(default=None, gt=0)
 
 
 class SimulationJobDisplayNamePatch(BaseModel):
@@ -171,7 +183,12 @@ class IISReportPublic(BaseModel):
     method: str | None = None
     constraint_names: list[str] = Field(default_factory=list)
     variable_names: list[str] = Field(default_factory=list)
+    bound_conflicts: list[dict[str, str]] = Field(default_factory=list)
     unavailable_reason: str | None = None
+    irreducible: bool = False
+    timed_out: bool = False
+    elapsed_seconds: float | None = None
+    time_limit_seconds: float | None = None
 
 
 class ParamHitPublic(BaseModel):
@@ -217,6 +234,75 @@ class InfeasibilityOverviewPublic(BaseModel):
     total_variables: int = 0
 
 
+class DualRayRowPublic(BaseModel):
+    name: str
+    weight: float
+    selected_side: str
+    constraint_type: str
+    indices: dict[str, str] = Field(default_factory=dict)
+
+
+class PrimalRayVariablePublic(BaseModel):
+    name: str
+    direction: float
+
+
+class DualRayReportPublic(BaseModel):
+    available: bool = False
+    certificate_type: str = "dual_ray"
+    method: str | None = None
+    validated: bool = False
+    certificate_margin: float | None = None
+    rows: list[DualRayRowPublic] = Field(default_factory=list)
+    variables: list[PrimalRayVariablePublic] = Field(default_factory=list)
+    unavailable_reason: str | None = None
+
+
+class RelaxationEntryPublic(BaseModel):
+    name: str
+    constraint_type: str
+    indices: dict[str, str] = Field(default_factory=dict)
+    side: str
+    activity: float
+    bound: float
+    slack: float
+    normalized_slack: float
+    penalty: float
+    weighted_cost: float
+    suggested_change: str
+
+
+class FeasibilityRelaxationReportPublic(BaseModel):
+    available: bool = False
+    method: str | None = None
+    objective: float | None = None
+    solution_value_valid: bool = False
+    normalization: str = "row_scale_v1"
+    relaxations: list[RelaxationEntryPublic] = Field(default_factory=list)
+    elapsed_seconds: float | None = None
+    time_limit_seconds: float | None = None
+    unavailable_reason: str | None = None
+
+
+class DiagnosisClassificationPublic(BaseModel):
+    code: str
+    evidence_level: str
+    solver_status: str
+    explanation: str
+
+
+class StructuralFindingPublic(BaseModel):
+    """Problema determinista detectado directamente en los datos del escenario."""
+
+    code: str
+    severity: str
+    evidence_level: str = "STRUCTURAL"
+    message: str
+    dimensions: dict[str, str] = Field(default_factory=dict)
+    values: dict[str, Any] = Field(default_factory=dict)
+    related_parameters: list[str] = Field(default_factory=list)
+
+
 class InfeasibilityDiagnosticsPublic(BaseModel):
     """Diagnóstico estructurado de infactibilidad del solver.
 
@@ -227,14 +313,29 @@ class InfeasibilityDiagnosticsPublic(BaseModel):
     la alimentan y lista de prefijos sin mapeo estático.
     """
 
+    diagnostic_status: DiagnosticStatus = "NONE"
+    diagnostic_error: str | None = None
+    diagnostic_started_at: str | None = None
+    diagnostic_finished_at: str | None = None
+    diagnostic_seconds: float | None = None
+    diagnostic_requested_level: InfeasibilityAnalysisLevel | None = None
+    diagnostic_baseline_scenario_id: int | None = None
+    analysis_level: InfeasibilityAnalysisLevel | None = None
+    classification: DiagnosisClassificationPublic | None = None
+    certificate: DualRayReportPublic | None = None
+    feasibility_relaxation: FeasibilityRelaxationReportPublic | None = None
     constraint_violations: list[ConstraintViolationPublic] = Field(default_factory=list)
     var_bound_conflicts: list[VarBoundConflictPublic] = Field(default_factory=list)
     iis: IISReportPublic | None = None
     overview: InfeasibilityOverviewPublic | None = None
     top_suspects: list[ParamHitPublic] = Field(default_factory=list)
     constraint_analyses: list[ConstraintAnalysisPublic] = Field(default_factory=list)
+    structural_findings: list[StructuralFindingPublic] = Field(default_factory=list)
+    presolve_report: dict[str, Any] | None = None
+    family_diagnosis: dict[str, Any] | None = None
+    advanced_diagnostics: dict[str, dict[str, Any]] | None = None
+    diagnostic_history: list[dict[str, Any]] = Field(default_factory=list)
     unmapped_constraint_prefixes: list[str] = Field(default_factory=list)
-    csv_dir: str | None = None
 
 
 class SimulationResultPublic(BaseModel):

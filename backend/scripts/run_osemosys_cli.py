@@ -56,6 +56,11 @@ def _main() -> int:
     p_csv = sub.add_parser("csv", help="Directorio con CSVs ya generados")
     p_csv.add_argument("csv_dir", type=Path, help="Ruta al directorio de CSVs")
     p_csv.add_argument("--solver", default="glpk", choices=("glpk", "highs"))
+    p_csv.add_argument(
+        "--simulation-type",
+        default="NATIONAL",
+        choices=("NATIONAL", "REGIONAL"),
+    )
     p_csv.add_argument("--lp", action="store_true", help="Generar archivo .lp")
     p_csv.add_argument("--lp-dir", type=Path, default=None, help="Carpeta para el .lp (default: csv_dir)")
     p_csv.add_argument("--lp-name", default="osemosys", help="Nombre base del .lp")
@@ -66,6 +71,11 @@ def _main() -> int:
     p_excel = sub.add_parser("excel", help="Archivo Excel SAND (.xlsm/.xlsx)")
     p_excel.add_argument("excel_path", type=Path, help="Ruta al Excel")
     p_excel.add_argument("--solver", default="glpk", choices=("glpk", "highs"))
+    p_excel.add_argument(
+        "--simulation-type",
+        default="NATIONAL",
+        choices=("NATIONAL", "REGIONAL"),
+    )
     p_excel.add_argument("--sheet", default="Parameters", help="Nombre de la hoja")
     p_excel.add_argument("--div", type=int, default=1, help="Divisor timeslices")
     p_excel.add_argument("--lp", action="store_true", help="Generar archivo .lp")
@@ -76,6 +86,11 @@ def _main() -> int:
     p_db = sub.add_parser("db", help="Escenario desde PostgreSQL")
     p_db.add_argument("scenario_id", type=int, help="ID del escenario")
     p_db.add_argument("--solver", default="glpk", choices=("glpk", "highs"))
+    p_db.add_argument(
+        "--simulation-type",
+        default="NATIONAL",
+        choices=("NATIONAL", "REGIONAL"),
+    )
     p_db.add_argument("--lp", action="store_true", help="Generar archivo .lp")
     p_db.add_argument("--output-dir", "-o", type=Path, default=None, help="Carpeta base para CSVs; cada corrida crea subcarpeta run_YYYYMMDD_HHMMSS")
     p_db.add_argument("--overwrite", action="store_true", help="Escribir en --output-dir sin timestamp (sobrescribe)")
@@ -92,6 +107,7 @@ def _main() -> int:
             generate_lp=args.lp,
             lp_dir=args.lp_dir,
             lp_basename=args.lp_name,
+            simulation_type=args.simulation_type,
         )
     elif args.source == "excel":
         if not args.excel_path.is_file():
@@ -103,6 +119,7 @@ def _main() -> int:
             sheet_name=args.sheet,
             div=args.div,
             generate_lp=args.lp,
+            simulation_type=args.simulation_type,
         )
     else:  # db
         from app.db.session import SessionLocal
@@ -113,6 +130,7 @@ def _main() -> int:
                 scenario_id=args.scenario_id,
                 solver_name=args.solver,
                 generate_lp=args.lp,
+                simulation_type=args.simulation_type,
             )
         finally:
             db.close()

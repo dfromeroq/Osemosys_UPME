@@ -39,13 +39,17 @@ from app.simulation.core.solver import solve_model
 logger = logging.getLogger(__name__)
 
 
-def _merge_solver_timings(timings: dict[str, float], solver_result: dict) -> None:
-    """Inyecta sub-etapas del solve en ``model_timings`` del job."""
+def _merge_solver_timings(timings: dict[str, Any], solver_result: dict) -> None:
+    """Inyecta sub-etapas y estados del solve en ``model_timings`` del job."""
     st = solver_result.get("solver_timings")
     if isinstance(st, dict):
         for key, val in st.items():
-            if isinstance(val, (int, float)):
+            if isinstance(val, bool):
+                timings[str(key)] = val
+            elif isinstance(val, (int, float)):
                 timings[str(key)] = float(val)
+            elif isinstance(val, str):
+                timings[str(key)] = val
     cfg = solver_result.get("solver_highs_config")
     if isinstance(cfg, dict):
         timings["solver_highs_profile"] = cfg.get("profile")
@@ -119,6 +123,7 @@ def run_osemosys_from_db(
     run_iis_analysis: bool = False,
     job_id: int | None = None,
     materialize_intermediate: bool = True,
+    simulation_type: str | None = None,
 ) -> dict:
     """Pipeline completo: DB → CSVs temporales → DataPortal → solve → results.
 
@@ -238,6 +243,7 @@ def run_osemosys_from_db(
             lp_path=lp_path,
             on_solver_finished=on_solver_finished,
             on_stage=on_stage,
+            simulation_type=simulation_type,
         )
         timings["solver_seconds"] = perf_counter() - t
         _merge_solver_timings(timings, solver_result)
@@ -332,6 +338,7 @@ def run_osemosys_from_csv_dir(
     run_iis_analysis: bool = False,
     job_id: int | None = None,
     materialize_intermediate: bool = True,
+    simulation_type: str | None = None,
 ) -> dict:
     """Pipeline desde directorio de CSVs: lee sets del directorio y ejecuta solve → results.
 
@@ -455,6 +462,7 @@ def run_osemosys_from_csv_dir(
         lp_path=lp_path,
         on_solver_finished=on_solver_finished,
         on_stage=on_stage,
+        simulation_type=simulation_type,
     )
     timings["solver_seconds"] = perf_counter() - t
     _merge_solver_timings(timings, solver_result)
@@ -539,6 +547,7 @@ def run_osemosys_from_excel(
     sheet_name: str = "Parameters",
     div: int = 1,
     materialize_intermediate: bool = True,
+    simulation_type: str | None = None,
 ) -> dict:
     """Pipeline completo desde archivo Excel: Excel → CSVs temporales → solve → results.
 
@@ -659,6 +668,7 @@ def run_osemosys_from_excel(
             solver_name=solver_name,
             lp_path=lp_path,
             on_stage=on_stage,
+            simulation_type=simulation_type,
         )
         timings["solver_seconds"] = perf_counter() - t
         _merge_solver_timings(timings, solver_result)

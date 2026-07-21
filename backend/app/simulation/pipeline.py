@@ -727,6 +727,7 @@ def run_pipeline(db: Session, *, job_id: int) -> None:
         lp_basename=_lp_basename_eff,
         job_id=job_id,
         materialize_intermediate=False,
+        simulation_type=getattr(job, "simulation_type", None),
     )
 
     # Persistimos la ruta del .lp si se generó: habilita descarga vía
@@ -901,6 +902,7 @@ def run_pipeline_from_csv(db: Session, *, job_id: int) -> None:
         lp_basename=_lp_basename_eff,
         job_id=job_id,
         materialize_intermediate=False,
+        simulation_type=getattr(job, "simulation_type", None),
     )
 
     if _gen_lp and _lp_dir_eff:
