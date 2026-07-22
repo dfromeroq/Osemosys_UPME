@@ -1,0 +1,37 @@
+name: Main Source Policy
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+permissions:
+  contents: read
+
+jobs:
+  enforce-main-source:
+    name: Only develop may target main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate pull request source
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          TARGET_REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "${HEAD_BRANCH}" != "develop" ]; then
+            echo "::error::Pull requests to main must come from the develop branch; received '${HEAD_BRANCH}'."
+            exit 1
+          fi
+
+          if [ "${HEAD_REPOSITORY}" != "${TARGET_REPOSITORY}" ]; then
+            echo "::error::The develop branch must belong to ${TARGET_REPOSITORY}; received '${HEAD_REPOSITORY}'."
+            exit 1
+          fi
+
+          echo "Authorized promotion: ${TARGET_REPOSITORY}:develop -> main"
