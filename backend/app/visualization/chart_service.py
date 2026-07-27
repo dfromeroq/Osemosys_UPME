@@ -81,7 +81,7 @@ from app.visualization.colors import (
     _color_por_modo,
 )
 from app.visualization.labels import get_label
-from app.visualization.regional import REGION_LABELS, transform_regional_df
+from app.visualization.regional import REGION_LABELS, REGIONAL_PREFIXES, strip_region, transform_regional_df
 from app.visualization.configs import (
     CONFIGS,
     CONFIGS_CON_ALIAS_PWR,
@@ -320,6 +320,7 @@ def _load_resource_cap_input(
     if not job or not job.scenario_id:
         return {}
 
+    names = [tech_prefix] + [f"{p}_{tech_prefix}" for p in REGIONAL_PREFIXES]
     results = (
         db.query(Technology.name, OsemosysParamValue.value)
         .join(Technology, Technology.id == OsemosysParamValue.id_technology)
@@ -327,7 +328,7 @@ def _load_resource_cap_input(
             OsemosysParamValue.id_scenario == job.scenario_id,
             OsemosysParamValue.param_name
             == "TotalTechnologyModelPeriodActivityUpperLimit",
-            Technology.name.startswith(tech_prefix),
+            Technology.name.in_(names),
         )
         .all()
     )
@@ -335,9 +336,9 @@ def _load_resource_cap_input(
     caps: dict[str, float] = {}
     for name, value in results:
         v = float(value)
-        # Default OSeMOSYS = 9999999 (sin restricción real)
         if v < 9_999_990:
-            caps[name] = v
+            key = strip_region(name)
+            caps[key] = caps.get(key, 0.0) + v  # sum across regions
     return caps
 
 
@@ -1123,6 +1124,7 @@ def _load_annual_activity_limit_input(
     if not job or not job.scenario_id:
         return {}
 
+    names = [tech_prefix] + [f"{p}_{tech_prefix}" for p in REGIONAL_PREFIXES]
     results = (
         db.query(Technology.name, OsemosysParamValue.year, OsemosysParamValue.value)
         .join(Technology, Technology.id == OsemosysParamValue.id_technology)
@@ -1130,7 +1132,7 @@ def _load_annual_activity_limit_input(
             OsemosysParamValue.id_scenario == job.scenario_id,
             OsemosysParamValue.param_name
             == "TotalTechnologyAnnualActivityUpperLimit",
-            Technology.name.startswith(tech_prefix),
+            Technology.name.in_(names),
         )
         .all()
     )
@@ -1165,7 +1167,7 @@ def _build_recursos_production_total(
             return None
         df_use = _apply_regional_transform(db, job_id, df_use)
         df_use = _filtro_recursos_carbon(df_use)
-        domestic = df_use[df_use["FUEL"] == "COA"].groupby("YEAR")["VALUE"].sum().to_dict()
+        domestic = df_use[df_use["FUEL"].str.startswith("COA")].groupby("YEAR")["VALUE"].sum().to_dict()
 
         df_prod = _load_variable_data(db, job_id, "ProductionByTechnology")
         if not df_prod.empty:
@@ -1337,7 +1339,7 @@ def build_recursos_vs_demanda_carbon_data(
     df_use = _apply_regional_transform(db, job_id, df_use)
     df_use = _filtro_recursos_carbon(df_use)
     domestic_by_year = (
-        df_use[df_use["FUEL"] == "COA"].groupby("YEAR")["VALUE"].sum().to_dict()
+        df_use[df_use["FUEL"].str.startswith("COA")].groupby("YEAR")["VALUE"].sum().to_dict()
     )
 
     # 2. Exportaciones: ProductionByTechnology(EXPCOA)
@@ -1360,10 +1362,6 @@ def build_recursos_vs_demanda_carbon_data(
         | set(export_by_year.keys())
         | set(annual_limits.keys())
     )
-    if not all_years:
-        return ChartDataResponse(
-            categories=[], series=[], title=title, yAxisLabel=un
-        )
 
     categories = [str(a) for a in all_years]
 
