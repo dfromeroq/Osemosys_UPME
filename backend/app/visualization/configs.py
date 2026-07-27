@@ -96,17 +96,17 @@ def _filtro_for(tipo: str):
 
 
 def _filtro_recursos_crudo(df, **kw):
-    fn = _filtro_for("recursos_crudo")
+    fn = _filtro_for("recursos_vs_demanda")
     return fn(df, **kw) if fn else df.iloc[0:0]
 
 
 def _filtro_recursos_gas(df, **kw):
-    fn = _filtro_for("recursos_gas")
+    fn = _filtro_for("recursos_vs_demanda_gas")
     return fn(df, **kw) if fn else df.iloc[0:0]
 
 
 def _filtro_recursos_carbon(df, **kw):
-    fn = _filtro_for("recursos_carbon")
+    fn = _filtro_for("recursos_vs_demanda_carbon")
     return fn(df, **kw) if fn else df.iloc[0:0]
 
 
