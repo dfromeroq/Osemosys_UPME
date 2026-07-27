@@ -1529,6 +1529,39 @@ def build_recursos_vs_demanda_data(
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+def get_available_fuels(
+    db: Session,
+    job_id: int,
+    tipo: str,
+    sub_filtro: str | None = None,
+    loc: str | None = None,
+    region: str | None = None,
+) -> list[str]:
+    """Retorna los códigos FUEL que sobreviven al pipeline de filtrado del chart.
+
+    Útil para poblar el selector de combustible que reemplaza al de región
+    cuando ``agrupar_por='REGION'``. Reusa ``_load_variable_data``,
+    ``_apply_regional_transform`` y la filter function del config — cero
+    lógica duplicada.
+    """
+    cfg = CONFIGS.get(tipo)
+    if cfg is None:
+        return []
+    variable_name = cfg["variable_default"]
+    df = _load_variable_data(db, job_id, variable_name)
+    if df.empty:
+        return []
+    df = _apply_regional_transform(
+        db, job_id, df, region_filter=region, agrupar_por="REGION"
+    )
+    filtro_fn = cfg.get("filtro")
+    if filtro_fn is not None:
+        df = filtro_fn(df, sub_filtro=sub_filtro, loc=loc)
+    if "FUEL" not in df.columns:
+        return []
+    return sorted(df["FUEL"].dropna().unique().tolist())
+
+
 def build_chart_data(
     db: Session,
     job_id: int,
@@ -1541,6 +1574,7 @@ def build_chart_data(
     es_porcentaje_override: bool = False,
     region: str | None = None,
     timeslice: str | None = None,
+    combustible: str | None = None,
 ) -> ChartDataResponse:
     """Construye la respuesta de gráfica para un solo escenario.
 
@@ -1561,6 +1595,9 @@ def build_chart_data(
     region : str | None
         Solo aplica si el job es REGIONAL. Filtra a una región específica
         (``'AN'..'SO'``). Ignorado cuando ``agrupar_por == 'REGION'``.
+    combustible : str | None
+        Solo aplica cuando ``agrupar_por == 'REGION'``. Filtra las filas
+        por FUEL (p. ej. ``'NGS'``, ``'DSL'``). Se muestra en el título.
     """
     # ── Ruta especial: recursos vs demanda ────────────────────────────────
     if tipo == "recursos_vs_demanda":
@@ -1597,6 +1634,9 @@ def build_chart_data(
         title += f" ({loc})"
     if timeslice:
         title += f" [TS={timeslice}]"
+    if combustible:
+        comb_label = NOMBRES_COMBUSTIBLES.get(combustible, combustible)
+        title += f" — {comb_label}"
 
     es_emision = cfg.get("es_emision", False)
     es_emision_kt = cfg.get("es_emision_kt", False)
@@ -1630,6 +1670,10 @@ def build_chart_data(
     df = _apply_regional_transform(
         db, job_id, df, region_filter=region, agrupar_por=agrupar_por
     )
+
+    # Filtro por combustible (cuando agrupar_por='REGION')
+    if combustible and "FUEL" in df.columns:
+        df = df[df["FUEL"] == combustible]
 
     # ── Filtrar ──────────────────────────────────────────────────────────
     filtro_fn = cfg.get("filtro")
@@ -2268,6 +2312,7 @@ def build_comparison_facet_data(
     job_display_overrides: dict[int, str] | None = None,
     es_porcentaje_override: bool = False,
     region: str | None = None,
+    combustible: str | None = None,
 ) -> CompareChartFacetResponse:
     """Construye datos para comparación por escenarios completos (facets).
 
@@ -2347,6 +2392,7 @@ def build_comparison_facet_data(
             agrupar_por=agrupar_por,
             es_porcentaje_override=es_porcentaje_override,
             region=region,
+            combustible=combustible,
         )
 
         if not facets:

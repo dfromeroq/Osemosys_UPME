@@ -172,6 +172,7 @@ def get_comparison_facet_data(
     agrupar_por: str | None = Query(None, description="Override de agrupación: TECNOLOGIA, FUEL, GROUP, REGION"),
     es_porcentaje: bool = Query(False, description="Si true, normaliza cada año a 100%"),
     region: str | None = Query(None, description="Filtro regional (AN, CA, IN, NE, OR, SE, SO) — solo en jobs REGIONAL"),
+    combustible: str | None = Query(None, description="Filtro por FUEL (p.ej. 'NGS', 'DSL') — solo cuando agrupar_por='REGION'"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -190,6 +191,7 @@ def get_comparison_facet_data(
             agrupar_por=agrupar_por,
             es_porcentaje_override=es_porcentaje,
             region=region,
+            combustible=combustible,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -284,6 +286,7 @@ def export_comparison_facet_image(
         description="inline (horizontal) o stacked (vertical).",
     ),
     region: str | None = Query(None, description="Filtro regional (AN, CA, IN, NE, OR, SE, SO) — solo en jobs REGIONAL"),
+    combustible: str | None = Query(None, description="Filtro por FUEL (p.ej. 'NGS', 'DSL') — solo cuando agrupar_por='REGION'"),
     job_display_overrides: str | None = Query(
         None,
         description='JSON dict {job_id: display_name} para renombrar escenarios. '
@@ -346,6 +349,7 @@ def export_comparison_facet_image(
             agrupar_por=agrupar_por,
             es_porcentaje_override=es_porcentaje,
             region=region,
+            combustible=combustible,
             job_display_overrides=_overrides,
         )
     except ValueError as e:
@@ -608,6 +612,7 @@ def get_chart_data(
     agrupar_por: str | None = Query(None, description="Override de agrupación: TECNOLOGIA, FUEL, GROUP, REGION"),
     es_porcentaje: bool = Query(False, description="Si true, normaliza cada año a 100%"),
     region: str | None = Query(None, description="Filtro regional (AN, CA, IN, NE, OR, SE, SO) — solo en jobs REGIONAL"),
+    combustible: str | None = Query(None, description="Filtro por FUEL (p.ej. 'NGS', 'DSL') — solo cuando agrupar_por='REGION'"),
     timeslice: str | None = Query(
         None,
         description="Código de timeslice (p.ej. 'S101'). Si se omite, se agregan todos los TS.",
@@ -636,6 +641,7 @@ def get_chart_data(
             es_porcentaje_override=es_porcentaje,
             region=region,
             timeslice=timeslice,
+            combustible=combustible,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -673,6 +679,52 @@ def list_job_timeslices(
     return [r[0] for r in rows if r[0]]
 
 
+@router.get("/{job_id}/fuels", response_model=list[str])
+def list_job_fuels(
+    job_id: int,
+    tipo: str | None = Query(None, description="Filtra combustibles al subset de un chart específico"),
+    sub_filtro: str | None = Query(None),
+    loc: str | None = Query(None),
+    region: str | None = Query(None, description="Filtro regional (AN..SO) para jobs REGIONAL"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[str]:
+    """Lista los códigos de combustible (FUEL) presentes en los outputs del job.
+
+    Si se provee ``tipo``, retorna solo los FUEL que sobreviven al pipeline
+    de filtrado de ese chart (filter function + transform regional).
+    Si no, retorna todos los FUEL del job (comportamiento original).
+    """
+    try:
+        job = SimulationService.get_by_id(db, current_user=current_user, job_id=job_id)
+        if job["status"] != "SUCCEEDED":
+            raise HTTPException(status_code=400, detail="Job no está en estado SUCCEEDED")
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Job no encontrado o sin acceso")
+
+    if tipo:
+        # Bypass: filtro tipo especifico — replica el pipeline del chart.
+        return chart_service.get_available_fuels(
+            db, job["id"], tipo,
+            sub_filtro=sub_filtro, loc=loc, region=region,
+        )
+
+    from app.models import OsemosysOutputParamValue
+    from app.visualization.regional import strip_region
+
+    rows = (
+        db.query(OsemosysOutputParamValue.fuel_name)
+        .filter(
+            OsemosysOutputParamValue.id_simulation_job == job["id"],
+            OsemosysOutputParamValue.fuel_name.isnot(None),
+            OsemosysOutputParamValue.fuel_name != "",
+        )
+        .distinct()
+        .all()
+    )
+    return sorted({strip_region(r[0]) for r in rows if r[0]})
+
+
 @router.get("/{job_id}/export-chart")
 def export_chart(
     job_id: int,
@@ -682,6 +734,7 @@ def export_chart(
     loc: str | None = Query(None),
     variable: str | None = Query(None),
     agrupar_por: str | None = Query(None),
+    combustible: str | None = Query(None, description="Filtro por FUEL (p.ej. 'NGS', 'DSL') — solo cuando agrupar_por='REGION'"),
     fmt: str = Query("png", description="Formato: png, svg, csv o xlsx"),
     view_mode: str = Query(
         "column",
@@ -813,6 +866,7 @@ def export_chart(
             loc=loc,
             variable=variable,
             agrupar_por=agrupar_por,
+            combustible=combustible,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
