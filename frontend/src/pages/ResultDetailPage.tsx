@@ -454,6 +454,7 @@ export function ResultDetailPage() {
   const [paretoData, setParetoData] = useState<ParetoChartResponse | null>(null);
   const [loadingChart, setLoadingChart] = useState(false);
   const [availableTimeslices, setAvailableTimeslices] = useState<string[]>([]);
+  const [availableFuels, setAvailableFuels] = useState<string[]>([]);
 
   // Cargar los timeslices presentes en los outputs del job actual.
   // Sirve para mostrar el selector de TS en `ChartSelector` cuando hay >1.
@@ -475,6 +476,33 @@ export function ResultDetailPage() {
       cancelled = true;
     };
   }, [currentRunId]);
+
+  // Cargar los combustibles (FUEL) del job — se usan en el selector que
+  // reemplaza al de región cuando agrupar_por='REGION'.
+  // Cuando hay un tipo de chart seleccionado, se pasan los filtros para
+  // obtener solo los combustibles relevantes a ese chart.
+  useEffect(() => {
+    if (!currentRunId || Number.isNaN(currentRunId) || !chartSelection.tipo) {
+      setAvailableFuels([]);
+      return;
+    }
+    let cancelled = false;
+    const fuelParams: Record<string, string> = { tipo: chartSelection.tipo };
+    if (chartSelection.sub_filtro) fuelParams.sub_filtro = chartSelection.sub_filtro;
+    if (chartSelection.loc) fuelParams.loc = chartSelection.loc;
+    if (chartSelection.region) fuelParams.region = chartSelection.region;
+    simulationApi
+      .getJobFuels(currentRunId, fuelParams)
+      .then((fuels) => {
+        if (!cancelled) setAvailableFuels(Array.isArray(fuels) ? fuels : []);
+      })
+      .catch(() => {
+        if (!cancelled) setAvailableFuels([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentRunId, chartSelection.tipo, chartSelection.sub_filtro, chartSelection.loc, chartSelection.region]);
 
   const [chartBarOrientation, setChartBarOrientation] = useState<ChartBarOrientation>(() =>
     loadChartBarOrientation(),
@@ -1084,6 +1112,7 @@ export function ResultDetailPage() {
       if (chartSelection.region && chartSelection.agrupar_por !== 'REGION') {
         params.region = chartSelection.region;
       }
+      if (chartSelection.combustible) params.combustible = chartSelection.combustible;
 
       simulationApi
         .getCompareFacetData(params as Parameters<typeof simulationApi.getCompareFacetData>[0])
@@ -1179,6 +1208,7 @@ export function ResultDetailPage() {
       if (chartSelection.region && chartSelection.agrupar_por !== 'REGION') {
         params.region = chartSelection.region;
       }
+      if (chartSelection.combustible) params.combustible = chartSelection.combustible;
 
       if (chartSelection.viewMode === 'pareto') {
         const paretoParams: Record<string, string> = {
@@ -2335,6 +2365,7 @@ export function ResultDetailPage() {
             onChangeBarOrientation={setChartBarOrientation}
             isRegionalJob={runMeta?.simulation_type === 'REGIONAL'}
             availableTimeslices={availableTimeslices}
+            availableFuels={availableFuels}
           />
 
           {/* Series manuales overlay: aplican en gráficas de línea y área. */}

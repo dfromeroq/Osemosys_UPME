@@ -145,7 +145,7 @@ def build_filter_fn(spec: dict[str, Any], resolver: FilterResolver) -> FilterFn 
                 return df[
                     df["TECHNOLOGY"].isin(resolver.tech(tech_g))
                     | (
-                        df["FUEL"].isin(resolver.fuel(fuel_g))
+                        df["FUEL"].str.startswith(tuple(resolver.fuel(fuel_g)))
                         & ~df["TECHNOLOGY"].isin(resolver.tech(ex_g))
                     )
                 ]

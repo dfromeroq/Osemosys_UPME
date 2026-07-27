@@ -41,6 +41,8 @@ export interface ChartSelection {
   tipo_electrico?: 'liquidos' | 'todos' | 'termica';
   /** Solo jobs REGIONAL: filtro por prefijo regional ('AN'..'SO') o undefined = todas. */
   region?: string;
+  /** Solo cuando agrupar_por='REGION': filtro por FUEL (p.ej. 'NGS', 'DSL') */
+  combustible?: string;
   /**
    * Código de timeslice para filtrar la gráfica a un TS específico (p. ej.
    * 'S101'). Cuando es null/undefined la gráfica agrega por año sumando
@@ -75,6 +77,9 @@ interface Props {
    * un TS específico (o "todos" → agregación anual).
    */
   availableTimeslices?: string[];
+  /** Códigos de combustible (FUEL) presentes en el job. Se usa para el
+   * selector que reemplaza al de región cuando agrupar_por='REGION'. */
+  availableFuels?: string[];
 }
 
 /** Nombres legibles para las 7 regiones del SIN (debe coincidir con backend). */
@@ -578,6 +583,7 @@ export function ChartSelector({
   onChangeBarOrientation,
   isRegionalJob = false,
   availableTimeslices,
+  availableFuels,
 }: Props) {
   const { menu: apiMenu, loading: menuLoading, error: menuError } = useChartMenu();
   const MENU = apiMenu as Module[];
@@ -650,7 +656,7 @@ export function ChartSelector({
   // ── Helpers internos ──────────────────────────────────────────────────────
 
   function selectChart(item: ChartItem): void {
-    const { agrupar_por: prevAgrupacion, ...rest } = value;
+    const { agrupar_por: prevAgrupacion, combustible: _, ...rest } = value;
 
     // Determinar la agrupación correcta para la nueva gráfica
     let newGrouping: string | undefined;
@@ -1212,23 +1218,32 @@ export function ChartSelector({
           </label>
         )}
 
-        {isRegionalJob && (
+        {isRegionalJob && value.agrupar_por !== 'REGION' && (
           <label style={{ display: 'grid', gap: 6 }}>
             <p style={labelStyle}>Región</p>
             <select
               style={selectStyle}
               value={value.region ?? ''}
               onChange={(e) => onChange({ ...value, region: e.target.value })}
-              disabled={value.agrupar_por === 'REGION'}
-              title={
-                value.agrupar_por === 'REGION'
-                  ? 'Deshabilitado mientras la agrupación es "Por Región".'
-                  : undefined
-              }
             >
               <option value="">Todas (acumulado nacional)</option>
               {REGION_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        {isRegionalJob && value.agrupar_por === 'REGION' && Array.isArray(availableFuels) && availableFuels.length >= 2 && (
+          <label style={{ display: 'grid', gap: 6 }}>
+            <p style={labelStyle}>Combustible</p>
+            <select
+              style={selectStyle}
+              value={value.combustible ?? ''}
+              onChange={(e) => onChange({ ...value, combustible: e.target.value })}
+            >
+              <option value="">Todos</option>
+              {availableFuels.map((f) => (
+                <option key={f} value={f}>{FUEL_LABELS[f] ?? f}</option>
               ))}
             </select>
           </label>
@@ -1264,6 +1279,7 @@ export function ChartSelector({
             {value.sub_filtro != null && value.sub_filtro !== '' ? ` [${FUEL_LABELS[value.sub_filtro] ?? value.sub_filtro}]` : ''}
             {value.loc != null && value.loc !== '' ? ` (${value.loc})` : ''}
             {isRegionalJob && value.region ? ` · Región: ${REGION_LABELS_FE[value.region] ?? value.region}` : ''}
+            {value.combustible ? ` · ${FUEL_LABELS[value.combustible] ?? value.combustible}` : ''}
             {value.timeslice != null && value.timeslice !== '' ? ` · TS=${value.timeslice}` : ''}
             {' '}· {displayUnit}
             {canChangeAgrupacion ? ` · ${agrupacionLabel}` : ''}

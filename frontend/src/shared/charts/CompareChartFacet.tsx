@@ -829,6 +829,7 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
       if (sel.region && sel.agrupar_por !== 'REGION') {
         payload.region = sel.region;
       }
+      if (sel.combustible) payload.combustible = sel.combustible;
       if (serverFacetExport.scenarioAliases && Object.keys(serverFacetExport.scenarioAliases).some(k => serverFacetExport.scenarioAliases![Number(k)]?.trim())) {
         payload.job_display_overrides = JSON.stringify(serverFacetExport.scenarioAliases);
       }
