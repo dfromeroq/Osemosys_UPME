@@ -265,6 +265,7 @@ export const simulationApi = {
       variable?: string;
       agrupar_por?: string;
       region?: string;
+      combustible?: string;
       timeslice?: string;
     },
   ) {
@@ -274,6 +275,11 @@ export const simulationApi = {
 
   async getJobTimeslices(jobId: number): Promise<string[]> {
     const { data } = await httpClient.get<string[]>(`/visualizations/${jobId}/timeslices`);
+    return data;
+  },
+
+  async getJobFuels(jobId: number, params?: { tipo?: string; sub_filtro?: string; loc?: string; region?: string }): Promise<string[]> {
+    const { data } = await httpClient.get<string[]>(`/visualizations/${jobId}/fuels`, { params });
     return data;
   },
 
@@ -303,6 +309,7 @@ export const simulationApi = {
     if (selection.loc) params.loc = selection.loc;
     if (selection.variable) params.variable = selection.variable;
     if (selection.agrupar_por) params.agrupar_por = selection.agrupar_por;
+    if (selection.combustible) params.combustible = selection.combustible;
     if (options?.clean) params.clean = "true";
     // Solo aplican cuando view_mode === 'table'
     if (selection.viewMode === "table") {
@@ -363,6 +370,7 @@ export const simulationApi = {
     variable?: string;
     agrupar_por?: string;
     region?: string;
+    combustible?: string;
   }) {
     const { data } = await httpClient.get<CompareChartFacetResponse>(`/visualizations/chart-data/compare-facet`, { params });
     return data;
@@ -411,6 +419,7 @@ export const simulationApi = {
       series_order?: string;
       facet_placement?: string;
       region?: string;
+      combustible?: string;
       job_display_overrides?: string;
       exogenous_data?: string;
       exogenous_contaminantes_data?: string;
@@ -435,6 +444,7 @@ export const simulationApi = {
     if (params.series_order) q.series_order = params.series_order;
     if (params.facet_placement) q.facet_placement = params.facet_placement;
     if (params.region) q.region = params.region;
+    if (params.combustible) q.combustible = params.combustible;
     if (params.job_display_overrides) q.job_display_overrides = params.job_display_overrides;
     if (params.exogenous_data) q.exogenous_data = params.exogenous_data;
     if (params.exogenous_contaminantes_data) q.exogenous_contaminantes_data = params.exogenous_contaminantes_data;
