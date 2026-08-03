@@ -1635,6 +1635,8 @@ def build_chart_data(
     if combustible:
         comb_label = NOMBRES_COMBUSTIBLES.get(combustible, combustible)
         title += f" — {comb_label}"
+    if region and agrupar_por != "REGION":
+        title += f" — Región {region}"
 
     es_emision = cfg.get("es_emision", False)
     es_emision_kt = cfg.get("es_emision_kt", False)
