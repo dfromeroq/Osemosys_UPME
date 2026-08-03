@@ -735,6 +735,7 @@ def export_chart(
     variable: str | None = Query(None),
     agrupar_por: str | None = Query(None),
     combustible: str | None = Query(None, description="Filtro por FUEL (p.ej. 'NGS', 'DSL') — solo cuando agrupar_por='REGION'"),
+    region: str | None = Query(None, description="Filtro regional (AN..SO) para jobs REGIONAL"),
     fmt: str = Query("png", description="Formato: png, svg, csv o xlsx"),
     view_mode: str = Query(
         "column",
@@ -867,6 +868,7 @@ def export_chart(
             variable=variable,
             agrupar_por=agrupar_por,
             combustible=combustible,
+            region=region,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
