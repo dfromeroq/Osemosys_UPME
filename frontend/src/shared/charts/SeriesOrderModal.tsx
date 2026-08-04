@@ -4,9 +4,10 @@
  * serie en el orden deseado.
  *
  * Convención visual del proyecto:
- *   - El primer elemento del array de series queda **arriba** del stack
- *     (mismo orden que Highcharts con ``yAxis.reversedStacks=true`` por
- *     defecto, y que nuestros renders matplotlib que iteran ``reversed()``).
+ *   - El primer elemento del array de series queda **abajo** del stack
+ *     (Highcharts por defecto, ``yAxis.reversedStacks=false``), y aparece
+ *     primero en la leyenda (no se invierte la leyenda). La leyenda se lee
+ *     de abajo→arriba igual que el stack.
  *   - "Invertir orden" intercambia top↔bottom del stack.
  */
 import { useEffect, useMemo, useState } from "react";

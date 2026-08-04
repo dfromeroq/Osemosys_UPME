@@ -601,8 +601,9 @@ function FacetChart({
         align: "center",
         verticalAlign: "bottom",
         layout: "horizontal",
-        // Leyenda invertida respecto al stack (lectura abajo→arriba).
-        reversed: true,
+        // El orden de la leyenda coincide con el orden del stack (ver
+        // HighchartsChart.tsx). La primera serie queda en el fondo del stack
+        // y primero en la leyenda.
         itemStyle: { color: "#94a3b8", fontWeight: "normal", fontSize: "11pt" },
         itemHoverStyle: { color: "#f8fafc" },
       },
