@@ -22,7 +22,7 @@ import pandas as pd
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import OsemosysOutputParamValue, OsemosysParamValue, SimulationJob, Technology, Timeslice
+from app.models import OsemosysOutputParamValue, OsemosysParamValue, Region, SimulationJob, Technology, Timeslice
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -248,12 +248,19 @@ def _load_variable_data(
 
     # ── Construir DataFrame ──────────────────────────────────────────────
     if variable_name in _MAIN_TYPED_VARIABLES:
+        region_ids = {r.id_region for r, _ in rows if r.id_region is not None}
+        region_names = (
+            dict(db.query(Region.id, Region.name).filter(Region.id.in_(region_ids)).all())
+            if region_ids
+            else {}
+        )
         records = []
         for r, ts_code in rows:
             records.append(
                 {
                     "TECHNOLOGY": r.technology_name or "",
                     "FUEL": r.fuel_name or "",
+                    "REGION": region_names.get(r.id_region, "") if r.id_region is not None else "",
                     "TIMESLICE": ts_code or "",
                     "YEAR": r.year,
                     "VALUE": float(r.value),
