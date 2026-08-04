@@ -3505,8 +3505,9 @@ def _render_stacked_bar(
     legend_handles: list[_Line2D] = []
     legend_labels: list[str] = []
 
-    # Barras: círculos (orden invertido = primero arriba del stack)
-    for s in reversed(bar_series):
+    # Barras: círculos (mismo orden que la leyenda de facets — primera
+    # serie del array = primer ítem de leyenda)
+    for s in bar_series:
         legend_handles.append(
             _Line2D(
                 [0], [0],
@@ -3676,8 +3677,8 @@ def _render_line_chart(
     if not clean:
         ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
     # Orden de leyenda:
-    #   1) Series naturales en orden invertido (lectura abajo→arriba como
-    #      en las columnas apiladas — convención del proyecto).
+    #   1) Series naturales en su orden natural (misma convención que la
+    #      leyenda del app — primera serie del array primero).
     #   2) Series manuales (sintéticas) SIEMPRE al final, en su orden natural.
     _line_handles, _line_labels = ax.get_legend_handles_labels()
     _synth_flags = [bool(getattr(s, "is_synthetic", False)) for s in chart.series]
@@ -3687,7 +3688,7 @@ def _render_line_chart(
     _synth = [
         (h, l) for (h, l, f) in zip(_line_handles, _line_labels, _synth_flags) if f
     ]
-    _ordered = list(reversed(_natural)) + _synth
+    _ordered = _natural + _synth
     ax.legend(
         [h for h, _ in _ordered],
         [l for _, l in _ordered],
