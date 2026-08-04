@@ -33,10 +33,10 @@ REGIONAL_PREFIXES: frozenset[str] = frozenset({"AN", "CA", "IN", "NE", "OR", "SE
 REGION_LABELS: dict[str, str] = {
     "AN": "Antioquia",
     "CA": "Caribe",
-    "IN": "Interior",
-    "NE": "Noreste",
+    "IN": "Insular",
+    "NE": "Nordeste",
     "OR": "Oriente",
-    "SE": "Suroriente",
+    "SE": "Sureste",
     "SO": "Suroccidente",
 }
 
