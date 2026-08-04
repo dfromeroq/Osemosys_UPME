@@ -89,10 +89,10 @@ interface Props {
 export const REGION_OPTIONS: { value: string; label: string }[] = [
   { value: 'AN', label: 'Antioquia (AN)' },
   { value: 'CA', label: 'Caribe (CA)' },
-  { value: 'IN', label: 'Interior (IN)' },
-  { value: 'NE', label: 'Noreste (NE)' },
+  { value: 'IN', label: 'Insular (IN)' },
+  { value: 'NE', label: 'Nordeste (NE)' },
   { value: 'OR', label: 'Oriente (OR)' },
-  { value: 'SE', label: 'Suroriente (SE)' },
+  { value: 'SE', label: 'Sureste (SE)' },
   { value: 'SO', label: 'Suroccidente (SO)' },
 ];
 
