@@ -4238,26 +4238,13 @@ def render_comparison_facet_figure_bytes(
                 seen_names.add(s.name)
                 legend_order.append((s.name, s.color))
 
-    # Ordenamiento de la leyenda compartida.
-    rank_natural: dict[str, int] = {}
-    for facet in facets:
-        for i, s in enumerate(facet.series):
-            current = rank_natural.get(s.name)
-            if current is None or i < current:
-                rank_natural[s.name] = i
+    # La leyenda compartida sigue el orden de primera aparición entre facets
+    # (mismo algoritmo que buildSharedLegendItems en el frontend). Con un
+    # orden custom se usa ese como criterio principal y las series fuera de él
+    # conservan su orden natural al final (sort estable).
     if series_order:
         custom_rank: dict[str, int] = {n: i for i, n in enumerate(series_order)}
-        custom_fallback = len(series_order)
-
-        def _legend_key(item: tuple[str, str]) -> tuple[int, int]:
-            name = item[0]
-            if name in custom_rank:
-                return (0, custom_rank[name])
-            return (1, rank_natural.get(name, 10**9))
-
-        legend_order.sort(key=_legend_key)
-    else:
-        legend_order.sort(key=lambda x: rank_natural.get(x[0], 10**9))
+        legend_order.sort(key=lambda item: custom_rank.get(item[0], len(series_order)))
 
     n_leg_items = len(legend_order)
     legend_labels_full = [name for name, _c in legend_order]
