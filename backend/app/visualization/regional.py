@@ -147,16 +147,24 @@ def transform_regional_df(
     if "FUEL" in df.columns:
         df["FUEL"] = df["FUEL"].astype(str).map(strip_region)
 
+    # Columna REGION ya presente con valores (variables tipadas p.ej.
+    # AnnualEmissions) — la región no es derivable de prefijos de TECHNOLOGY.
+    region_ok = "REGION" in df.columns and bool(df["REGION"].notna().any())
+
     # Caso (c): agrupar por región
     if agrupar_por == "REGION":
-        df["REGION"] = region_series
+        if not region_ok:
+            df["REGION"] = region_series
         df = df.dropna(subset=["REGION"]).copy()
         df["TECHNOLOGY"] = df["TECHNOLOGY"].astype(str).map(strip_region)
         return df
 
     # Caso (b): filtrar por región específica
     if region_filter and region_filter in REGIONAL_PREFIXES:
-        df = df.loc[region_series == region_filter].copy()
+        if region_ok:
+            df = df.loc[df["REGION"] == region_filter].copy()
+        else:
+            df = df.loc[region_series == region_filter].copy()
         df["TECHNOLOGY"] = df["TECHNOLOGY"].astype(str).map(strip_region)
         return df
 

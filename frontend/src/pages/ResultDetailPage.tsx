@@ -24,7 +24,7 @@ import type {
 import { paths } from '../routes/paths';
 import { RunDisplayNameEditor } from '../features/simulation/components/RunDisplayNameEditor';
 import { FavoriteStarButton } from '../features/simulation/components/FavoriteStarButton';
-import { ChartSelector, getChartLabel, type ChartSelection } from '../shared/charts/ChartSelector';
+import { ChartSelector, getChartLabel, REGION_OPTIONS, type ChartSelection } from '../shared/charts/ChartSelector';
 import { getDefaultChartSelection } from '../shared/charts/defaultChartSelection';
 import { ScenarioComparer, type CompareViewMode } from '../shared/charts/ScenarioComparer';
 import { HighchartsChart } from '../shared/charts/HighchartsChart';
@@ -43,6 +43,7 @@ import {
 } from '../shared/charts/SeriesOrderModal';
 import { CompareChart } from '../shared/charts/CompareChart';
 import { CompareChartFacet } from '../shared/charts/CompareChartFacet';
+import { downloadChartFromServer } from '../shared/charts/serverChartExport';
 import { ParetoChart } from '../shared/charts/ParetoChart';
 import type {
   ChartBarOrientation,
@@ -622,6 +623,7 @@ export function ResultDetailPage() {
   /** Datos exógenos para contaminantes criterio (BC, CO, etc.) */
   const [contaminantesExogenousData, setContaminantesExogenousData] = useState<ContaminantesExogenousConfig | null>(null);
   const [showContaminantesExogenousEditor, setShowContaminantesExogenousEditor] = useState(false);
+  const [downloadingAllRegions, setDownloadingAllRegions] = useState(false);
   /**
    * Flujo "crear gráfica y agregarla al reporte". Si la URL tiene el query
    * param ?addToReport=<id>, el botón Guardar cambia de etiqueta y al guardar
@@ -1291,6 +1293,22 @@ export function ResultDetailPage() {
       setExportingType(null);
     }
   }, [currentRunId, chartSelection.un]);
+
+  const handleDownloadAllRegions = useCallback(async () => {
+    if (!currentRunId || downloadingAllRegions) return;
+    setDownloadingAllRegions(true);
+    try {
+      const sel = chartSelection;
+      for (const r of REGION_OPTIONS) {
+        await downloadChartFromServer(currentRunId, { ...sel, region: r.value }, 'png');
+      }
+    } catch (err) {
+      console.error('Error exporting all regions', err);
+      alert('Error al descargar las regiones. Intenta de nuevo.');
+    } finally {
+      setDownloadingAllRegions(false);
+    }
+  }, [currentRunId, chartSelection, downloadingAllRegions]);
 
   const handleExportCsvZip = useCallback(async () => {
     setShowExportMenu(false);
@@ -2366,6 +2384,8 @@ export function ResultDetailPage() {
             isRegionalJob={runMeta?.simulation_type === 'REGIONAL'}
             availableTimeslices={availableTimeslices}
             availableFuels={availableFuels}
+            onDownloadAllRegions={isComparing ? undefined : handleDownloadAllRegions}
+            downloadingAllRegions={downloadingAllRegions}
           />
 
           {/* Series manuales overlay: aplican en gráficas de línea y área. */}

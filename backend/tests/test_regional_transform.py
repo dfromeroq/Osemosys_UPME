@@ -277,3 +277,24 @@ def test_df_sin_columna_fuel_no_falla():
     out = transform_regional_df(df, region_filter=None, agrupar_por=None)
     assert "FUEL" not in out.columns
     assert set(out["TECHNOLOGY"].unique()) == {"PWRDIST"}
+
+
+def test_columna_region_preexistente_se_preserva():
+    """Variables tipadas (p.ej. AnnualEmissions, sin TECHNOLOGY prefijada) que
+    ya traen una columna REGION con valores: casos (b) y (c) la usan en vez de
+    derivarla de prefijos de TECHNOLOGY."""
+    df = pd.DataFrame(
+        [
+            {"TECHNOLOGY": "", "REGION": "AN", "YEAR": 2025, "VALUE": 1.0},
+            {"TECHNOLOGY": "", "REGION": "CA", "YEAR": 2025, "VALUE": 2.0},
+            {"TECHNOLOGY": "", "REGION": "SO", "YEAR": 2025, "VALUE": 3.0},
+        ]
+    )
+
+    out_c = transform_regional_df(df, region_filter=None, agrupar_por="REGION")
+    assert set(out_c["REGION"].unique()) == {"AN", "CA", "SO"}
+    assert len(out_c) == 3
+
+    out_b = transform_regional_df(df, region_filter="CA", agrupar_por=None)
+    assert len(out_b) == 1
+    assert out_b.iloc[0]["REGION"] == "CA"
