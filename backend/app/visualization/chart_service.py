@@ -22,7 +22,7 @@ import pandas as pd
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import OsemosysOutputParamValue, OsemosysParamValue, SimulationJob, Technology, Timeslice
+from app.models import OsemosysOutputParamValue, OsemosysParamValue, Region, SimulationJob, Technology, Timeslice
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -248,12 +248,19 @@ def _load_variable_data(
 
     # ── Construir DataFrame ──────────────────────────────────────────────
     if variable_name in _MAIN_TYPED_VARIABLES:
+        region_ids = {r.id_region for r, _ in rows if r.id_region is not None}
+        region_names = (
+            dict(db.query(Region.id, Region.name).filter(Region.id.in_(region_ids)).all())
+            if region_ids
+            else {}
+        )
         records = []
         for r, ts_code in rows:
             records.append(
                 {
                     "TECHNOLOGY": r.technology_name or "",
                     "FUEL": r.fuel_name or "",
+                    "REGION": region_names.get(r.id_region, "") if r.id_region is not None else "",
                     "TIMESLICE": ts_code or "",
                     "YEAR": r.year,
                     "VALUE": float(r.value),
@@ -1635,6 +1642,8 @@ def build_chart_data(
     if combustible:
         comb_label = NOMBRES_COMBUSTIBLES.get(combustible, combustible)
         title += f" — {comb_label}"
+    if region and agrupar_por != "REGION":
+        title += f" — Región {region}"
 
     es_emision = cfg.get("es_emision", False)
     es_emision_kt = cfg.get("es_emision_kt", False)
@@ -3496,8 +3505,9 @@ def _render_stacked_bar(
     legend_handles: list[_Line2D] = []
     legend_labels: list[str] = []
 
-    # Barras: círculos (orden invertido = primero arriba del stack)
-    for s in reversed(bar_series):
+    # Barras: círculos (mismo orden que la leyenda de facets — primera
+    # serie del array = primer ítem de leyenda)
+    for s in bar_series:
         legend_handles.append(
             _Line2D(
                 [0], [0],
@@ -3667,8 +3677,8 @@ def _render_line_chart(
     if not clean:
         ax.set_title(title, fontsize=28, fontweight="bold", pad=12)
     # Orden de leyenda:
-    #   1) Series naturales en orden invertido (lectura abajo→arriba como
-    #      en las columnas apiladas — convención del proyecto).
+    #   1) Series naturales en su orden natural (misma convención que la
+    #      leyenda del app — primera serie del array primero).
     #   2) Series manuales (sintéticas) SIEMPRE al final, en su orden natural.
     _line_handles, _line_labels = ax.get_legend_handles_labels()
     _synth_flags = [bool(getattr(s, "is_synthetic", False)) for s in chart.series]
@@ -3678,7 +3688,7 @@ def _render_line_chart(
     _synth = [
         (h, l) for (h, l, f) in zip(_line_handles, _line_labels, _synth_flags) if f
     ]
-    _ordered = list(reversed(_natural)) + _synth
+    _ordered = _natural + _synth
     ax.legend(
         [h for h, _ in _ordered],
         [l for _, l in _ordered],
@@ -4228,26 +4238,13 @@ def render_comparison_facet_figure_bytes(
                 seen_names.add(s.name)
                 legend_order.append((s.name, s.color))
 
-    # Ordenamiento de la leyenda compartida.
-    rank_natural: dict[str, int] = {}
-    for facet in facets:
-        for i, s in enumerate(facet.series):
-            current = rank_natural.get(s.name)
-            if current is None or i < current:
-                rank_natural[s.name] = i
+    # La leyenda compartida sigue el orden de primera aparición entre facets
+    # (mismo algoritmo que buildSharedLegendItems en el frontend). Con un
+    # orden custom se usa ese como criterio principal y las series fuera de él
+    # conservan su orden natural al final (sort estable).
     if series_order:
         custom_rank: dict[str, int] = {n: i for i, n in enumerate(series_order)}
-        custom_fallback = len(series_order)
-
-        def _legend_key(item: tuple[str, str]) -> tuple[int, int]:
-            name = item[0]
-            if name in custom_rank:
-                return (0, custom_rank[name])
-            return (1, rank_natural.get(name, 10**9))
-
-        legend_order.sort(key=_legend_key)
-    else:
-        legend_order.sort(key=lambda x: rank_natural.get(x[0], 10**9))
+        legend_order.sort(key=lambda item: custom_rank.get(item[0], len(series_order)))
 
     n_leg_items = len(legend_order)
     legend_labels_full = [name for name, _c in legend_order]

@@ -80,16 +80,19 @@ interface Props {
   /** Códigos de combustible (FUEL) presentes en el job. Se usa para el
    * selector que reemplaza al de región cuando agrupar_por='REGION'. */
   availableFuels?: string[];
+  /** Descarga la gráfica actual para las 7 regiones (modo sin comparación). */
+  onDownloadAllRegions?: (() => void) | undefined;
+  downloadingAllRegions?: boolean;
 }
 
 /** Nombres legibles para las 7 regiones del SIN (debe coincidir con backend). */
-const REGION_OPTIONS: { value: string; label: string }[] = [
+export const REGION_OPTIONS: { value: string; label: string }[] = [
   { value: 'AN', label: 'Antioquia (AN)' },
   { value: 'CA', label: 'Caribe (CA)' },
-  { value: 'IN', label: 'Interior (IN)' },
-  { value: 'NE', label: 'Noreste (NE)' },
+  { value: 'IN', label: 'Insular (IN)' },
+  { value: 'NE', label: 'Nordeste (NE)' },
   { value: 'OR', label: 'Oriente (OR)' },
-  { value: 'SE', label: 'Suroriente (SE)' },
+  { value: 'SE', label: 'Sureste (SE)' },
   { value: 'SO', label: 'Suroccidente (SO)' },
 ];
 
@@ -220,16 +223,17 @@ const AGRUPACION_OPTIONS: { value: string; label: string; description: string }[
     label: 'Hidrógeno Verde',
     description: 'Agrupa electrolizadores (UPSALK + UPSPEM) en una sola categoría',
   },
+  {
+    value: 'EMISION',
+    label: 'Por tipo de emisión',
+    description: 'Una serie por cada contaminante (CO₂, CH₄, N₂O, BC, CO, PM…)',
+  },
 ];
 
 // IDs de charts que NO deben mostrar el selector de agrupación
 // (su agrupación está fija en el backend o no tiene sentido cambiarlo)
 const CHARTS_SIN_AGRUPACION = new Set([
   'factor_planta',           // es_factor_planta → fijo en backend
-  'emisiones_total',         // agrupa por YEAR → fijo
-  'emisiones_sectorial',     // agrupa por SECTOR → fijo
-  'emisiones_gei',           // agrupa por SECTOR (incluye PWR) → fijo
-  'emisiones_contaminantes', // agrupa por EMISION → fijo
   'h2_produccion_verde',     // H2_PRODUCCION fijo en backend
   'h2_consumo',              // H2_CONSUMO fijo en backend
 ]);
@@ -452,10 +456,10 @@ const STATIC_MENU: Module[] = [
     emoji: '🌿',
     label: 'Emisiones',
     charts: [
-      { id: 'emisiones_total', label: 'Emisiones - Total Anual - AnnualEmissions' },
-      { id: 'emisiones_sectorial', label: 'Emisiones - Por Sector - AnnualTechnologyEmission', soportaPorcentaje: true },
-      { id: 'emisiones_gei', label: 'Emisiones GEI por Sector (CO₂, CH₄, N₂O)', soportaPorcentaje: true },
-      { id: 'emisiones_contaminantes', label: 'Emisiones Contaminantes Criterio (BC, CO, COV, NH₃, NOₓ, PM10, PM2.5, SOₓ)', soportaPorcentaje: true },
+      { id: 'emisiones_total', label: 'Emisiones - Total Anual - AnnualEmissions', allowedGroupings: ['REGION'] },
+      { id: 'emisiones_sectorial', label: 'Emisiones - Por Sector - AnnualTechnologyEmission', soportaPorcentaje: true, allowedGroupings: ['SECTOR', 'TECNOLOGIA', 'EMISION'], defaultGrouping: 'SECTOR' },
+      { id: 'emisiones_gei', label: 'Emisiones GEI por Sector (CO₂, CH₄, N₂O)', soportaPorcentaje: true, allowedGroupings: ['SECTOR', 'TECNOLOGIA', 'EMISION'], defaultGrouping: 'SECTOR' },
+      { id: 'emisiones_contaminantes', label: 'Emisiones Contaminantes Criterio (BC, CO, COV, NH₃, NOₓ, PM10, PM2.5, SOₓ)', soportaPorcentaje: true, allowedGroupings: ['EMISION', 'SECTOR', 'TECNOLOGIA'], defaultGrouping: 'EMISION' },
     ],
   },
   {
@@ -584,6 +588,8 @@ export function ChartSelector({
   isRegionalJob = false,
   availableTimeslices,
   availableFuels,
+  onDownloadAllRegions,
+  downloadingAllRegions = false,
 }: Props) {
   const { menu: apiMenu, loading: menuLoading, error: menuError } = useChartMenu();
   const MENU = apiMenu as Module[];
@@ -668,6 +674,10 @@ export function ChartSelector({
           : (item.defaultGrouping ?? item.allowedGroupings[0] ?? 'TECNOLOGIA');
       } else {
         newGrouping = prev;
+      }
+      // REGION solo aplica en jobs REGIONAL; en modo nacional no se fuerza.
+      if (newGrouping === 'REGION' && !isRegionalJob) {
+        newGrouping = undefined;
       }
     }
 
@@ -887,6 +897,9 @@ export function ChartSelector({
             ? baseOptions
             : [...baseOptions, AGRUPACION_OPTIONS.find(o => o.value === 'REGION')!])
           : baseOptions.filter(o => o.value !== 'REGION');
+        // Sin opciones visibles (p.ej. emisiones_total en modo nacional, cuyo
+        // único grouping es REGION) → no renderizar el selector.
+        if (allowedOptions.length === 0) return null;
         return (
           <div>
             <p style={labelStyle}>Agrupar por</p>
@@ -909,7 +922,8 @@ export function ChartSelector({
                               : opt.value === 'REGION' ? '🗺️'
                                 : opt.value === 'MODO' ? '🚗'
                                   : opt.value === 'ELECTROLISIS' ? '🧪'
-                                    : '🔗'}
+                                    : opt.value === 'EMISION' ? '☁️'
+                                      : '🔗'}
                     </span>
                     <span>{opt.label}</span>
                   </button>
@@ -1219,21 +1233,42 @@ export function ChartSelector({
         )}
 
         {isRegionalJob && value.agrupar_por !== 'REGION' && (
-          <label style={{ display: 'grid', gap: 6 }}>
-            <p style={labelStyle}>Región</p>
-            <select
-              style={selectStyle}
-              value={value.region ?? ''}
-              onChange={(e) => onChange({ ...value, region: e.target.value })}
-            >
-              <option value="">Todas (acumulado nacional)</option>
-              {REGION_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </label>
+          <div style={{ display: 'grid', gap: 6 }}>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <p style={labelStyle}>Región</p>
+              <select
+                style={selectStyle}
+                value={value.region ?? ''}
+                onChange={(e) => onChange({ ...value, region: e.target.value })}
+              >
+                <option value="">Todas (acumulado nacional)</option>
+                {REGION_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </label>
+            {onDownloadAllRegions && (
+              <button
+                type="button"
+                disabled={downloadingAllRegions}
+                onClick={onDownloadAllRegions}
+                style={{
+                  alignSelf: 'start',
+                  cursor: downloadingAllRegions ? 'wait' : 'pointer',
+                  fontSize: 12,
+                  padding: '5px 10px',
+                  borderRadius: 6,
+                  border: '1px solid rgba(148,163,184,0.35)',
+                  background: 'transparent',
+                  color: 'inherit',
+                }}
+              >
+                {downloadingAllRegions ? 'Descargando…' : 'Descargar todas las regiones'}
+              </button>
+            )}
+          </div>
         )}
-        {isRegionalJob && value.agrupar_por === 'REGION' && Array.isArray(availableFuels) && availableFuels.length >= 2 && (
+        {isRegionalJob && value.agrupar_por === 'REGION' && currentItem?.id !== 'emisiones_total' && Array.isArray(availableFuels) && availableFuels.length >= 2 && (
           <label style={{ display: 'grid', gap: 6 }}>
             <p style={labelStyle}>Combustible</p>
             <select

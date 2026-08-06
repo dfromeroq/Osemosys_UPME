@@ -263,10 +263,10 @@ export const HighchartsChart: React.FC<HighchartsChartProps> = ({
         align: 'center',
         verticalAlign: 'bottom',
         layout: 'horizontal',
-        // Invierte el orden de la leyenda respecto al stack: la primera serie
-        // (que queda arriba del stack) aparece al final de la leyenda. Así la
-        // leyenda se lee de abajo hacia arriba igual que las barras.
-        reversed: true,
+        // El orden de la leyenda coincide con el orden del stack: la primera
+        // serie (primer elemento del array pasado por el backend) queda en el
+        // fondo del stack y aparece primero en la leyenda, leyéndose de
+        // abajo→arriba igual que las barras.
         itemStyle: { color: '#94a3b8', fontWeight: 'normal', fontSize: fb('11pt') },
         itemHoverStyle: { color: '#f8fafc' },
       },
