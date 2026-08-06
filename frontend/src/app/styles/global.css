@@ -238,6 +238,15 @@ select.field__input optgroup {
   gap: 20px;
 }
 
+.authAside__logo {
+  display: block;
+  width: min(170px, 100%);
+  height: auto;
+  padding: 6px;
+  border-radius: 8px;
+  background: #fff;
+}
+
 .authAside__eyebrow {
   margin: 0;
   font-size: 11px;

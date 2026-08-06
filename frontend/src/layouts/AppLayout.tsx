@@ -11,6 +11,7 @@ import { useAuth } from "@/features/auth/hooks/useAuth";
 import { Button } from "@/shared/components/Button";
 import { useCurrentUser } from "@/app/providers/useCurrentUser";
 import { canAccessCatalogsArea } from "@/features/catalogs/catalogAccess";
+import logoUpme from "@/assets/logo_upme.png";
 
 const SIDEBAR_KEY = "app.sidebar.collapsed";
 
@@ -69,6 +70,11 @@ export function AppLayout() {
             }}
           >
             <div>
+              <img
+                src={logoUpme}
+                alt="UPME"
+                style={{ display: "block", width: "132px", maxWidth: "100%", height: "auto", margin: "0 auto 10px", borderRadius: 6 }}
+              />
               <h2 style={{ margin: 0, fontSize: 17 }}>OSeMOSYS UI</h2>
               <p style={{ margin: "6px 0 0", fontSize: 12, opacity: 0.75 }}>
                 Planeación y simulación energética
