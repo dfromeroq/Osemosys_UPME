@@ -73,7 +73,7 @@ export function AppLayout() {
               <img
                 src={logoUpme}
                 alt="UPME"
-                style={{ display: "block", width: "132px", maxWidth: "100%", height: "auto", marginBottom: 10, borderRadius: 6 }}
+                style={{ display: "block", width: "132px", maxWidth: "100%", height: "auto", margin: "0 auto 10px", borderRadius: 6 }}
               />
               <h2 style={{ margin: 0, fontSize: 17 }}>OSeMOSYS UI</h2>
               <p style={{ margin: "6px 0 0", fontSize: 12, opacity: 0.75 }}>
