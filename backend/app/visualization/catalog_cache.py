@@ -38,6 +38,11 @@ logger = logging.getLogger(__name__)
 _lock = threading.Lock()
 _cache: "CatalogCache | None" = None
 
+_STARTSWITH_FN_OVERRIDES: frozenset[str] = frozenset({
+    "_filtro_imp_oil",
+    "_filtro_exp_oil",
+})
+
 
 @dataclass
 class CatalogCache:
@@ -199,7 +204,7 @@ def _legacy_cfg_from_row(
     resolver: FilterResolver,
 ) -> dict[str, Any]:
     raw = dict(row.filtro_params_json or {})
-    raw.pop("_filter_fn", None)
+    fn_name = raw.pop("_filter_fn", None)
     spec = raw
     if not spec and row.filtro_kind == "startswith":
         spec = {"kind": "startswith"}
@@ -211,6 +216,9 @@ def _legacy_cfg_from_row(
             spec["entity"] = entity
     else:
         spec.setdefault("kind", row.filtro_kind or "group")
+
+    if fn_name in _STARTSWITH_FN_OVERRIDES:
+        spec["kind"] = "group_startswith"
 
     cfg: dict[str, Any] = {
         "variable_default": row.variable_default,
