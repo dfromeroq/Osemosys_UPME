@@ -418,6 +418,7 @@ def get_subfiltro_maps_from_db(db: Session) -> dict[str, dict[str, str]]:
         if not dict_name:
             continue
         out.setdefault(dict_name, {})[sub_code] = group_code
-    if not out:
-        out = _subfiltro_group_maps()
+    legacy = _subfiltro_group_maps()
+    for dict_name, mapping in legacy.items():
+        out.setdefault(dict_name, {}).update(mapping)
     return out
