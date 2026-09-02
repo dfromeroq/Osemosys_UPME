@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { FileDown } from "lucide-react";
 import { useToast } from "@/app/providers/useToast";
 import { simulationApi } from "@/features/simulation/api/simulationApi";
-import { Button } from "@/shared/components/Button";
+import { CompareExportDropdown } from "@/shared/charts/CompareExportDropdown";
 import { downloadBlob } from "@/shared/utils/downloadBlob";
 import Highcharts from "./highchartsSetup";
 import {
@@ -140,19 +140,25 @@ function useMediaMinWidth(px: number): boolean {
 function FacetExportKebab({
   disabled,
   showServerPng,
+  showServerXlsx,
   onExportPng,
   onExportSvg,
+  onExportXlsx,
   exportingPng,
   exportingSvg,
+  exportingXlsx,
   exportClean,
   onToggleClean,
 }: {
   disabled: boolean;
   showServerPng: boolean;
+  showServerXlsx?: boolean;
   onExportPng: () => Promise<void> | void;
   onExportSvg: () => Promise<void> | void;
+  onExportXlsx?: () => Promise<void> | void;
   exportingPng: boolean;
   exportingSvg: boolean;
+  exportingXlsx?: boolean;
   exportClean: boolean;
   onToggleClean: () => void;
 }) {
@@ -196,6 +202,20 @@ function FacetExportKebab({
             >
               <FileDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
               {exportingPng ? "Generando PNG…" : "Descargar PNG"}
+            </button>
+          ) : null}
+          {showServerXlsx && onExportXlsx ? (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={async () => {
+                setOpen(false);
+                await onExportXlsx();
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800/80 disabled:opacity-50"
+            >
+              <FileDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {exportingXlsx ? "Generando XLSX…" : "Descargar XLSX"}
             </button>
           ) : null}
           <label className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800/80">
@@ -793,10 +813,11 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
   const { push } = useToast();
   const [exportingFacetSvg, setExportingFacetSvg] = useState(false);
   const [exportingFacetPng, setExportingFacetPng] = useState(false);
+  const [exportingFacetXlsx, setExportingFacetXlsx] = useState(false);
   const [facetExportClean, setFacetExportClean] = useState(false);
   const [facetExportFilenameMode, setFacetExportFilenameMode] =
     useState<CompareFacetExportFilenameMode>("result");
-  const exportBusy = exportingFacetSvg || exportingFacetPng;
+  const exportBusy = exportingFacetSvg || exportingFacetPng || exportingFacetXlsx;
   const exportFilenameSelectId = React.useId();
 
   const handleExportFacetPngServer = async (): Promise<void> => {
@@ -865,6 +886,79 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
       push(msg, "error");
     } finally {
       setExportingFacetPng(false);
+    }
+  };
+
+  const handleExportFacetXlsxServer = async (): Promise<void> => {
+    if (!serverFacetExport || serverFacetExport.jobIds.length < 2) {
+      push("Se necesitan al menos dos escenarios seleccionados.", "error");
+      return;
+    }
+    setExportingFacetXlsx(true);
+    try {
+      const sel = serverFacetExport.selection;
+      const legend_title =
+        serverFacetExport.legendTitle ?? facetExportLegendTitleFromSelection(sel);
+      const esPorcentaje = sel.viewMode === 'porcentaje';
+      const payload: Parameters<typeof simulationApi.exportCompareXlsx>[0] = {
+        job_ids: serverFacetExport.jobIds.join(","),
+        tipo: sel.tipo,
+        un: sel.un,
+        compare_mode: "facet",
+      };
+      if (esPorcentaje) payload.es_porcentaje = 'true';
+      if (sel.viewMode && sel.viewMode !== 'column' && sel.viewMode !== 'porcentaje') {
+        payload.view_mode = sel.viewMode;
+      }
+      if (sel.sub_filtro) payload.sub_filtro = sel.sub_filtro;
+      if (sel.loc) payload.loc = sel.loc;
+      if (sel.variable) payload.variable = sel.variable;
+      if (sel.agrupar_por) payload.agrupar_por = sel.agrupar_por;
+      if (legend_title) payload.legend_title = legend_title;
+      if (facetExportClean) payload.clean = true;
+      if (sel.customSeriesOrder && sel.customSeriesOrder.length > 0) {
+        payload.series_order = sel.customSeriesOrder.join(",");
+      }
+      if (sel.region && sel.agrupar_por !== 'REGION') {
+        payload.region = sel.region;
+      }
+      if (sel.combustible) payload.combustible = sel.combustible;
+      if (yAxisMin != null) payload.y_axis_min = yAxisMin;
+      if (yAxisMax != null) payload.y_axis_max = yAxisMax;
+      if (serverFacetExport.scenarioAliases && Object.keys(serverFacetExport.scenarioAliases).some(k => serverFacetExport.scenarioAliases![Number(k)]?.trim())) {
+        payload.job_display_overrides = JSON.stringify(serverFacetExport.scenarioAliases);
+      }
+      if (serverFacetExport.exogenousData) {
+        payload.exogenous_data = serverFacetExport.exogenousData;
+      }
+      if (serverFacetExport.exogenousContaminantesData) {
+        payload.exogenous_contaminantes_data = serverFacetExport.exogenousContaminantesData;
+      }
+      if (hiddenSeriesNames.size > 0) {
+        payload.hidden_series = Array.from(hiddenSeriesNames).join(",");
+      }
+      payload.facet_placement = facetPlacement;
+      const { blob, filename } = await simulationApi.exportCompareXlsx(payload);
+      downloadBlob(blob, filename);
+      push("XLSX descargado (comparación + hojas por escenario).", "success");
+    } catch (err) {
+      console.error(err);
+      let msg = "No se pudo generar el XLSX en el servidor.";
+      if (err && typeof err === 'object' && 'response' in err) {
+        const resp = (err as { response?: { data?: Blob | { detail?: string } } }).response;
+        if (resp?.data instanceof Blob) {
+          try {
+            const text = await resp.data.text();
+            const parsed = JSON.parse(text) as { detail?: string };
+            if (parsed.detail) msg = parsed.detail;
+          } catch { /* ignore */ }
+        } else if (resp?.data && typeof resp.data === 'object' && 'detail' in resp.data) {
+          msg = String(resp.data.detail);
+        }
+      }
+      push(msg, "error");
+    } finally {
+      setExportingFacetXlsx(false);
     }
   };
 
@@ -993,6 +1087,39 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
     }
   };
 
+  const facetExportOptions = useMemo(() => {
+    const opts: Parameters<typeof CompareExportDropdown>[0]['options'] = [];
+    if (serverFacetExport && serverFacetExport.jobIds.length > 1) {
+      opts.push({
+        id: 'png',
+        label: 'PNG (servidor)',
+        busyLabel: 'Generando PNG…',
+        busy: exportingFacetPng,
+        onClick: () => handleExportFacetPngServer(),
+      });
+      opts.push({
+        id: 'xlsx',
+        label: 'XLSX',
+        busyLabel: 'Generando XLSX…',
+        busy: exportingFacetXlsx,
+        onClick: () => handleExportFacetXlsxServer(),
+      });
+    }
+    opts.push({
+      id: 'svg',
+      label: 'SVG (todas las facetas)',
+      busyLabel: 'Generando SVG…',
+      busy: exportingFacetSvg,
+      onClick: () => handleExportCombinedSvg(),
+    });
+    return opts;
+  }, [
+    serverFacetExport,
+    exportingFacetPng,
+    exportingFacetXlsx,
+    exportingFacetSvg,
+  ]);
+
   return (
     <div className="w-full space-y-4">
       <div className="space-y-4">
@@ -1005,10 +1132,13 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
               <FacetExportKebab
                 disabled={exportBusy}
                 showServerPng={Boolean(serverFacetExport && serverFacetExport.jobIds.length > 1)}
+                showServerXlsx={Boolean(serverFacetExport && serverFacetExport.jobIds.length > 1)}
                 onExportPng={handleExportFacetPngServer}
                 onExportSvg={handleExportCombinedSvg}
+                onExportXlsx={handleExportFacetXlsxServer}
                 exportingPng={exportingFacetPng}
                 exportingSvg={exportingFacetSvg}
+                exportingXlsx={exportingFacetXlsx}
                 exportClean={facetExportClean}
                 onToggleClean={() => setFacetExportClean((v) => !v)}
               />
@@ -1046,28 +1176,12 @@ export const CompareChartFacet: React.FC<CompareChartFacetProps> = ({
                       />
                       Limpia
                     </label>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      disabled={exportBusy}
-                      onClick={() => void handleExportFacetPngServer()}
-                      className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-emerald-700/50 bg-emerald-950/40 px-3 py-2 text-xs font-semibold text-emerald-100 hover:border-emerald-600 hover:bg-emerald-900/50 disabled:opacity-50"
-                    >
-                      <FileDown className="h-4 w-4 shrink-0" aria-hidden />
-                      {exportingFacetPng ? "Generando PNG…" : "Descargar PNG (servidor)"}
-                    </Button>
                   </>
                 ) : null}
-                <Button
-                  type="button"
-                  variant="ghost"
+                <CompareExportDropdown
                   disabled={exportBusy}
-                  onClick={handleExportCombinedSvg}
-                  className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs font-semibold text-slate-200 hover:border-slate-600 hover:bg-slate-800/80 disabled:opacity-50"
-                >
-                  <FileDown className="h-4 w-4 shrink-0" aria-hidden />
-                  {exportingFacetSvg ? "Generando SVG…" : "Descargar SVG (todas las facetas)"}
-                </Button>
+                  options={facetExportOptions}
+                />
               </>
             )}
           </div>

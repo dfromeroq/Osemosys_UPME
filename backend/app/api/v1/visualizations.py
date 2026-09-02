@@ -556,6 +556,145 @@ def export_comparison_by_year_image(
     )
 
 
+@router.get("/export-compare-xlsx")
+def export_comparison_xlsx(
+    job_ids: str = Query(..., description="Job IDs separados por coma (max 10)"),
+    tipo: str = Query(...),
+    un: str = Query("PJ"),
+    compare_mode: str = Query(
+        "facet",
+        description="Modo de comparación: facet, by-year, by-year-alt, line-total",
+    ),
+    years_to_plot: str = Query("2024,2030,2050", description="Años a plotear separados por coma"),
+    sub_filtro: str | None = Query(None),
+    loc: str | None = Query(None),
+    variable: str | None = Query(None),
+    agrupar_por: str | None = Query(None),
+    es_porcentaje: bool = Query(False, description="Si true, normaliza cada año a 100%"),
+    view_mode: str = Query(
+        "column",
+        description="Modo de visualización: column, line o area",
+    ),
+    clean: bool = Query(
+        False,
+        description="Si true, omite título y etiquetas sobre las barras.",
+    ),
+    facet_placement: str = Query(
+        "inline",
+        description="inline (horizontal) o stacked (vertical) — solo modo facet",
+    ),
+    legend_title: str | None = Query(
+        None,
+        description="Título opcional sobre la leyenda — solo modo facet",
+    ),
+    series_order: str | None = Query(
+        None,
+        description="Lista de nombres de series separados por coma",
+    ),
+    y_axis_min: float | None = Query(None),
+    y_axis_max: float | None = Query(None),
+    region: str | None = Query(None),
+    combustible: str | None = Query(None),
+    job_display_overrides: str | None = Query(
+        None,
+        description='JSON dict {job_id: display_name} para renombrar escenarios',
+    ),
+    exogenous_data: str | None = Query(
+        None,
+        description="JSON con datos exógenos — solo modo facet",
+    ),
+    exogenous_contaminantes_data: str | None = Query(
+        None,
+        description="JSON con datos exógenos de contaminantes — solo modo facet",
+    ),
+    hidden_series: str | None = Query(
+        None,
+        description="Nombres de series ocultas separados por coma",
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Exporta comparación multi-escenario como XLSX con gráficas embebidas y tablas por hoja."""
+    if compare_mode not in ("facet", "by-year", "by-year-alt", "line-total"):
+        raise HTTPException(
+            status_code=400,
+            detail="compare_mode debe ser 'facet', 'by-year', 'by-year-alt' o 'line-total'",
+        )
+    if view_mode not in ("column", "line", "area"):
+        raise HTTPException(
+            status_code=400,
+            detail="view_mode debe ser 'column', 'line' o 'area'",
+        )
+    if facet_placement not in ("inline", "stacked"):
+        raise HTTPException(status_code=400, detail="facet_placement debe ser 'inline' o 'stacked'")
+
+    job_id_list = _validate_compare_job_ids(job_ids, db, current_user)
+
+    year_list: list[int] = []
+    if compare_mode in ("by-year", "by-year-alt"):
+        try:
+            year_list = [int(x.strip()) for x in years_to_plot.split(",") if x.strip()]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="years_to_plot inválidos")
+
+    _overrides: dict[int, str] | None = None
+    if job_display_overrides:
+        try:
+            raw = json.loads(job_display_overrides)
+            _overrides = {int(k): str(v) for k, v in raw.items()}
+        except (json.JSONDecodeError, ValueError, TypeError):
+            pass
+
+    order_list: list[str] | None = None
+    if series_order:
+        order_list = [s.strip() for s in series_order.split(",") if s.strip()] or None
+
+    hidden_set: set[str] | None = None
+    if hidden_series:
+        hidden_set = {s.strip() for s in hidden_series.split(",") if s.strip()}
+
+    try:
+        xlsx_io = chart_service.export_compare_xlsx(
+            db=db,
+            job_ids=job_id_list,
+            tipo=tipo,
+            un=un,
+            compare_mode=compare_mode,
+            years_to_plot=year_list or None,
+            sub_filtro=sub_filtro,
+            loc=loc,
+            variable=variable,
+            agrupar_por=agrupar_por,
+            view_mode=view_mode,
+            job_display_overrides=_overrides,
+            region=region,
+            combustible=combustible,
+            hidden_series=hidden_set,
+            series_order=order_list,
+            y_axis_min=y_axis_min,
+            y_axis_max=y_axis_max,
+            clean=clean,
+            es_porcentaje_override=es_porcentaje,
+            facet_placement=facet_placement,
+            legend_title=legend_title,
+            exogenous_data=exogenous_data,
+            exogenous_contaminantes_data=exogenous_contaminantes_data,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Error generando export compare-xlsx")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    base_name = _safe_export_basename(tipo.replace("_", " "))
+    filename = f"{base_name}_comparacion.xlsx"
+    return StreamingResponse(
+        xlsx_io,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/{job_id}/pareto-data", response_model=ParetoChartResponse)
 def get_pareto_data(
     job_id: int,

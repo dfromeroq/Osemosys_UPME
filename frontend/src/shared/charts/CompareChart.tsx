@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FileDown } from 'lucide-react';
 import Highcharts from './highchartsSetup';
 import {
   EXPORTING_CONTEXT_BUTTON_DARK,
@@ -15,8 +14,8 @@ import {
 } from './chartLegendInteractions';
 import HighchartsReact from 'highcharts-react-official';
 import { simulationApi } from '@/features/simulation/api/simulationApi';
+import { CompareExportDropdown } from '@/shared/charts/CompareExportDropdown';
 import { downloadBlob } from '@/shared/utils/downloadBlob';
-import { Button } from '@/shared/components/Button';
 import type { CompareChartResponse } from '../../types/domain';
 import type { ChartSelection } from './ChartSelector';
 
@@ -53,6 +52,7 @@ export const CompareChart: React.FC<CompareChartProps> = ({
   const inverted = barOrientation === 'horizontal' && !isArea;
   const legendDblclickStateRef = useRef(createLegendDblclickState());
   const [exportBusy, setExportBusy] = useState(false);
+  const [exportXlsxBusy, setExportXlsxBusy] = useState(false);
 
   const allSeriesNames = useMemo(() => {
     const names = new Set<string>();
@@ -168,7 +168,83 @@ export const CompareChart: React.FC<CompareChartProps> = ({
     } finally {
       setExportBusy(false);
     }
-  }, [serverCompareExport]);
+  }, [serverCompareExport, hiddenNames]);
+
+  const handleExportCompareXlsxServer = useCallback(async () => {
+    if (!serverCompareExport || serverCompareExport.jobIds.length < 2) return;
+    setExportXlsxBusy(true);
+    try {
+      const sel = serverCompareExport.selection;
+      const payload: Parameters<typeof simulationApi.exportCompareXlsx>[0] = {
+        job_ids: serverCompareExport.jobIds.join(','),
+        tipo: sel.tipo,
+        un: sel.un,
+        compare_mode: serverCompareExport.isAltMode ? 'by-year-alt' : 'by-year',
+        years_to_plot: serverCompareExport.yearsToPlot.join(','),
+      };
+      if (sel.sub_filtro) payload.sub_filtro = sel.sub_filtro;
+      if (sel.loc) payload.loc = sel.loc;
+      if (sel.agrupar_por) payload.agrupar_por = sel.agrupar_por;
+      if (sel.viewMode === 'porcentaje') payload.es_porcentaje = 'true';
+      if (sel.viewMode && sel.viewMode !== 'column' && sel.viewMode !== 'porcentaje') {
+        payload.view_mode = sel.viewMode;
+      }
+      if (sel.region && sel.agrupar_por !== 'REGION') {
+        payload.region = sel.region;
+      }
+      if (typeof yAxisMin === 'number') payload.y_axis_min = yAxisMin;
+      if (typeof yAxisMax === 'number') payload.y_axis_max = yAxisMax;
+      if (sel.customSeriesOrder && sel.customSeriesOrder.length > 0) {
+        payload.series_order = sel.customSeriesOrder.join(',');
+      }
+      if (serverCompareExport.scenarioAliases && Object.keys(serverCompareExport.scenarioAliases).some(k => serverCompareExport.scenarioAliases![Number(k)]?.trim())) {
+        payload.job_display_overrides = JSON.stringify(serverCompareExport.scenarioAliases);
+      }
+      if (hiddenNames.size > 0) {
+        payload.hidden_series = Array.from(hiddenNames).join(',');
+      }
+      const { blob, filename } = await simulationApi.exportCompareXlsx(payload);
+      downloadBlob(blob, filename);
+    } catch (err) {
+      console.error(err);
+      let msg = 'No se pudo generar el XLSX en el servidor.';
+      if (err && typeof err === 'object' && 'response' in err) {
+        const resp = (err as { response?: { data?: Blob | { detail?: string } } }).response;
+        if (resp?.data instanceof Blob) {
+          try {
+            const text = await resp.data.text();
+            const parsed = JSON.parse(text) as { detail?: string };
+            if (parsed.detail) msg = parsed.detail;
+          } catch { /* ignore */ }
+        } else if (resp?.data && typeof resp.data === 'object' && 'detail' in resp.data) {
+          msg = String(resp.data.detail);
+        }
+      }
+      window.alert(msg);
+    } finally {
+      setExportXlsxBusy(false);
+    }
+  }, [serverCompareExport, hiddenNames, yAxisMin, yAxisMax]);
+
+  const compareExportOptions = useMemo(() => {
+    if (!serverCompareExport || serverCompareExport.jobIds.length < 2) return [];
+    return [
+      {
+        id: 'png',
+        label: 'PNG (servidor)',
+        busyLabel: 'Generando PNG…',
+        busy: exportBusy,
+        onClick: () => handleExportComparePngServer(),
+      },
+      {
+        id: 'xlsx',
+        label: 'XLSX',
+        busyLabel: 'Generando XLSX…',
+        busy: exportXlsxBusy,
+        onClick: () => handleExportCompareXlsxServer(),
+      },
+    ];
+  }, [serverCompareExport, exportBusy, exportXlsxBusy]);
 
   const options = useMemo<Highcharts.Options>(() => {
     const legendItemClick = function (this: Highcharts.Series): boolean {
@@ -464,18 +540,12 @@ export const CompareChart: React.FC<CompareChartProps> = ({
         options={options}
         containerProps={{ style: { width: '100%' } }}
       />
-      {serverCompareExport && serverCompareExport.jobIds.length > 1 ? (
+      {compareExportOptions.length > 0 ? (
         <div className="mt-2 flex justify-end">
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={exportBusy}
-            onClick={handleExportComparePngServer}
-            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-emerald-700/50 bg-emerald-950/40 px-3 py-2 text-xs font-semibold text-emerald-100 hover:border-emerald-600 hover:bg-emerald-900/50 disabled:opacity-50"
-          >
-            <FileDown className="h-4 w-4 shrink-0" aria-hidden />
-            {exportBusy ? 'Generando PNG…' : 'Descargar PNG (servidor)'}
-          </Button>
+          <CompareExportDropdown
+            disabled={exportBusy || exportXlsxBusy}
+            options={compareExportOptions}
+          />
         </div>
       ) : null}
     </div>
