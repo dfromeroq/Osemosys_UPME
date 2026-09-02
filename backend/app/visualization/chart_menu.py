@@ -26,7 +26,7 @@ TRA_SUB = [
 ]
 RES_SUB = ["CKN", "WHT", "AIR", "REF", "ILU", "TV", "FAN", "WSH", "OTH"]
 IND_SUB = ["BOI", "FUR", "MPW", "AIR", "REF", "ILU", "OTH"]
-TER_SUB = ["AIR", "ILU", "OTH"]
+TER_SUB = ["ACL", "AIR", "CKN", "DAT", "FAN", "ILU", "MPW", "REF", "OTH"]
 DEM_COMB = [
     "NGS", "DSL", "ELC", "GSL", "COA", "LPG", "WOO", "BGS", "BAG", "HDG", "FOL",
     "BDL", "JET", "WAS", "OIL", "AFR", "SAF",
@@ -138,6 +138,8 @@ MENU = [
          {"tipo": "ref_cartagena",       "label": "Refinería de Cartagena - UseByTechnology",            "allowed": ["FUEL"], "soporta_pareto": True},
          {"tipo": "ref_barrancabermeja", "label": "Refinería de Barrancabermeja - UseByTechnology",       "allowed": ["FUEL"], "soporta_pareto": True},
          {"tipo": "liquidos_prod_import","label": "Líquidos - Producción + Importación",                  "allowed": ["TECNOLOGIA", "FUEL"]},
+         {"tipo": "imp_liquidos",         "label": "Líquidos - Importación",                              "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True, "soporta_porcentaje": True},
+         {"tipo": "exp_liquidos",         "label": "Líquidos - Exportación",                              "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True, "soporta_porcentaje": True},
          {"tipo": "ups_refinacion",      "label": "Upstream Refinación - ProductionByTechnology",        "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
          {"tipo": "saf_produccion",      "label": "SAF - Producción - ProductionByTechnology",           "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},
          {"tipo": "imp_exp_crudo",      "label": "Crudo - Importaciones y Exportaciones - ProductionByTechnology", "allowed": ["TECNOLOGIA", "FUEL"], "soporta_pareto": True},

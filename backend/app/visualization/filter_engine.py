@@ -64,6 +64,21 @@ def build_filter_fn(spec: dict[str, Any], resolver: FilterResolver) -> FilterFn 
 
         return _fn
 
+    if kind == "group_startswith":
+        group = spec["group"]
+        entity = spec.get("entity", "TECHNOLOGY")
+
+        def _fn(df: pd.DataFrame, **kw: Any) -> pd.DataFrame:
+            if df.empty:
+                return df
+            codes = resolver.fuel(group) if entity == "FUEL" else resolver.tech(group)
+            col = "FUEL" if entity == "FUEL" else "TECHNOLOGY"
+            if col not in df.columns:
+                return df.iloc[0:0]
+            return df[df[col].apply(lambda v: any(v.startswith(c) for c in codes))]
+
+        return _fn
+
     if kind == "sector_sub":
         root = spec["root_group"]
         sub_dict = spec["subfiltros_dict"]
