@@ -1,0 +1,118 @@
+version: 1
+description: >
+  Mapping from OSeMOSYS UPME model technology codes to the canonical
+  technology names in colombia-employment-factors. Multipliers express the MW
+  of employment-factor technology represented by one MW of model technology.
+
+technologies:
+  PWRBGS:
+    components:
+      - employment_technology: Biomass power
+        multiplier: 1.0
+        note: Biogas technology mapped to the available biomass power factor.
+  PWRCOA:
+    components:
+      - employment_technology: Coal power
+        multiplier: 1.0
+  PWRCSP:
+    components:
+      - employment_technology: Solar thermal (CSP)
+        multiplier: 1.0
+  PWRDSL:
+    components:
+      - employment_technology: Oil and diesel
+        multiplier: 1.0
+  PWRFOL:
+    components:
+      - employment_technology: Oil and diesel
+        multiplier: 1.0
+  PWRFOIL:
+    components:
+      - employment_technology: Oil and diesel
+        multiplier: 1.0
+        note: Model CSV spelling for fuel-oil power.
+  PWROIL:
+    components:
+      - employment_technology: Oil and diesel
+        multiplier: 1.0
+        note: Documentation spelling for liquid-fuel power.
+  PWRHYDDAM:
+    components:
+      - employment_technology: Hydro (large)
+        multiplier: 1.0
+  PWRHYDROR:
+    components:
+      - employment_technology: Hydro (small)
+        multiplier: 1.0
+  PWRHYDROR_NDC:
+    components:
+      - employment_technology: Hydro (small)
+        multiplier: 1.0
+        note: Very small run-of-river mapped to the available small hydro factor.
+  PWRJET:
+    components:
+      - employment_technology: Gas CCGT/OCGT
+        multiplier: 1.0
+  PWRLPG:
+    components:
+      - employment_technology: Gas CCGT/OCGT
+        multiplier: 1.0
+  PWRNGS_CC:
+    components:
+      - employment_technology: Gas CCGT/OCGT
+        multiplier: 1.0
+  PWRNGS_CS:
+    components:
+      - employment_technology: Gas CCGT/OCGT
+        multiplier: 1.0
+  PWRSOLRTP:
+    components:
+      - employment_technology: Rooftop solar PV
+        multiplier: 1.0
+  PWRSOLRTP_ZNI:
+    components:
+      - employment_technology: Rooftop solar PV
+        multiplier: 1.0
+        note: Isolated-area rooftop solar mapped to the available rooftop solar factor.
+  PWRSOLUGE:
+    components:
+      - employment_technology: Utility-scale solar PV
+        multiplier: 1.0
+  PWRSOLUPE:
+    components:
+      - employment_technology: Utility-scale solar PV
+        multiplier: 1.0
+        note: Small-scale solar parks mapped to the available utility-scale solar PV factor.
+  PWRSTD:
+    components:
+      - employment_technology: Oil and diesel
+        multiplier: 1.0
+        note: Distributed diesel plants in isolated areas.
+  PWRWNDONS:
+    components:
+      - employment_technology: Onshore wind
+        multiplier: 1.0
+  PWRWNDOFS_FIX:
+    components:
+      - employment_technology: Offshore wind (fixed)
+        multiplier: 1.0
+  PWRWNDOFS_FLO:
+    components:
+      - employment_technology: Offshore wind (floating)
+        multiplier: 1.0
+  PWRSOLUGE_BAT:
+    components:
+      - employment_technology: Utility-scale solar PV
+        multiplier: 1.0
+        note: One MW of the hybrid technology is treated as one MW of utility-scale solar PV.
+      - employment_technology: Battery storage (grid)
+        multiplier: 0.6
+        note: One MW of the hybrid technology is treated as 0.6 MW of grid battery storage.
+  PWRGEO:
+    components:
+      - employment_technology: Geothermal
+        multiplier: 1.0
+  PWRNUC:
+    components:
+      - employment_technology: Nuclear
+        multiplier: 1.0

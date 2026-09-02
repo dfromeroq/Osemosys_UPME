@@ -32,6 +32,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.core.config import get_settings
 from app.models import OsemosysParamValue, OsemosysOutputParamValue, SimulationJob
 from app.repositories.simulation_repository import SimulationRepository
+from app.services.employment_factors_service import attach_employment_outputs
 from app.simulation.core.data_processing import PARAM_INDEX
 from app.simulation.core.results_processing import VARIABLE_INDEX_NAMES
 from app.simulation.osemosys_core import run_osemosys_from_csv_dir, run_osemosys_from_db
@@ -415,6 +416,23 @@ def _iter_typed_output_rows(
         r["value"] = float(row.get("annual_emissions", 0.0))
         yield r
 
+    for row in solution.get("employment_outputs", []):
+        r = _empty_row_template(job_id, str(row.get("variable_name") or "Employment"))
+        r["id_region"] = row.get("region_id")
+        r["id_technology"] = row.get("technology_id")
+        r["technology_name"] = row.get("technology_name")
+        r["year"] = row.get("year")
+        r["value"] = float(row.get("value", 0.0))
+        r["index_json"] = {
+            "source_variable": row.get("source_variable"),
+            "factor_type": row.get("factor_type"),
+            "job_type": row.get("job_type"),
+            "model_capacity_pj_per_year": row.get("model_capacity_pj_per_year"),
+            "model_capacity_mw": row.get("model_capacity_mw"),
+            "components": row.get("components", []),
+        }
+        yield r
+
 
 def _iter_intermediate_output_rows(
     solution: dict[str, Any],
@@ -569,8 +587,14 @@ def _persist_solution(
     job.inputs_summary_json = inputs_summary
     job.infeasibility_diagnostics_json = solution.get("infeasibility_diagnostics")
 
+    attach_employment_outputs(solution)
+
     output_count = 0
-    for batch in _iter_output_row_batches(solution, job_id=job.id, batch_size=BATCH_SIZE):
+    for batch in _iter_output_row_batches(
+        solution,
+        job_id=job.id,
+        batch_size=BATCH_SIZE,
+    ):
         db.execute(insert(OsemosysOutputParamValue), batch)
         db.flush()
         output_count += len(batch)

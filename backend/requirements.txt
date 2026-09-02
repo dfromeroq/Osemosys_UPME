@@ -19,3 +19,5 @@ openpyxl>=3.1.0
 Pillow>=10.0.0
 matplotlib>=3.9.0
 pytest>=8.0.0
+PyYAML>=6.0.0
+colombia-employment-factors @ git+https://github.com/DEA-GE/colombia-employment-factors.git
