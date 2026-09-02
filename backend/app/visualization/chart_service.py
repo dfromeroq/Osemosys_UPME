@@ -3318,7 +3318,7 @@ def _config_sub_filtros(cfg: dict) -> list[str] | None:
             "MET",
         ]
     if filtro_name == "_filtro_terciario":
-        return ["AIR", "ILU", "OTH"]
+        return ["ACL", "AIR", "CKN", "DAT", "FAN", "ILU", "MPW", "REF", "OTH"]
     return None
 
 

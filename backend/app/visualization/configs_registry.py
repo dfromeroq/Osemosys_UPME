@@ -113,7 +113,7 @@ FILTER_FN_SPECS: dict[str, dict[str, Any]] = {
     "_filtro_min_hidrocarburos": {"group": "TECNOLOGIAS_MINERIA_HIDROCARBUROS"},
     "_filtro_min_carbon": {"group": "TECNOLOGIAS_MINERIA_CARBON"},
     "_filtro_oferta_bioenergia": {"group": "TECNOLOGIAS_OFERTA_BIOENERGIA"},
-    "_filtro_gei": {"group": "COMBUSTIBLES_GEI"},
+    "_filtro_gei": {"group": "COMBUSTIBLES_GEI", "entity": "FUEL"},
     "_filtro_contaminantes": {"group": "FUELS_CONTAMINANTES", "entity": "FUEL"},
     "_filtro_demanda_por_combustible": {
         "kind": "demand_fuel",
