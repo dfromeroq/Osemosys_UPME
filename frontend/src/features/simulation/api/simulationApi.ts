@@ -522,6 +522,77 @@ export const simulationApi = {
     return { blob, filename };
   },
 
+  /** XLSX multi-hoja con gráficas embebidas y tablas por escenario/año (comparación). */
+  async exportCompareXlsx(
+    params: {
+      job_ids: string;
+      tipo: string;
+      un?: string;
+      compare_mode: "facet" | "by-year" | "by-year-alt" | "line-total";
+      years_to_plot?: string;
+      sub_filtro?: string;
+      loc?: string;
+      variable?: string;
+      agrupar_por?: string;
+      es_porcentaje?: string;
+      view_mode?: string;
+      clean?: boolean;
+      facet_placement?: string;
+      legend_title?: string;
+      series_order?: string;
+      y_axis_min?: number;
+      y_axis_max?: number;
+      region?: string;
+      combustible?: string;
+      job_display_overrides?: string;
+      exogenous_data?: string;
+      exogenous_contaminantes_data?: string;
+      hidden_series?: string;
+    },
+  ): Promise<{ blob: Blob; filename: string }> {
+    const q: Record<string, string> = {
+      job_ids: params.job_ids,
+      tipo: params.tipo,
+      un: params.un ?? "PJ",
+      compare_mode: params.compare_mode,
+    };
+    if (params.years_to_plot) q.years_to_plot = params.years_to_plot;
+    if (params.sub_filtro) q.sub_filtro = params.sub_filtro;
+    if (params.loc) q.loc = params.loc;
+    if (params.variable) q.variable = params.variable;
+    if (params.agrupar_por) q.agrupar_por = params.agrupar_por;
+    if (params.es_porcentaje) q.es_porcentaje = params.es_porcentaje;
+    if (params.view_mode) q.view_mode = params.view_mode;
+    if (params.clean) q.clean = "true";
+    if (params.facet_placement) q.facet_placement = params.facet_placement;
+    if (params.legend_title) q.legend_title = params.legend_title;
+    if (params.series_order) q.series_order = params.series_order;
+    if (params.y_axis_min != null) q.y_axis_min = String(params.y_axis_min);
+    if (params.y_axis_max != null) q.y_axis_max = String(params.y_axis_max);
+    if (params.region) q.region = params.region;
+    if (params.combustible) q.combustible = params.combustible;
+    if (params.job_display_overrides) q.job_display_overrides = params.job_display_overrides;
+    if (params.exogenous_data) q.exogenous_data = params.exogenous_data;
+    if (params.exogenous_contaminantes_data) {
+      q.exogenous_contaminantes_data = params.exogenous_contaminantes_data;
+    }
+    if (params.hidden_series) q.hidden_series = params.hidden_series;
+
+    const response = await httpClient.get("/visualizations/export-compare-xlsx", {
+      params: q,
+      responseType: "blob",
+      timeout: 5 * 60 * 1000,
+    });
+    const blob = response.data as Blob;
+    const disposition = response.headers["content-disposition"];
+    let filename = "comparativa.xlsx";
+    if (typeof disposition === "string") {
+      const match = /filename="?([^";\n]+)"?/i.exec(disposition);
+      if (match?.[1]) filename = match[1].trim();
+    }
+    return { blob, filename };
+  },
+
   async getChartCatalog() {
     const { data } = await httpClient.get<ChartCatalogItem[]>("/visualizations/chart-catalog");
     return data;

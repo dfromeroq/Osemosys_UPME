@@ -4657,6 +4657,767 @@ def chart_data_to_csv_bytes(chart: ChartDataResponse) -> bytes:
     return buffer.getvalue().encode("utf-8-sig")
 
 
+def chart_data_to_xlsx_bytes(chart: ChartDataResponse) -> bytes:
+    """Tabla categorías × series como XLSX (sin imagen embebida)."""
+    import io
+
+    from openpyxl import Workbook
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = _safe_excel_sheet_name(chart.title[:31] if chart.title else "Datos", set())
+
+    headers = [_category_column_label(chart.categories)] + [s.name for s in chart.series]
+    ws.append(headers)
+    for i, cat in enumerate(chart.categories):
+        row: list[Any] = [cat]
+        for s in chart.series:
+            val = s.data[i] if i < len(s.data) else None
+            row.append(val)
+        ws.append(row)
+
+    for idx in range(len(headers)):
+        col_letter = get_column_letter(idx + 1)
+        max_len = len(str(headers[idx]))
+        for cell in ws[col_letter]:
+            if cell.value is not None:
+                max_len = max(max_len, len(str(cell.value)))
+        ws.column_dimensions[col_letter].width = min(max_len + 2, 50)
+
+    output = io.BytesIO()
+    wb.save(output)
+    return output.getvalue()
+
+
+def _safe_excel_sheet_name(name: str, used: set[str]) -> str:
+    """Nombre de hoja válido para Excel (máx. 31 caracteres, único en el libro)."""
+    clean = "".join(c if c.isalnum() or c in (" ", "_", "-") else "_" for c in name)
+    clean = clean.strip()[:31] or "Hoja"
+    base = clean
+    counter = 1
+    while clean in used:
+        suffix = f"_{counter}"
+        max_base = 31 - len(suffix)
+        clean = f"{base[:max_base]}{suffix}"
+        counter += 1
+    used.add(clean)
+    return clean
+
+
+def _looks_like_year(value: Any) -> bool:
+    """True si el valor parece un año (1900–2200)."""
+    try:
+        year = int(str(value).strip())
+    except (ValueError, TypeError):
+        return False
+    return 1900 <= year <= 2200
+
+
+def _category_column_label(categories: list[Any], *, default: str = "Categoría") -> str:
+    """Etiqueta de columna para categorías del eje X (Año, Escenario, etc.)."""
+    if categories and all(_looks_like_year(c) for c in categories):
+        return "Año"
+    return default
+
+
+def _estimate_table_start_row(image_height_px: int) -> int:
+    """Fila inicial de contenido debajo de una imagen embebida."""
+    return max(int(image_height_px / 15) + 3, 28)
+
+
+def _estimate_chart_anchor_row(data_end_row: int, chart_height_rows: int = 14) -> int:
+    """Fila donde anclar la gráfica nativa de Excel debajo de la tabla."""
+    return data_end_row + 2
+
+
+def _estimate_image_anchor_row(chart_anchor_row: int, chart_height_rows: int = 14) -> int:
+    """Fila donde anclar la imagen PNG debajo de la gráfica nativa."""
+    return chart_anchor_row + chart_height_rows
+
+
+def _hex_to_excel_color(color: str) -> str:
+    """Normaliza color hex (#RRGGBB) al formato openpyxl (RRGGBB)."""
+    clean = (color or "").strip().lstrip("#").upper()
+    if len(clean) == 3:
+        clean = "".join(ch * 2 for ch in clean)
+    if len(clean) != 6:
+        return "808080"
+    return clean
+
+
+def _apply_series_colors(chart: Any, series_colors: list[str]) -> None:
+    """Aplica colores sólidos a cada serie de un chart openpyxl."""
+    for idx, ser in enumerate(chart.series):
+        color = _hex_to_excel_color(series_colors[idx] if idx < len(series_colors) else "#808080")
+        ser.graphicalProperties.solidFill = color
+        ser.graphicalProperties.line.solidFill = color
+
+
+def _add_native_excel_chart(
+    ws: Any,
+    *,
+    categories_col: int,
+    data_start_col: int,
+    data_end_col: int,
+    header_row: int,
+    data_start_row: int,
+    data_end_row: int,
+    series_colors: list[str],
+    chart_type: str = "column",
+    title: str = "",
+    y_axis_label: str = "",
+    anchor_cell: str = "A1",
+    width: int = 24,
+    height: int = 14,
+    categories_end_col: int | None = None,
+    multi_level_categories: bool = False,
+) -> None:
+    """Inserta una gráfica nativa de Excel referenciando la tabla ya escrita."""
+    from openpyxl.chart import AreaChart, BarChart, LineChart, Reference
+
+    if data_end_row < data_start_row or data_end_col < data_start_col:
+        return
+
+    if chart_type == "line":
+        chart = LineChart()
+    elif chart_type == "area":
+        chart = AreaChart()
+        chart.grouping = "stacked"
+        chart.overlap = 100
+    else:
+        chart = BarChart()
+        chart.type = "col"
+        chart.grouping = "stacked"
+        chart.overlap = 100
+
+    chart.style = 10
+    chart.title = title
+    chart.y_axis.title = y_axis_label
+    chart.width = width
+    chart.height = height
+    chart.legend.position = "b"
+    # openpyxl por defecto coloca catAx en axPos="l", lo que rompe barras apiladas
+    # (etiquetas de años apiladas verticalmente sin datos visibles en Excel).
+    chart.x_axis.axPos = "b"
+    chart.y_axis.axPos = "l"
+    if multi_level_categories:
+        chart.x_axis.noMultiLvlLbl = False
+
+    data_ref = Reference(
+        ws,
+        min_col=data_start_col,
+        max_col=data_end_col,
+        min_row=header_row,
+        max_row=data_end_row,
+    )
+    cat_end = categories_end_col if categories_end_col is not None else categories_col
+    cats_ref = Reference(
+        ws,
+        min_col=categories_col,
+        max_col=cat_end,
+        min_row=data_start_row,
+        max_row=data_end_row,
+    )
+    chart.add_data(data_ref, titles_from_data=True)
+    chart.set_categories(cats_ref)
+    _apply_series_colors(chart, series_colors)
+    ws.add_chart(chart, anchor_cell)
+
+
+def _write_data_table(
+    ws: Any,
+    start_row: int,
+    headers: list[str],
+    rows: list[list[Any]],
+    y_axis_label: str | None = None,
+) -> tuple[int, int, int, int]:
+    """Escribe tabla de datos. Retorna (header_row, data_start_row, data_end_row, last_row)."""
+    from openpyxl.utils import get_column_letter
+
+    row_idx = start_row
+    if y_axis_label:
+        ws.cell(row=row_idx, column=1, value=f"Unidad: {y_axis_label}")
+        row_idx += 1
+    header_row = row_idx
+    for col_idx, header in enumerate(headers, start=1):
+        ws.cell(row=row_idx, column=col_idx, value=header)
+    row_idx += 1
+    data_start_row = row_idx
+    for row in rows:
+        for col_idx, value in enumerate(row, start=1):
+            ws.cell(row=row_idx, column=col_idx, value=value)
+        row_idx += 1
+    data_end_row = row_idx - 1
+    last_row = data_end_row
+
+    for idx in range(len(headers)):
+        col_letter = get_column_letter(idx + 1)
+        max_len = len(str(headers[idx]))
+        for r in range(start_row, row_idx):
+            val = ws.cell(row=r, column=idx + 1).value
+            if val is not None:
+                max_len = max(max_len, len(str(val)))
+        ws.column_dimensions[col_letter].width = min(max_len + 2, 50)
+
+    return header_row, data_start_row, data_end_row, last_row
+
+
+def _comparison_has_two_dimension_headers(headers: list[str]) -> bool:
+    """True si la tabla de comparación tiene dos columnas de dimensión (Escenario × Año)."""
+    if len(headers) < 3:
+        return False
+    dim_labels = {"Categoria", "Categoría", "Año", "Escenario"}
+    return headers[0] in dim_labels and headers[1] in dim_labels
+
+
+def _write_comparison_sheet(
+    ws: Any,
+    *,
+    image_bytes: bytes,
+    headers: list[str],
+    rows: list[list[Any]],
+    y_axis_label: str,
+    sheet_title: str,
+    view_mode: str = "column",
+    chart_title: str = "",
+    series_colors: list[str] | None = None,
+) -> None:
+    """Hoja de comparación: tabla, gráfica nativa (categorías multinivel) e imagen PNG."""
+    import io
+
+    from openpyxl.drawing.image import Image as XLImage
+
+    ws.title = sheet_title
+    header_row, data_start_row, data_end_row, _last_row = _write_data_table(
+        ws, 1, headers, rows, y_axis_label
+    )
+
+    colors = list(series_colors or [])
+    two_dims = _comparison_has_two_dimension_headers(headers)
+    if two_dims:
+        categories_col = 1
+        categories_end_col = 2
+        data_start_col = 3
+        data_end_col = len(headers)
+        multi_level = True
+        if not colors:
+            colors = ["#808080"] * (data_end_col - data_start_col + 1)
+    else:
+        categories_col = 1
+        categories_end_col = None
+        data_start_col = 2
+        data_end_col = len(headers)
+        multi_level = False
+
+    chart_anchor_row = _estimate_chart_anchor_row(data_end_row)
+    if data_end_col >= data_start_col and data_end_row >= data_start_row:
+        try:
+            _add_native_excel_chart(
+                ws,
+                categories_col=categories_col,
+                categories_end_col=categories_end_col,
+                data_start_col=data_start_col,
+                data_end_col=data_end_col,
+                header_row=header_row,
+                data_start_row=data_start_row,
+                data_end_row=data_end_row,
+                series_colors=colors,
+                chart_type=view_mode if view_mode in ("column", "line", "area") else "column",
+                title=chart_title or sheet_title,
+                y_axis_label=y_axis_label,
+                anchor_cell=f"A{chart_anchor_row}",
+                multi_level_categories=multi_level,
+            )
+            image_row = _estimate_image_anchor_row(chart_anchor_row)
+        except Exception:
+            image_row = _estimate_chart_anchor_row(data_end_row)
+    else:
+        image_row = _estimate_chart_anchor_row(data_end_row)
+
+    img = XLImage(io.BytesIO(image_bytes))
+    max_width = 900
+    if img.width > max_width:
+        scale = max_width / img.width
+        img.width = int(img.width * scale)
+        img.height = int(img.height * scale)
+    ws.add_image(img, f"A{image_row}")
+
+
+def _write_chart_sheet(
+    ws: Any,
+    *,
+    image_bytes: bytes,
+    categories: list[str],
+    series: list[ChartSeries],
+    y_axis_label: str,
+    sheet_title: str | None = None,
+    view_mode: str = "column",
+    chart_title: str = "",
+    category_header: str | None = None,
+) -> None:
+    """Escribe hoja: tabla arriba, gráfica nativa Excel, imagen PNG debajo."""
+    import io
+
+    from openpyxl.drawing.image import Image as XLImage
+
+    if sheet_title:
+        ws.title = sheet_title
+
+    cat_label = category_header or _category_column_label(categories)
+    headers = [cat_label] + [s.name for s in series]
+    rows: list[list[Any]] = []
+    for i, cat in enumerate(categories):
+        row: list[Any] = [cat]
+        for s in series:
+            val = s.data[i] if i < len(s.data) else 0
+            row.append(val if val is not None else 0)
+        rows.append(row)
+
+    header_row, data_start_row, data_end_row, _last_row = _write_data_table(
+        ws, 1, headers, rows, y_axis_label
+    )
+
+    series_colors = [s.color for s in series]
+    chart_anchor_row = _estimate_chart_anchor_row(data_end_row)
+    chart_anchor = f"A{chart_anchor_row}"
+    try:
+        _add_native_excel_chart(
+            ws,
+            categories_col=1,
+            data_start_col=2,
+            data_end_col=1 + len(series),
+            header_row=header_row,
+            data_start_row=data_start_row,
+            data_end_row=data_end_row,
+            series_colors=series_colors,
+            chart_type=view_mode if view_mode in ("column", "line", "area") else "column",
+            title=chart_title or sheet_title or "",
+            y_axis_label=y_axis_label,
+            anchor_cell=chart_anchor,
+        )
+    except Exception:
+        chart_anchor_row = data_end_row + 1
+
+    img = XLImage(io.BytesIO(image_bytes))
+    max_width = 900
+    if img.width > max_width:
+        scale = max_width / img.width
+        img.width = int(img.width * scale)
+        img.height = int(img.height * scale)
+    image_row = _estimate_image_anchor_row(chart_anchor_row)
+    ws.add_image(img, f"A{image_row}")
+
+
+def _facet_display_name(facet: FacetData) -> str:
+    sim = (facet.display_name or facet.scenario_name or str(facet.job_id)).strip()
+    tag = (facet.scenario_tag_name or "").strip()
+    return f"{sim} — {tag}" if tag else sim
+
+
+def _subplot_display_name(sp: SubplotData) -> str:
+    if sp.scenario_name:
+        return sp.scenario_name.strip()
+    return f"Año {sp.year}"
+
+
+def _collect_series_names_from_series_lists(
+    series_lists: list[list[ChartSeries]],
+) -> list[str]:
+    names: list[str] = []
+    for series in series_lists:
+        for s in series:
+            if s.name not in names:
+                names.append(s.name)
+    return names
+
+
+def _series_colors_for_names(
+    series_names: list[str],
+    series_lists: list[list[ChartSeries]],
+) -> list[str]:
+    by_name: dict[str, str] = {}
+    for sl in series_lists:
+        for s in sl:
+            if s.name not in by_name and s.color:
+                by_name[s.name] = s.color
+    return [by_name.get(name, "#808080") for name in series_names]
+
+
+def _build_facet_combined_table(facets: list[FacetData]) -> tuple[list[str], list[list[Any]]]:
+    series_names = _collect_series_names_from_series_lists([f.series for f in facets])
+    headers = ["Escenario", "Año"] + series_names
+    rows: list[list[Any]] = []
+    for facet in facets:
+        scenario = _facet_display_name(facet)
+        series_by_name = {s.name: s for s in facet.series}
+        for i, cat in enumerate(facet.categories):
+            row: list[Any] = [scenario, cat]
+            for name in series_names:
+                s = series_by_name.get(name)
+                val = s.data[i] if s is not None and i < len(s.data) else 0
+                row.append(val if val is not None else 0)
+            rows.append(row)
+    return headers, rows
+
+
+def _build_by_year_combined_table(subplots: list[SubplotData]) -> tuple[list[str], list[list[Any]]]:
+    series_names = _collect_series_names_from_series_lists([sp.series for sp in subplots])
+    headers = ["Año", "Escenario"] + series_names
+    rows: list[list[Any]] = []
+    for sp in subplots:
+        series_by_name = {s.name: s for s in sp.series}
+        for i, cat in enumerate(sp.categories):
+            row: list[Any] = [sp.year, cat]
+            for name in series_names:
+                s = series_by_name.get(name)
+                val = s.data[i] if s is not None and i < len(s.data) else 0
+                row.append(val if val is not None else 0)
+            rows.append(row)
+    return headers, rows
+
+
+def _build_by_year_alt_combined_table(subplots: list[SubplotData]) -> tuple[list[str], list[list[Any]]]:
+    series_names = _collect_series_names_from_series_lists([sp.series for sp in subplots])
+    headers = ["Escenario", "Año"] + series_names
+    rows: list[list[Any]] = []
+    for sp in subplots:
+        scenario = _subplot_display_name(sp)
+        series_by_name = {s.name: s for s in sp.series}
+        for i, cat in enumerate(sp.categories):
+            row: list[Any] = [scenario, cat]
+            for name in series_names:
+                s = series_by_name.get(name)
+                val = s.data[i] if s is not None and i < len(s.data) else 0
+                row.append(val if val is not None else 0)
+            rows.append(row)
+    return headers, rows
+
+
+def _subplot_to_chart_response(
+    sp: SubplotData,
+    title: str,
+    y_axis_label: str,
+) -> ChartDataResponse:
+    return ChartDataResponse(
+        categories=list(sp.categories),
+        series=list(sp.series),
+        title=title,
+        yAxisLabel=y_axis_label,
+    )
+
+
+def _render_single_subplot_bytes(
+    sp: SubplotData,
+    title: str,
+    y_axis_label: str,
+    *,
+    view_mode: str = "column",
+    y_axis_min: float | None = None,
+    y_axis_max: float | None = None,
+    clean: bool = False,
+    hidden_series: set[str] | None = None,
+) -> bytes:
+    payload = CompareChartResponse(
+        title=title,
+        subplots=[sp],
+        yAxisLabel=y_axis_label,
+    )
+    return render_comparison_by_year_bytes(
+        payload,
+        fmt="png",
+        view_mode=view_mode,
+        y_axis_min=y_axis_min,
+        y_axis_max=y_axis_max,
+        clean=clean,
+        hidden_series=hidden_series,
+    )
+
+
+def export_compare_xlsx(
+    db: Session,
+    job_ids: list[int],
+    tipo: str,
+    un: str = "PJ",
+    compare_mode: str = "facet",
+    years_to_plot: list[int] | None = None,
+    sub_filtro: str | None = None,
+    loc: str | None = None,
+    variable: str | None = None,
+    agrupar_por: str | None = None,
+    view_mode: str = "column",
+    job_display_overrides: dict[int, str] | None = None,
+    region: str | None = None,
+    combustible: str | None = None,
+    hidden_series: set[str] | None = None,
+    series_order: list[str] | None = None,
+    y_axis_min: float | None = None,
+    y_axis_max: float | None = None,
+    clean: bool = False,
+    es_porcentaje_override: bool = False,
+    facet_placement: str = "inline",
+    legend_title: str | None = None,
+    exogenous_data: str | None = None,
+    exogenous_contaminantes_data: str | None = None,
+) -> "io.BytesIO":
+    """Genera XLSX multi-hoja para comparación: hoja Comparación + hojas por escenario/año."""
+    import io
+
+    from openpyxl import Workbook
+
+    if compare_mode not in ("facet", "by-year", "by-year-alt", "line-total"):
+        raise ValueError(
+            "compare_mode debe ser 'facet', 'by-year', 'by-year-alt' o 'line-total'"
+        )
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    used_sheet_names: set[str] = set()
+    render_view_mode = view_mode if view_mode in ("column", "line", "area") else "column"
+    year_list = years_to_plot or [2024, 2030, 2050]
+
+    if compare_mode == "facet":
+        facet_payload = build_comparison_facet_data(
+            db=db,
+            job_ids=job_ids,
+            tipo=tipo,
+            un=un,
+            sub_filtro=sub_filtro,
+            loc=loc,
+            variable=variable,
+            agrupar_por=agrupar_por,
+            es_porcentaje_override=es_porcentaje_override,
+            region=region,
+            combustible=combustible,
+            job_display_overrides=job_display_overrides,
+        )
+        if exogenous_data:
+            facet_payload = _inject_exogenous_data_into_facets(
+                facet_payload, exogenous_data
+            )
+        if exogenous_contaminantes_data:
+            facet_payload = _inject_exogenous_contaminantes_data(
+                facet_payload, exogenous_contaminantes_data
+            )
+        if not facet_payload.facets or not any(f.series for f in facet_payload.facets):
+            raise ValueError("Sin datos para exportar con los filtros actuales")
+
+        if series_order:
+            for facet in facet_payload.facets:
+                reorder_chart_series(facet, series_order)
+
+        layout = "vertical" if facet_placement == "stacked" else "horizontal"
+        comparison_img = render_comparison_facet_figure_bytes(
+            facet_payload,
+            fmt="png",
+            layout=layout,
+            view_mode=render_view_mode,
+            legend_title=legend_title,
+            series_order=series_order,
+            clean=clean,
+            hidden_series=hidden_series,
+        )
+        comp_headers, comp_rows = _build_facet_combined_table(facet_payload.facets)
+        comp_series_names = comp_headers[2:] if len(comp_headers) > 2 else []
+        comp_series_colors = _series_colors_for_names(
+            comp_series_names,
+            [f.series for f in facet_payload.facets],
+        )
+        ws_comp = wb.create_sheet(
+            _safe_excel_sheet_name("Comparación", used_sheet_names)
+        )
+        _write_comparison_sheet(
+            ws_comp,
+            image_bytes=comparison_img,
+            headers=comp_headers,
+            rows=comp_rows,
+            y_axis_label=facet_payload.yAxisLabel,
+            sheet_title=ws_comp.title,
+            view_mode=render_view_mode,
+            chart_title=facet_payload.title,
+            series_colors=comp_series_colors,
+        )
+
+        for facet in facet_payload.facets:
+            if not facet.series:
+                continue
+            scenario_label = _facet_display_name(facet)
+            chart = ChartDataResponse(
+                categories=list(facet.categories),
+                series=list(facet.series),
+                title=f"{facet_payload.title} — {scenario_label}",
+                yAxisLabel=facet_payload.yAxisLabel,
+            )
+            if series_order:
+                reorder_chart_series(chart, series_order)
+            individual_img = render_chart_visualization_bytes(
+                chart,
+                fmt="png",
+                view_mode=render_view_mode,
+                y_axis_min=y_axis_min,
+                y_axis_max=y_axis_max,
+                clean=clean,
+                hidden_series=hidden_series,
+            )
+            sheet_name = _safe_excel_sheet_name(scenario_label, used_sheet_names)
+            ws = wb.create_sheet(sheet_name)
+            _write_chart_sheet(
+                ws,
+                image_bytes=individual_img,
+                categories=chart.categories,
+                series=chart.series,
+                y_axis_label=chart.yAxisLabel,
+                sheet_title=sheet_name,
+                view_mode=render_view_mode,
+                chart_title=chart.title,
+                category_header="Año",
+            )
+
+    elif compare_mode in ("by-year", "by-year-alt"):
+        if compare_mode == "by-year-alt":
+            cmp_data = build_comparison_data_by_year_alt(
+                db=db,
+                job_ids=job_ids,
+                tipo=tipo,
+                un=un,
+                years_to_plot=year_list,
+                agrupacion=agrupar_por,
+                sub_filtro=sub_filtro,
+                loc=loc,
+                es_porcentaje_override=es_porcentaje_override,
+                region=region,
+                job_display_overrides=job_display_overrides,
+            )
+            build_combined = _build_by_year_alt_combined_table
+        else:
+            cmp_data = build_comparison_data(
+                db=db,
+                job_ids=job_ids,
+                tipo=tipo,
+                un=un,
+                years_to_plot=year_list,
+                agrupacion=agrupar_por,
+                sub_filtro=sub_filtro,
+                loc=loc,
+                es_porcentaje_override=es_porcentaje_override,
+                region=region,
+                job_display_overrides=job_display_overrides,
+            )
+            build_combined = _build_by_year_combined_table
+
+        if not cmp_data.subplots or not any(s.series for s in cmp_data.subplots):
+            raise ValueError("Sin datos para exportar con los filtros actuales")
+
+        if series_order:
+            for sp in cmp_data.subplots:
+                reorder_chart_series(sp, series_order)
+
+        comparison_img = render_comparison_by_year_bytes(
+            cmp_data,
+            fmt="png",
+            view_mode=render_view_mode,
+            y_axis_min=y_axis_min,
+            y_axis_max=y_axis_max,
+            clean=clean,
+            hidden_series=hidden_series,
+        )
+        comp_headers, comp_rows = build_combined(cmp_data.subplots)
+        comp_series_names = comp_headers[2:] if len(comp_headers) > 2 else []
+        comp_series_colors = _series_colors_for_names(
+            comp_series_names,
+            [sp.series for sp in cmp_data.subplots],
+        )
+        ws_comp = wb.create_sheet(
+            _safe_excel_sheet_name("Comparación", used_sheet_names)
+        )
+        _write_comparison_sheet(
+            ws_comp,
+            image_bytes=comparison_img,
+            headers=comp_headers,
+            rows=comp_rows,
+            y_axis_label=cmp_data.yAxisLabel,
+            sheet_title=ws_comp.title,
+            view_mode=render_view_mode,
+            chart_title=cmp_data.title,
+            series_colors=comp_series_colors,
+        )
+
+        for sp in cmp_data.subplots:
+            if not sp.series:
+                continue
+            panel_label = _subplot_display_name(sp)
+            panel_title = f"{cmp_data.title} — {panel_label}"
+            if series_order:
+                reorder_chart_series(sp, series_order)
+            panel_img = _render_single_subplot_bytes(
+                sp,
+                panel_title,
+                cmp_data.yAxisLabel,
+                view_mode=render_view_mode,
+                y_axis_min=y_axis_min,
+                y_axis_max=y_axis_max,
+                clean=clean,
+                hidden_series=hidden_series,
+            )
+            sheet_name = _safe_excel_sheet_name(panel_label, used_sheet_names)
+            ws = wb.create_sheet(sheet_name)
+            _write_chart_sheet(
+                ws,
+                image_bytes=panel_img,
+                categories=list(sp.categories),
+                series=list(sp.series),
+                y_axis_label=cmp_data.yAxisLabel,
+                sheet_title=sheet_name,
+                view_mode=render_view_mode,
+                chart_title=panel_title,
+                category_header="Escenario" if compare_mode == "by-year" else "Año",
+            )
+
+    else:  # line-total
+        line_data = build_comparison_line_data(
+            db=db,
+            job_ids=job_ids,
+            tipo=tipo,
+            un=un,
+            sub_filtro=sub_filtro,
+            loc=loc,
+            job_display_overrides=job_display_overrides,
+        )
+        if not line_data.series:
+            raise ValueError("Sin datos para exportar con los filtros actuales")
+
+        if series_order:
+            reorder_chart_series(line_data, series_order)
+
+        comparison_img = render_chart_visualization_bytes(
+            line_data,
+            fmt="png",
+            view_mode="line",
+            y_axis_min=y_axis_min,
+            y_axis_max=y_axis_max,
+            clean=clean,
+            hidden_series=hidden_series,
+        )
+        sheet_name = _safe_excel_sheet_name("Comparación", used_sheet_names)
+        ws = wb.create_sheet(sheet_name)
+        _write_chart_sheet(
+            ws,
+            image_bytes=comparison_img,
+            categories=line_data.categories,
+            series=line_data.series,
+            y_axis_label=line_data.yAxisLabel,
+            sheet_title=sheet_name,
+            view_mode="line",
+            chart_title=line_data.title,
+            category_header="Año",
+        )
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+
 def pareto_data_to_csv_bytes(pareto: ParetoChartResponse) -> bytes:
     """CSV UTF-8 con BOM: categoría, valor, % acumulado."""
     import csv

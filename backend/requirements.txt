@@ -16,5 +16,6 @@ python-calamine>=0.3.2
 highspy==1.15.1
 gurobipy>=11.0.0
 openpyxl>=3.1.0
+Pillow>=10.0.0
 matplotlib>=3.9.0
 pytest>=8.0.0

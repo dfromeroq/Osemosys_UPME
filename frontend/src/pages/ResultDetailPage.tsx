@@ -43,6 +43,7 @@ import {
 } from '../shared/charts/SeriesOrderModal';
 import { CompareChart } from '../shared/charts/CompareChart';
 import { CompareChartFacet } from '../shared/charts/CompareChartFacet';
+import { CompareExportDropdown } from '../shared/charts/CompareExportDropdown';
 import { downloadChartFromServer } from '../shared/charts/serverChartExport';
 import { ParetoChart } from '../shared/charts/ParetoChart';
 import type {
@@ -454,6 +455,7 @@ export function ResultDetailPage() {
   const [compareLineData, setCompareLineData] = useState<ChartDataResponse | null>(null);
   const [paretoData, setParetoData] = useState<ParetoChartResponse | null>(null);
   const [loadingChart, setLoadingChart] = useState(false);
+  const [exportingLineTotalXlsx, setExportingLineTotalXlsx] = useState(false);
   const [availableTimeslices, setAvailableTimeslices] = useState<string[]>([]);
   const [availableFuels, setAvailableFuels] = useState<string[]>([]);
 
@@ -1293,6 +1295,45 @@ export function ResultDetailPage() {
       setExportingType(null);
     }
   }, [currentRunId, chartSelection.un]);
+
+  const handleExportLineTotalXlsx = useCallback(async () => {
+    if (chartJobIds.length < 2 || exportingLineTotalXlsx) return;
+    setExportingLineTotalXlsx(true);
+    try {
+      const sel = chartSelection;
+      const payload: Parameters<typeof simulationApi.exportCompareXlsx>[0] = {
+        job_ids: chartJobIds.join(','),
+        tipo: sel.tipo,
+        un: sel.un,
+        compare_mode: 'line-total',
+      };
+      if (sel.sub_filtro) payload.sub_filtro = sel.sub_filtro;
+      if (sel.loc) payload.loc = sel.loc;
+      if (typeof yAxisMin === 'number') payload.y_axis_min = yAxisMin;
+      if (typeof yAxisMax === 'number') payload.y_axis_max = yAxisMax;
+      if (customSeriesOrder && customSeriesOrder.length > 0) {
+        payload.series_order = customSeriesOrder.join(',');
+      }
+      if (Object.values(scenarioAliases).some((v) => v?.trim())) {
+        payload.job_display_overrides = JSON.stringify(scenarioAliases);
+      }
+      const { blob, filename } = await simulationApi.exportCompareXlsx(payload);
+      downloadBlob(blob, filename);
+    } catch (err) {
+      console.error('Error exporting line-total XLSX', err);
+      alert('No se pudo generar el XLSX. Intenta de nuevo.');
+    } finally {
+      setExportingLineTotalXlsx(false);
+    }
+  }, [
+    chartJobIds,
+    chartSelection,
+    customSeriesOrder,
+    exportingLineTotalXlsx,
+    scenarioAliases,
+    yAxisMax,
+    yAxisMin,
+  ]);
 
   const handleDownloadAllRegions = useCallback(async () => {
     if (!currentRunId || downloadingAllRegions) return;
@@ -2313,12 +2354,28 @@ export function ResultDetailPage() {
                 serverCompareExport={{ jobIds: chartJobIds, selection: chartSelection, yearsToPlot: chartYearsToPlot, isAltMode: true, scenarioAliases }}
               />
             ) : chartCompareMode === 'line-total' && chartJobIds.length > 1 && displayCompareLineData ? (
-              <LineChart
-                data={displayCompareLineData}
-                syntheticSeries={syntheticSeries.filter((s) => s.active !== false)}
-                yAxisMin={yAxisMin}
-                yAxisMax={yAxisMax}
-              />
+              <div className="w-full space-y-2">
+                <div className="flex justify-end">
+                  <CompareExportDropdown
+                    disabled={exportingLineTotalXlsx}
+                    options={[
+                      {
+                        id: 'xlsx',
+                        label: 'XLSX',
+                        busyLabel: 'Generando XLSX…',
+                        busy: exportingLineTotalXlsx,
+                        onClick: () => handleExportLineTotalXlsx(),
+                      },
+                    ]}
+                  />
+                </div>
+                <LineChart
+                  data={displayCompareLineData}
+                  syntheticSeries={syntheticSeries.filter((s) => s.active !== false)}
+                  yAxisMin={yAxisMin}
+                  yAxisMax={yAxisMax}
+                />
+              </div>
             ) : chartSelection.viewMode === 'pareto' && paretoData ? (
               <ParetoChart
                 data={paretoData}
